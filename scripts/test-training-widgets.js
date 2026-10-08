@@ -228,6 +228,14 @@ console.log('\n6) Hosts');
   const trace = read('overlay', 'js', 'widgets', 'traininginputs.js');
   check('Trace reads its theme once, not per paint', (trace.match(/getComputedStyle/g) || []).length === 1);
   check('Trace reports its paint cost to the layer health', trace.includes('noteWork("traininginputs"'));
+  const coach = read('overlay', 'js', 'widgets', 'trainingcoach.js');
+  const cue = read('overlay', 'js', 'widgets', 'trainingbrake.js');
+  check('Coach and Brake Cue take every frame (pedals; 100 ms is 7 m at 250 km/h)', reg('trainingcoach') === 0 && reg('trainingbrake') === 0);
+  check('Coach reads the reference through the shared fetch, not its own', !/fetch\(/.test(coach) && coach.includes('GHOST.subscribe('));
+  check('Coach stops painting while the training layer is hidden', coach.includes('onTrainingShown') && coach.includes('noteWork("trainingcoach"'));
+  check("Brake Cue lights off the server's braking point", cue.includes('toBrakeM'));
+  check('no backdrop-filter in the Coach or Brake Cue styles (nothing behind the overlay to blur)',
+    !/backdrop-filter/.test(read('overlay', 'css', 'training-coach.css') + read('overlay', 'css', 'training-brake.css')));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

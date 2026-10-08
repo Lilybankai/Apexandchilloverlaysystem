@@ -1,14 +1,57 @@
-/* training-telemetry.css: the Telemetry widget (traininginputs) — its own file so the training widgets can be restyled independently.
-   Linked from training.html and widget.html after training.css. */
+/* training-telemetry.css: the Telemetry widget (traininginputs) — its own file
+   so the training widgets can be restyled independently. Linked from
+   training.html and widget.html after training.css.
 
-/* --- Trace. The canvas is the whole widget; its height follows its width. */
-.ttrace {
+   A header (label + legend) over one canvas that draws the three panels; the
+   canvas height follows its width (traininginputs.js, ASPECT). */
+
+.ttele {
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
-.ttrace__canvas {
+.ttele__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+.ttele__title {
+  color: var(--text-secondary);
+}
+.ttele__legend {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  color: var(--text-secondary);
+  font: 500 15px/1 var(--tw-ui);
+  white-space: nowrap;
+}
+.ttele__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ttele__key b {
+  font-weight: 500;
+}
+/* Legend swatches: you solid cyan, the reference dotted white — the same
+   marks the canvas draws with. */
+.ttele__swatch {
+  display: inline-block;
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+}
+.ttele__swatch--you {
+  background: var(--ac-cyan);
+}
+.ttele__swatch--ref {
+  height: 3px;
+  background: radial-gradient(circle, var(--tw-ref) 1.3px, transparent 1.6px) 0 50% / 6px 3px repeat-x;
+}
+.ttele__canvas {
   display: block;
   width: 100%;
   background: transparent;
 }
-

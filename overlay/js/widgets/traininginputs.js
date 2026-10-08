@@ -1,21 +1,20 @@
 /**
- * traininginputs.js — Trace: your inputs over the reference's, by the metre.
+ * traininginputs.js — Telemetry: you against the reference lap, by the metre.
  * -----------------------------------------------------------------------------
- * A strip of road, 250 m behind the car to 150 m ahead, with the car fixed on
- * a bright line across it. Throttle rises above a centre line and brake hangs
- * below it, so one lane reads both pedals and a trail-brake overlap shows as
- * the two touching. Steering runs in its own thin lane underneath.
+ * Three panels on one road axis, 500 m behind the car to 400 m ahead, with
+ * the car fixed on a glowing cyan cursor:
  *
- * - BEHIND the car: your pedals as solid fills, the reference's as a violet
- *   outline over them. Where you had less throttle than it did — a lift it
- *   did not make, a slower pick-up — the shortfall is shaded amber. Where it
- *   was on the brake harder than you — you braked later, or let off sooner —
- *   the difference is shaded cyan. Your own brake reaching outside the
- *   outline is braking it did not do: earlier, or longer.
- * - AHEAD of the car: only the reference, as a faint preview, because you
- *   have not driven those metres yet. Its braking zones are red bands with a
- *   hard edge where it went for the pedal, and the nearest one carries the
- *   metres still to go on a tab, so the edge visibly closes on the car line.
+ *   THROTTLE / BRAKE %  your throttle (green) and brake (red) as solid lines
+ *   SPEED               your speed (cyan, a soft fill under it)
+ *   GAP TO REF          the time gap, filled red above zero while you are
+ *                       behind, green below while you are ahead
+ *
+ * The reference lap is a dotted white line in every panel, across the whole
+ * window: behind the car it is what to compare with, ahead of it — where you
+ * have not driven yet — it is a look-ahead at the next braking zone and
+ * apex. Your lines stop at the cursor. Each corner in view is a translucent
+ * purple band labelled C1..Cn (the reference's own corner order, never an
+ * official name); the one being driven or coming next is the strongest.
  *
  * Why distance and not time: a time axis stretches every corner by how slowly
  * it is taken, so the same corner never sits in the same place twice and two
@@ -31,9 +30,9 @@
  *
  * Distance is the server's filtered road position (`ghost.atD`) — the axis
  * the gap and the reference's own curve are on — unwrapped across the line
- * so the strip runs straight through it. Your inputs go into one-metre bins
- * and the reference is resampled onto the same grid once per lap
- * (`training-trace.js`), so painting is index arithmetic with nothing to
+ * so the strip runs straight through it. Your inputs, speed and gap go into
+ * one-metre bins and the reference is resampled onto the same grid once per
+ * lap (`training-trace.js`), so painting is index arithmetic with nothing to
  * search and nothing to allocate.
  */
 (function () {
@@ -46,19 +45,41 @@
 
   /* ------------------------------- framing -------------------------------- */
 
-  /** Metres either side of the car. The car line sits at BEHIND/(BEHIND+AHEAD). */
-  var BEHIND_M = 250;
-  var AHEAD_M = 150;
+  /** Metres either side of the car. */
+  var BEHIND_M = 500;
+  var AHEAD_M = 400;
   var SPAN_M = BEHIND_M + AHEAD_M;
-  /** Canvas height as a fraction of its width. */
-  var ASPECT = 0.32;
 
-  /** A pedal difference smaller than this is noise, not a habit. */
-  var DIFF_MIN = 0.08;
-  /** Steering lock that fills the steering lane: most corners use a third. */
-  var STEER_FULL = 0.35;
-  /** Within this, the next braking edge lights the car line. */
-  var BRAKE_NEAR_M = 40;
+  /**
+   * The design the geometry below is drawn in: a 790 × 358 canvas (an 830 px
+   * card less its padding). Everything scales with the width; the height
+   * follows it.
+   */
+  var DW = 790;
+  var DH = 358;
+  var ASPECT = DH / DW;
+  /** Left gutter for tick labels, right margin. Design px. */
+  var GUT_L = 48;
+  var GUT_R = 6;
+  /** Panels: top and height, design px. Titles sit just above each. */
+  var P_PEDAL = { top: 26, h: 104 };
+  var P_SPEED = { top: 172, h: 104 };
+  /**
+   * The gap strip: zero line and half-height. It plots the gap RELATIVE to
+   * its value at the window's left edge — over 900 m the gap itself moves a
+   * tenth or two on top of a second or more, and drawn absolute it is a flat
+   * line. Relative, it shows where in view time was lost (above, red) or won
+   * (below, green). The edge's absolute gap is printed as the zero tick and
+   * the live one at the cursor, so the numbers stay whole. Its scale is the
+   * largest change in view rounded up to GAP_STEP_S, never under GAP_MIN_S.
+   */
+  var GAP_Y = 322;
+  var GAP_AMP = 14;
+  var GAP_MIN_S = 0.1;
+  var GAP_STEP_S = 0.05;
+  var AXIS_Y = 350;
+  /** Distance labels every this many lap metres. */
+  var TICK_M = 200;
 
   /** See `ghost-pose.js`; the same values Ghost HUD paints with. */
   var POSE_DELAY_MS = 40;
@@ -67,6 +88,7 @@
   /** A backward step longer than this is a reset or a tow: the trail starts again. */
   var TRAIL_BACK_M = 50;
   var SIZE_CHECK_FRAMES = 30;
+  var KPH_TO_MPH = 0.621371;
 
   /* -------------------------------- colour -------------------------------- */
 
@@ -74,38 +96,35 @@
   var C = {
     throttle: "#35d07f",
     brake: "#ff5470",
-    warn: "#ffb020",
+    gain: "#35d07f",
+    loss: "#ff5470",
     cyan: "#22d3ee",
     purple: "#8b5cf6",
     text: "#f4f6fb",
     text2: "#aeb6c8",
     muted: "#6b7387",
-    fontDisplay: '"Bahnschrift", "Arial Narrow", "Segoe UI Semibold", sans-serif',
+    ref: "rgba(244,246,251,0.78)",
+    num: '"Bahnschrift", "DIN Alternate", "Arial Narrow", sans-serif',
+    ui: '"Segoe UI", system-ui, sans-serif',
   };
-  /** The reference is violet everywhere in training: the ghost's colour. */
-  var C_REF = "#b9a6ff";
-  var C_INK = "rgba(4,6,12,0.72)";
-  var C_RULE = "rgba(174,182,200,0.22)";
-  var C_AHEAD = "rgba(255,255,255,0.035)";
+  var C_GRID = "rgba(255,255,255,0.06)";
+  var C_AHEAD = "rgba(255,255,255,0.022)";
+  var C_INK = "rgba(6,8,14,0.85)";
 
   /** Derived from the tokens once, in `readTokens`. */
-  var fillThr = "";
-  var fillBrk = "";
-  var fillThrAhead = "";
-  var fillBrkAhead = "";
-  var fillLift = "";
-  var fillLate = "";
-  var zoneAhead = "";
-  var zoneBehind = "";
-  var boardBehind = "";
-  var tagAhead = "";
-  var tagBehind = "";
+  var gapLossFill = "";
+  var gapGainFill = "";
+  var bandNow = "";
+  var bandOther = "";
+  var labelBandOther = "";
+  var cursorGlow = "";
 
   /* -------------------------------- state --------------------------------- */
 
   var canvas = null;
   var gctx = null;
   var headerMeta = null;
+  var refNameEl = null;
   var cssW = 0;
   var cssH = 0;
   var dpr = 1;
@@ -113,19 +132,25 @@
   var sizeTick = 0;
   var noteWork = null;
   var paintVer = 0;
+  var unitMph = false;
 
-  /** The reference, prepared once per lap: grid, braking zones, corner tags. */
+  /** The reference, prepared once per lap: grid, corner spans, speed axis. */
   var line = null;
   var lapM = 0;
   var grid = null;
-  var zones = null;
-  var apexM = null;
-  var apexName = null;
+  var hasSpeed = false;
+  var cIn = null;
+  var cOut = null;
+  var cName = null;
+  /** The speed axis, km/h: the drawn range and the three ticks. */
+  var spdLo = 0;
+  var spdHi = 300;
+  var spdTicks = [0, 150, 300];
   var lastLabel = "";
 
   var ghostState = null;
   var unwrapper = TR ? TR.createUnwrap() : null;
-  var trail = TR ? TR.createTrail(512) : null;
+  var trail = TR ? TR.createTrail(1024) : null;
   var lastUm = NaN;
 
   var poseBuf = POSE ? POSE.create({ delayMs: POSE_DELAY_MS, maxExtrapMs: POSE_MAX_EXTRAP_MS, holdMs: POSE_HOLD_MS }) : null;
@@ -135,11 +160,11 @@
   var shownNote = null;
   var shownNoteVer = -1;
   /**
-   * What the last full paint drew from: the car's metre, the newest inputs
+   * What the last full paint drew from: the car's metre, the newest values
    * written to the trail, and `paintVer`. The same again (a parked car) is
    * not repainted. `ver: -1` = a note is showing.
    */
-  var drawn = { ver: -1, m: NaN, thr: NaN, brk: NaN, str: NaN };
+  var drawn = { ver: -1, m: NaN, thr: NaN, brk: NaN, spd: NaN, gap: NaN };
 
   /* ---------------------- per-paint scratch (no garbage) ------------------- */
 
@@ -147,33 +172,47 @@
   var px = new Float32Array(N);
   var rThr = new Float32Array(N);
   var rBrk = new Float32Array(N);
-  var rStr = new Float32Array(N);
+  var rSpd = new Float32Array(N);
   var rOk = new Uint8Array(N);
   var mThr = new Float32Array(N);
   var mBrk = new Float32Array(N);
-  var mStr = new Float32Array(N);
+  var mSpd = new Float32Array(N);
+  var mGap = new Float32Array(N);
   var mOk = new Uint8Array(N);
 
-  /** Lane geometry, set by `sizeCanvas`. */
-  var tagH = 0;
-  var yTop = 0;
-  var yBase = 0;
-  var yBot = 0;
-  var sMid = 0;
-  var sAmp = 0;
+  /** Geometry in CSS px, set by `sizeCanvas`. */
+  var k = 1;
+  var xL = 0;
+  var xR = 0;
   var xNow = 0;
   var pxPerM = 1;
-  var fontTag = "";
-  var fontCue = "";
+  var pTop = 0;
+  var pBot = 0;
+  var sTop = 0;
+  var sBot = 0;
+  var gZero = 0;
+  var gAmp = 0;
+  var yAxis = 0;
+  var fontTitle = "";
+  var fontTick = "";
+  var fontBand = "";
+  var fontVal = "";
   var fontNote = "";
-
-  /** The countdown tab's text, rebuilt only when the whole metres change. */
-  var cueM = -1;
-  var cueText = "";
-  var cueW = 0;
-  var cueVer = -1;
-
+  var gSpeed = null;
   var gFade = null;
+  var spacing = false;
+
+  /** Tick label text, rebuilt only when the unit or the axis changes. */
+  var tickText = ["", "", ""];
+  var titleSpeed = "SPEED KM/H";
+  /** The gap readout at the cursor, rebuilt only when its hundredths change. */
+  var gapShown = NaN;
+  var gapText = "";
+  /** The change that fills the strip this paint, and the gap it is measured from, s. */
+  var gapFull = GAP_MIN_S;
+  var gapBase = NaN;
+  var baseShown = NaN;
+  var baseText = "0";
 
   /* -------------------------------- tokens -------------------------------- */
 
@@ -186,27 +225,25 @@
       };
       C.throttle = pick("--pedal-throttle", C.throttle);
       C.brake = pick("--pedal-brake", C.brake);
-      C.warn = pick("--warn", C.warn);
+      C.gain = pick("--pos-gain", C.gain);
+      C.loss = pick("--pos-loss", C.loss);
       C.cyan = pick("--ac-cyan", C.cyan);
       C.purple = pick("--ac-purple", C.purple);
       C.text = pick("--text-primary", C.text);
       C.text2 = pick("--text-secondary", C.text2);
       C.muted = pick("--text-muted", C.muted);
-      C.fontDisplay = pick("--font-display", C.fontDisplay);
+      C.ref = pick("--tw-ref", C.ref);
+      C.num = pick("--tw-num", C.num);
+      C.ui = pick("--tw-ui", C.ui);
     } catch (e) {
       /* no computed style here; the fallbacks stand */
     }
-    fillThr = withAlpha(C.throttle, 0.82, "#35d07f");
-    fillBrk = withAlpha(C.brake, 0.86, "#ff5470");
-    fillThrAhead = withAlpha(C.throttle, 0.16, "#35d07f");
-    fillBrkAhead = withAlpha(C.brake, 0.22, "#ff5470");
-    fillLift = withAlpha(C.warn, 0.62, "#ffb020");
-    fillLate = withAlpha(C.cyan, 0.55, "#22d3ee");
-    zoneAhead = withAlpha(C.brake, 0.2, "#ff5470");
-    zoneBehind = withAlpha(C.brake, 0.08, "#ff5470");
-    boardBehind = withAlpha(C.brake, 0.35, "#ff5470");
-    tagAhead = C.text2;
-    tagBehind = withAlpha(C.muted, 0.8, "#6b7387");
+    gapLossFill = withAlpha(C.loss, 0.18, "#ff5470");
+    gapGainFill = withAlpha(C.gain, 0.18, "#35d07f");
+    bandNow = withAlpha(C.purple, 0.11, "#8b5cf6");
+    bandOther = withAlpha(C.purple, 0.05, "#8b5cf6");
+    labelBandOther = withAlpha(C.purple, 0.55, "#8b5cf6");
+    cursorGlow = withAlpha(C.cyan, 0.22, "#22d3ee");
   }
 
   /** A `#rgb`/`#rrggbb` token at an alpha; any other form uses `fallbackHex`. */
@@ -224,23 +261,65 @@
     line = data;
     lapM = data && data.trackLengthM > 0 ? data.trackLengthM : 0;
     grid = data && lapM ? TR.resampleRef(data, lapM) : null;
-    zones = grid ? TR.brakeZones(grid, data, lapM) : null;
-    apexM = null;
-    apexName = null;
+    cIn = null;
+    cOut = null;
+    cName = null;
+    hasSpeed = false;
+    if (grid) {
+      // The speed axis is the reference's own range, fixed for the lap, so
+      // the ticks never wander while you drive.
+      var lo = Infinity;
+      var hi = -Infinity;
+      for (var m = 0; m < grid.n; m++) {
+        if (!grid.ok[m]) continue;
+        var v = grid.spd[m];
+        if (!isFinite(v)) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      if (hi > lo) {
+        hasSpeed = true;
+        var range = hi - lo;
+        spdLo = Math.max(0, lo - range * 0.14);
+        spdHi = hi + range * 0.06;
+        spdTicks = [lo, (lo + hi) / 2, hi];
+      }
+    }
     if (grid && Array.isArray(data.corners)) {
-      var am = [];
-      var an = [];
+      var ins = [];
+      var outs = [];
+      var names = [];
       for (var i = 0; i < data.corners.length; i++) {
         var c = data.corners[i];
-        if (!c || !isFinite(c.apexD)) continue;
-        am.push(c.apexD * lapM);
-        an.push(LAPS.cornerName(i));
+        if (!c || !isFinite(c.entryD) || !isFinite(c.exitD)) continue;
+        var a = c.entryD * lapM;
+        var b = c.exitD * lapM;
+        if (b < a) b += lapM; // a corner over the line
+        ins.push(a);
+        outs.push(b);
+        names.push(LAPS.cornerName(i));
       }
-      apexM = Float64Array.from(am);
-      apexName = an;
+      cIn = Float64Array.from(ins);
+      cOut = Float64Array.from(outs);
+      cName = names;
     }
+    retick();
     paintVer++;
     wake();
+  }
+
+  /** Speed tick labels and the panel title, in the driver's unit. */
+  function retick() {
+    var f = unitMph ? KPH_TO_MPH : 1;
+    for (var i = 0; i < 3; i++) tickText[i] = String(Math.round(spdTicks[i] * f));
+    titleSpeed = unitMph ? "SPEED MPH" : "SPEED KM/H";
+  }
+
+  /** "A. Winters · 1:19.299 · board" → "A. Winters". */
+  function refName(label) {
+    var s = String(label || "").split(" · ")[0].trim();
+    if (!s) return "Reference";
+    return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   /* -------------------------------- sizing -------------------------------- */
@@ -263,23 +342,30 @@
     canvas.width = bw;
     canvas.height = bh;
 
-    tagH = Math.max(14, Math.round(cssH * 0.12));
-    yTop = tagH + 3;
-    yBot = Math.round(cssH * 0.76);
-    yBase = Math.round(yTop + (yBot - yTop) * 0.56);
-    var sTop = yBot + 7;
-    var sBot = cssH - 4;
-    sMid = (sTop + sBot) / 2;
-    sAmp = (sBot - sTop) / 2;
-    pxPerM = cssW / SPAN_M;
-    xNow = BEHIND_M * pxPerM;
-    var tagPx = Math.max(9, Math.round(tagH * 0.68));
-    fontTag = "600 " + tagPx + "px " + C.fontDisplay;
-    fontCue = "700 " + Math.max(10, Math.round(tagH * 0.74)) + "px " + C.fontDisplay;
-    fontNote = "600 " + Math.max(11, Math.round(cssW * 0.022)) + "px " + C.fontDisplay;
+    k = cssW / DW;
+    xL = GUT_L * k;
+    xR = cssW - GUT_R * k;
+    pxPerM = (xR - xL) / SPAN_M;
+    xNow = xL + BEHIND_M * pxPerM;
+    pTop = P_PEDAL.top * k;
+    pBot = (P_PEDAL.top + P_PEDAL.h) * k;
+    sTop = P_SPEED.top * k;
+    sBot = (P_SPEED.top + P_SPEED.h) * k;
+    gZero = GAP_Y * k;
+    gAmp = GAP_AMP * k;
+    yAxis = AXIS_Y * k;
+    fontTitle = "600 " + Math.max(9, Math.round(12 * k)) + "px " + C.ui;
+    fontTick = Math.max(9, Math.round(13 * k)) + "px " + C.num;
+    fontBand = "600 " + Math.max(9, Math.round(13 * k)) + "px " + C.num;
+    fontVal = "600 " + Math.max(10, Math.round(15 * k)) + "px " + C.num;
+    fontNote = "600 " + Math.max(11, Math.round(15 * k)) + "px " + C.ui;
+    spacing = "letterSpacing" in gctx;
 
-    // The fade at the far end of the preview: one gradient per size, never per paint.
-    gFade = gctx.createLinearGradient(cssW * 0.86, 0, cssW, 0);
+    // One gradient per size, never per paint.
+    gSpeed = gctx.createLinearGradient(0, sTop, 0, sBot);
+    gSpeed.addColorStop(0, withAlpha(C.cyan, 0.24, "#22d3ee"));
+    gSpeed.addColorStop(1, withAlpha(C.cyan, 0, "#22d3ee"));
+    gFade = gctx.createLinearGradient(cssW * 0.9, 0, cssW, 0);
     gFade.addColorStop(0, "rgba(0,0,0,0)");
     gFade.addColorStop(1, "rgba(0,0,0,1)");
     paintVer++;
@@ -334,18 +420,19 @@
     var first = Math.ceil(m0);
     var cnt = 0;
     for (var m = first; m <= m0 + SPAN_M && cnt < N; m++, cnt++) {
-      px[cnt] = (m - m0) * pxPerM;
+      px[cnt] = xL + (m - m0) * pxPerM;
       var gi = TR.lapIndex(m, grid.n);
       rOk[cnt] = grid.ok[gi];
       rThr[cnt] = grid.thr[gi];
       rBrk[cnt] = grid.brk[gi];
-      rStr[cnt] = grid.str[gi];
+      rSpd[cnt] = grid.spd[gi];
       var s = m <= nowM ? TR.trailSlot(trail, m) : -1;
       mOk[cnt] = s >= 0 ? 1 : 0;
       if (s >= 0) {
         mThr[cnt] = trail.thr[s];
         mBrk[cnt] = trail.brk[s];
-        mStr[cnt] = trail.str[s];
+        mSpd[cnt] = trail.spd[s];
+        mGap[cnt] = trail.gap[s];
       }
     }
     return cnt;
@@ -353,36 +440,63 @@
 
   /* ------------------------------- painting ------------------------------- */
 
-  function yThr(v) {
-    return yBase - (v < 0 ? 0 : v > 1 ? 1 : v) * (yBase - yTop);
+  function yPedal(v) {
+    return pBot - (v < 0 ? 0 : v > 1 ? 1 : v) * (pBot - pTop);
   }
-  function yBrk(v) {
-    return yBase + (v < 0 ? 0 : v > 1 ? 1 : v) * (yBot - yBase);
+  function ySpeed(v) {
+    var f = (v - spdLo) / (spdHi - spdLo);
+    return sBot - (f < 0 ? 0 : f > 1 ? 1 : f) * (sBot - sTop);
   }
-  function ySteer(v) {
-    var f = v / STEER_FULL;
+  function yGap(v) {
+    var f = (v - gapBase) / gapFull;
     if (f > 1) f = 1;
     else if (f < -1) f = -1;
-    // Right lock up, as the pedals trace draws it.
-    return sMid - f * sAmp;
+    return gZero - f * gAmp;
   }
 
   /**
-   * One filled area per run of valid columns, from the baseline out to the
-   * channel. `up` = throttle (above the line), else brake (below).
+   * Trace one channel as a path through the columns where it is valid,
+   * broken where it is not. `kind`: 0 pedal, 1 speed, 2 gap. Leaves the path
+   * open for the caller to stroke (or close and fill).
    */
-  function area(vals, ok, from, to, up) {
+  function tracePath(vals, ok, from, to, kind) {
+    gctx.beginPath();
+    var on = false;
+    for (var i = from; i <= to; i++) {
+      var v = vals[i];
+      if (ok[i] !== 1 || v !== v) {
+        on = false;
+        continue;
+      }
+      var y = kind === 0 ? yPedal(v) : kind === 1 ? ySpeed(v) : yGap(v);
+      if (!on) gctx.moveTo(px[i], y);
+      else gctx.lineTo(px[i], y);
+      on = true;
+    }
+  }
+
+  /** The reference as a dotted white line. */
+  function dotted(vals, from, to, kind) {
+    tracePath(vals, rOk, from, to, kind);
+    gctx.stroke();
+  }
+
+  /**
+   * One filled area per run of valid columns, from `y0` out to the channel —
+   * the speed fill under your line, and the gap strip either side of zero.
+   */
+  function fillArea(vals, from, to, kind, y0) {
     gctx.beginPath();
     var open = -1;
-    for (var k = from; k <= to + 1; k++) {
-      var good = k <= to && ok[k] === 1;
+    for (var i = from; i <= to + 1; i++) {
+      var good = i <= to && mOk[i] === 1 && vals[i] === vals[i];
       if (good && open < 0) {
-        open = k;
-        gctx.moveTo(px[k], yBase);
+        open = i;
+        gctx.moveTo(px[i], y0);
       }
-      if (good) gctx.lineTo(px[k], up ? yThr(vals[k]) : yBrk(vals[k]));
+      if (good) gctx.lineTo(px[i], kind === 1 ? ySpeed(vals[i]) : yGap(vals[i]));
       if (!good && open >= 0) {
-        gctx.lineTo(px[k - 1], yBase);
+        gctx.lineTo(px[i - 1], y0);
         gctx.closePath();
         open = -1;
       }
@@ -390,152 +504,160 @@
     gctx.fill();
   }
 
-  /** A polyline through valid columns, broken where they are not. */
-  function curve(vals, ok, from, to, kind) {
-    gctx.beginPath();
-    var on = false;
-    for (var k = from; k <= to; k++) {
-      if (ok[k] !== 1) {
-        on = false;
-        continue;
-      }
-      var y = kind === 0 ? yThr(vals[k]) : kind === 1 ? yBrk(vals[k]) : ySteer(vals[k]);
-      if (!on) gctx.moveTo(px[k], y);
-      else gctx.lineTo(px[k], y);
-      on = true;
+  function setSpacing(px) {
+    if (spacing) gctx.letterSpacing = px + "px";
+  }
+
+  /** The gap at the window's left edge, as the strip's zero tick. */
+  function gapBaseText() {
+    if (gapBase !== gapBase) return "0";
+    var g = Math.round(gapBase * 100) / 100;
+    if (g !== baseShown) {
+      baseShown = g;
+      baseText = signed(g);
     }
-    gctx.stroke();
+    return baseText;
+  }
+
+  /** "+1.41", "−0.08", "±0.00". */
+  function signed(g) {
+    return (g > 0 ? "+" : g < 0 ? "−" : "±") + Math.abs(g).toFixed(2);
+  }
+
+  /** Grid rules, tick labels and the three panel titles. */
+  function drawFrame() {
+    gctx.fillStyle = C_GRID;
+    var rules = [pTop, (pTop + pBot) / 2, pBot, ySpeed(spdTicks[0]), ySpeed(spdTicks[1]), ySpeed(spdTicks[2]), gZero];
+    for (var i = 0; i < rules.length; i++) gctx.fillRect(xL, Math.round(rules[i]) - 0.5, xR - xL, 1);
+
+    gctx.font = fontTick;
+    gctx.textAlign = "right";
+    gctx.textBaseline = "middle";
+    gctx.fillStyle = C.muted;
+    var tx = xL - 10 * k;
+    gctx.fillText("100", tx, pTop);
+    gctx.fillText("50", tx, (pTop + pBot) / 2);
+    gctx.fillText("0", tx, pBot);
+    if (hasSpeed) {
+      for (var t = 0; t < 3; t++) gctx.fillText(tickText[t], tx, ySpeed(spdTicks[t]));
+    }
+    gctx.fillText(gapBaseText(), tx, gZero);
+
+    gctx.font = fontTitle;
+    gctx.textAlign = "left";
+    gctx.textBaseline = "alphabetic";
+    gctx.fillStyle = C.text2;
+    setSpacing(1.7 * k);
+    gctx.fillText("THROTTLE / BRAKE %", xL + 4 * k, pTop - 8 * k);
+    if (hasSpeed) gctx.fillText(titleSpeed, xL + 4 * k, sTop - 8 * k);
+    gctx.fillText("GAP TO REF", xL + 4 * k, gZero - gAmp - 6 * k);
+    setSpacing(0);
   }
 
   /**
-   * The gap shading behind the car, one rect subpath per column and one fill
-   * per kind: amber where your throttle was short of the reference's, cyan
-   * where its brake was harder than yours (later onto it, or off it sooner).
+   * The corners in view as translucent purple bands across all three
+   * panels, each named at the top of the speed panel. The one being driven,
+   * or the next, is the strongest.
    */
-  function deficits(to) {
-    var w = pxPerM + 0.6; // overlap a hair so columns do not show seams
-    gctx.beginPath();
-    for (var k = 0; k <= to; k++) {
-      if (!rOk[k] || !mOk[k]) continue;
-      var d = rThr[k] - mThr[k];
-      if (d > DIFF_MIN) {
-        var y0 = yThr(rThr[k]);
-        gctx.rect(px[k] - w / 2, y0, w, yThr(mThr[k]) - y0);
-      }
-    }
-    gctx.fillStyle = fillLift;
-    gctx.fill();
-    gctx.beginPath();
-    for (var j = 0; j <= to; j++) {
-      if (!rOk[j] || !mOk[j]) continue;
-      var e = rBrk[j] - mBrk[j];
-      if (e > DIFF_MIN) {
-        var y1 = yBrk(mBrk[j]);
-        gctx.rect(px[j] - w / 2, y1, w, yBrk(rBrk[j]) - y1);
-      }
-    }
-    gctx.fillStyle = fillLate;
-    gctx.fill();
-  }
-
-  /**
-   * The reference's braking zones in the window: a band on the brake side
-   * from where it pressed to where it let go, and a hard edge where it
-   * pressed. Behind the car they are kept faint — context, not instruction.
-   *
-   * @returns {number} Metres to the next braking edge ahead, or Infinity.
-   */
-  function drawZones(m0, nowM) {
-    var next = Infinity;
-    if (!zones || !zones.on.length) return next;
+  function drawCorners(m0, nowM) {
+    if (!cIn || !cIn.length) return;
     var base = Math.floor(m0 / lapM) * lapM;
+    // The corner being driven or coming next: the first whose exit is ahead.
+    var nextIn = Infinity;
     for (var lap = 0; lap < 2; lap++) {
-      var off0 = base + lap * lapM;
-      for (var i = 0; i < zones.on.length; i++) {
-        var on = off0 + zones.on[i];
-        var off = off0 + zones.off[i];
-        if (off < m0 || on > m0 + SPAN_M) continue;
-        var ahead = on > nowM;
-        if (ahead && on - nowM < next) next = on - nowM;
-        var x0 = Math.max(0, (on - m0) * pxPerM);
-        var x1 = Math.min(cssW, (off - m0) * pxPerM);
-        gctx.fillStyle = ahead ? zoneAhead : zoneBehind;
-        gctx.fillRect(x0, yBase, x1 - x0, yBot - yBase);
-        if (on >= m0) {
-          var xe = (on - m0) * pxPerM;
-          gctx.fillStyle = ahead ? C.brake : boardBehind;
-          gctx.fillRect(xe - 1, yTop, 2, yBot - yTop);
+      for (var i = 0; i < cIn.length; i++) {
+        var e = base + lap * lapM + cOut[i];
+        if (e >= nowM && base + lap * lapM + cIn[i] < nextIn) nextIn = base + lap * lapM + cIn[i];
+      }
+    }
+    gctx.font = fontBand;
+    gctx.textAlign = "center";
+    gctx.textBaseline = "alphabetic";
+    setSpacing(1.5 * k);
+    var top = pTop - 2 * k;
+    var bot = gZero + gAmp + 2 * k;
+    for (var l2 = 0; l2 < 2; l2++) {
+      for (var j = 0; j < cIn.length; j++) {
+        var a = base + l2 * lapM + cIn[j];
+        var b = base + l2 * lapM + cOut[j];
+        if (b < m0 || a > m0 + SPAN_M) continue;
+        var x0 = Math.max(xL, xL + (a - m0) * pxPerM);
+        var x1 = Math.min(xR, xL + (b - m0) * pxPerM);
+        if (x1 <= x0) continue;
+        var now = a === nextIn;
+        gctx.fillStyle = now ? bandNow : bandOther;
+        gctx.fillRect(x0, top, x1 - x0, bot - top);
+        var xc = (x0 + x1) / 2;
+        if (xc > xL + 14 * k && xc < xR - 14 * k) {
+          gctx.fillStyle = now ? C.purple : labelBandOther;
+          gctx.fillText(cName[j], xc, sTop - 8 * k);
         }
       }
     }
-    return next;
+    setSpacing(0);
   }
 
-  /** Corner names at each apex in the window, along the top. */
-  function drawTags(m0, nowM) {
-    if (!apexM || !apexM.length) return;
-    gctx.font = fontTag;
+  /** Lap metres along the bottom, every TICK_M. */
+  function drawAxis(m0) {
+    gctx.font = fontTick;
     gctx.textAlign = "center";
     gctx.textBaseline = "middle";
-    var base = Math.floor(m0 / lapM) * lapM;
-    for (var lap = 0; lap < 2; lap++) {
-      for (var i = 0; i < apexM.length; i++) {
-        var m = base + lap * lapM + apexM[i];
-        if (m < m0 + 8 || m > m0 + SPAN_M - 8) continue;
-        var x = (m - m0) * pxPerM;
-        gctx.fillStyle = m > nowM ? tagAhead : tagBehind;
-        gctx.fillText(apexName[i], x, tagH / 2 + 1);
-        gctx.fillRect(x - 0.5, tagH - 2, 1, 3);
+    gctx.fillStyle = C.muted;
+    var first = Math.ceil(m0 / TICK_M) * TICK_M;
+    for (var m = first; m <= m0 + SPAN_M; m += TICK_M) {
+      var x = xL + (m - m0) * pxPerM;
+      if (x < xL + 20 * k || x > xR - 24 * k) continue;
+      var lm = TR.lapIndex(m, lapM);
+      // Near the line a 200 m step lands on a lap length that is not one.
+      if (lm % TICK_M > 1 && TICK_M - (lm % TICK_M) > 1) continue;
+      gctx.fillText(Math.round(lm) + " m", x, yAxis);
+    }
+  }
+
+  /** The cursor: a glowing cyan line with dots on your current values. */
+  function drawCursor(kNow, gapNow) {
+    var top = pTop - 10 * k;
+    var bot = gZero + gAmp + 8 * k;
+    gctx.fillStyle = cursorGlow;
+    gctx.fillRect(xNow - 3 * k, top, 6 * k, bot - top);
+    gctx.fillStyle = C.cyan;
+    gctx.fillRect(xNow - 1, top, 2, bot - top);
+    var r = 5 * k;
+    var dot = function (y, fill) {
+      gctx.beginPath();
+      gctx.arc(xNow, y, r, 0, Math.PI * 2);
+      gctx.fillStyle = fill;
+      gctx.fill();
+      gctx.lineWidth = 2 * k;
+      gctx.strokeStyle = C_INK;
+      gctx.stroke();
+    };
+    if (mOk[kNow]) {
+      var thr = mThr[kNow];
+      var brk = mBrk[kNow];
+      if (brk > 0.02) dot(yPedal(brk), C.brake);
+      if (thr > 0.02 || brk <= 0.02) dot(yPedal(thr), C.throttle);
+      if (hasSpeed && mSpd[kNow] === mSpd[kNow]) dot(ySpeed(mSpd[kNow]), C.cyan);
+    }
+    if (gapNow === gapNow) {
+      var g = Math.round(gapNow * 100) / 100;
+      if (g !== gapShown) {
+        gapShown = g;
+        gapText = signed(g);
       }
+      gctx.font = fontVal;
+      gctx.textAlign = "left";
+      gctx.textBaseline = "middle";
+      gctx.fillStyle = g > 0 ? C.loss : g < 0 ? C.gain : C.text;
+      gctx.fillText(gapText, xNow + 9 * k, gZero - gAmp + 2 * k);
     }
   }
 
-  /**
-   * The car line, and the countdown to the reference's next braking edge on
-   * a tab above it. The line burns red once that edge is close.
-   */
-  function drawNow(nextBrake) {
-    var near = nextBrake <= BRAKE_NEAR_M;
-    gctx.fillStyle = C_INK;
-    gctx.fillRect(xNow - 2.5, yTop - 2, 5, cssH - yTop + 2);
-    gctx.fillStyle = near ? C.brake : C.cyan;
-    gctx.fillRect(xNow - 1, yTop - 2, 2, cssH - yTop + 2);
-    // A notch at the top, so the line reads as "you" and not a grid line.
-    gctx.beginPath();
-    gctx.moveTo(xNow - 5, yTop - 6);
-    gctx.lineTo(xNow + 5, yTop - 6);
-    gctx.lineTo(xNow, yTop);
-    gctx.closePath();
-    gctx.fill();
-
-    if (!(nextBrake <= AHEAD_M)) return;
-    var m = Math.round(nextBrake);
-    if (m !== cueM || cueVer !== paintVer) {
-      cueM = m;
-      cueVer = paintVer;
-      cueText = m + " m";
-      gctx.font = fontCue;
-      cueW = gctx.measureText(cueText).width + 10;
-    }
-    var xe = xNow + nextBrake * pxPerM;
-    var x = Math.min(cssW - cueW - 2, Math.max(xNow + 8, xe - cueW / 2));
-    var h = tagH - 1;
-    gctx.fillStyle = C_INK;
-    gctx.fillRect(x - 1, 0, cueW + 2, h + 1);
-    gctx.fillStyle = C.brake;
-    gctx.fillRect(x, 0, cueW, h);
-    gctx.font = fontCue;
-    gctx.textAlign = "center";
-    gctx.textBaseline = "middle";
-    gctx.fillStyle = "#fff";
-    gctx.fillText(cueText, x + cueW / 2, h / 2 + 1);
-  }
-
-  /** The far end of the preview fades out rather than stopping at a hard cut. */
+  /** The far end of the look-ahead fades out rather than stopping at a hard cut. */
   function fadeEdge() {
     gctx.globalCompositeOperation = "destination-out";
     gctx.fillStyle = gFade;
-    gctx.fillRect(cssW * 0.86, 0, cssW * 0.14 + 1, cssH);
+    gctx.fillRect(cssW * 0.9, 0, cssW * 0.1 + 1, yAxis - 10 * k);
     gctx.globalCompositeOperation = "source-over";
   }
 
@@ -554,7 +676,9 @@
     gctx.textAlign = "center";
     gctx.textBaseline = "middle";
     gctx.fillStyle = C.muted;
+    setSpacing(1.6 * k);
     gctx.fillText(note, cssW / 2, cssH / 2);
+    setSpacing(0);
     return false;
   }
 
@@ -565,14 +689,15 @@
     if (!grid) return paintNote(NOTE_NO_INPUTS);
     var st = POSE.sample(poseBuf, nowMs, pose);
     if (st === POSE.NONE || st === POSE.STALE) return paintNote(NOTE_WAITING);
-    // Parked: the same metre and the same pedals under the car line draw the
+    // Parked: the same metre and the same values under the cursor draw the
     // same strip. Stop the loop instead of repainting it; a frame wakes it.
     if (
       drawn.ver === paintVer &&
       pose.x === drawn.m &&
       trail.lastThr === drawn.thr &&
       trail.lastBrk === drawn.brk &&
-      trail.lastStr === drawn.str
+      (trail.lastSpd === drawn.spd || (trail.lastSpd !== trail.lastSpd && drawn.spd !== drawn.spd)) &&
+      (trail.lastGap === drawn.gap || (trail.lastGap !== trail.lastGap && drawn.gap !== drawn.gap))
     ) {
       return false;
     }
@@ -587,61 +712,88 @@
     var last = cnt - 1;
     // The last column at or behind the car.
     var kNow = Math.min(last, Math.max(0, Math.floor(nowM) - Math.ceil(m0)));
+    gapBase = NaN;
+    var gMax = 0;
+    for (var gi = 0; gi <= kNow; gi++) {
+      var gv = mGap[gi];
+      if (mOk[gi] !== 1 || gv !== gv) continue;
+      if (gapBase !== gapBase) gapBase = gv;
+      if (Math.abs(gv - gapBase) > gMax) gMax = Math.abs(gv - gapBase);
+    }
+    gapFull = Math.max(GAP_MIN_S, Math.ceil(gMax / GAP_STEP_S) * GAP_STEP_S);
 
-    // The preview half sits on a faintly lighter ground: the eye splits
-    // "done" from "coming" before it reads anything.
+    // The look-ahead sits on a faintly lighter ground: "done" and "coming"
+    // split before anything is read.
     gctx.fillStyle = C_AHEAD;
-    gctx.fillRect(xNow, yTop, cssW - xNow, cssH - yTop);
+    gctx.fillRect(xNow, pTop - 2 * k, xR - xNow, gZero + gAmp - pTop + 4 * k);
 
-    var nextBrake = drawZones(m0, nowM);
+    drawCorners(m0, nowM);
+    drawFrame();
 
-    // The reference ahead, faint: what is coming.
-    gctx.fillStyle = fillThrAhead;
-    area(rThr, rOk, kNow, last, true);
-    gctx.fillStyle = fillBrkAhead;
-    area(rBrk, rOk, kNow, last, false);
-
-    // Yours behind, solid: what you did.
-    gctx.fillStyle = fillThr;
-    area(mThr, mOk, 0, kNow, true);
-    gctx.fillStyle = fillBrk;
-    area(mBrk, mOk, 0, kNow, false);
-    deficits(kNow);
-
-    // The reference's outline over the lot, on a dark keyline so it holds
-    // over a bright sky and a dark tunnel alike.
     gctx.lineJoin = "round";
-    gctx.lineWidth = 3;
-    gctx.strokeStyle = C_INK;
-    curve(rThr, rOk, 0, last, 0);
-    curve(rBrk, rOk, 0, last, 1);
-    gctx.lineWidth = 1.5;
-    gctx.strokeStyle = C_REF;
-    curve(rThr, rOk, 0, last, 0);
-    curve(rBrk, rOk, 0, last, 1);
+    gctx.lineCap = "round";
 
-    // Rules: the pedal baseline and the steering centre.
-    gctx.fillStyle = C_RULE;
-    gctx.fillRect(0, yBase - 0.5, cssW, 1);
-    gctx.fillRect(0, sMid - 0.5, cssW, 1);
+    // The reference: dotted white, the whole window.
+    gctx.setLineDash([0.5, 5 * k]);
+    gctx.lineWidth = 2.4 * k;
+    gctx.strokeStyle = C.ref;
+    dotted(rThr, 0, last, 0);
+    dotted(rBrk, 0, last, 0);
+    if (hasSpeed) dotted(rSpd, 0, last, 1);
+    gctx.setLineDash([]);
 
-    // Steering: the reference's across the window, yours behind the car.
-    gctx.lineWidth = 1.5;
-    gctx.strokeStyle = C_REF;
-    curve(rStr, rOk, 0, last, 2);
-    gctx.lineWidth = 2;
-    gctx.strokeStyle = C.text;
-    curve(mStr, mOk, 0, kNow, 2);
+    // Yours: solid, up to the car.
+    if (hasSpeed) {
+      gctx.fillStyle = gSpeed;
+      fillArea(mSpd, 0, kNow, 1, sBot);
+      gctx.lineWidth = 3 * k;
+      gctx.strokeStyle = C.cyan;
+      tracePath(mSpd, mOk, 0, kNow, 1);
+      gctx.stroke();
+    }
+    gctx.lineWidth = 3 * k;
+    gctx.strokeStyle = C.throttle;
+    tracePath(mThr, mOk, 0, kNow, 0);
+    gctx.stroke();
+    gctx.strokeStyle = C.brake;
+    tracePath(mBrk, mOk, 0, kNow, 0);
+    gctx.stroke();
 
-    drawTags(m0, nowM);
+    // The gap: red above zero (behind), green below (ahead), each clipped to
+    // its own side so one path colours itself.
+    gctx.save();
+    gctx.beginPath();
+    gctx.rect(xL, gZero - gAmp - 1, xR - xL, gAmp + 1);
+    gctx.clip();
+    gctx.fillStyle = gapLossFill;
+    fillArea(mGap, 0, kNow, 2, gZero);
+    gctx.lineWidth = 2 * k;
+    gctx.strokeStyle = C.loss;
+    tracePath(mGap, mOk, 0, kNow, 2);
+    gctx.stroke();
+    gctx.restore();
+    gctx.save();
+    gctx.beginPath();
+    gctx.rect(xL, gZero, xR - xL, gAmp + 1);
+    gctx.clip();
+    gctx.fillStyle = gapGainFill;
+    fillArea(mGap, 0, kNow, 2, gZero);
+    gctx.lineWidth = 2 * k;
+    gctx.strokeStyle = C.gain;
+    tracePath(mGap, mOk, 0, kNow, 2);
+    gctx.stroke();
+    gctx.restore();
+
     fadeEdge();
-    drawNow(nextBrake);
+    drawAxis(m0);
+    drawCursor(kNow, trail.lastGap);
 
     drawn.ver = paintVer;
     drawn.m = nowM;
     drawn.thr = trail.lastThr;
     drawn.brk = trail.lastBrk;
-    drawn.str = trail.lastStr;
+    drawn.spd = trail.lastSpd;
+    drawn.gap = trail.lastGap;
     return true;
   }
 
@@ -684,12 +836,11 @@
     GHOST.sync(ghost);
     ghostState = ghost || null;
 
-    if (headerMeta) {
-      var label = ghost && ghost.sourceLabel ? ghost.sourceLabel : "—";
-      if (label !== lastLabel) {
-        headerMeta.textContent = label;
-        lastLabel = label;
-      }
+    var label = ghost && ghost.sourceLabel ? ghost.sourceLabel : "";
+    if (label !== lastLabel) {
+      lastLabel = label;
+      if (headerMeta) headerMeta.textContent = label || "—";
+      if (refNameEl) refNameEl.textContent = refName(label);
     }
 
     var d = ghost && typeof ghost.atD === "number" ? ghost.atD : NaN;
@@ -698,7 +849,11 @@
       if (isFinite(lastUm) && um < lastUm - TRAIL_BACK_M) TR.resetTrail(trail);
       lastUm = um;
       var p = player.pedals;
-      if (p) TR.writeTrail(trail, um, +p.throttle || 0, +p.brake || 0, +p.steer || 0);
+      if (p) {
+        var kph = typeof player.speedKph === "number" && player.speedKph >= 0 ? player.speedKph : NaN;
+        var gap = ghost.active && typeof ghost.gapSec === "number" ? ghost.gapSec : NaN;
+        TR.writeTrail(trail, um, +p.throttle || 0, +p.brake || 0, +p.steer || 0, kph, gap);
+      }
       var t = POSE.stamp(poseBuf, frame.timestamp, performance.now());
       POSE.push(poseBuf, t, um, 0, 0, 0);
     }
@@ -710,28 +865,42 @@
   function init(root) {
     headerMeta = root.querySelector('[data-role="meta"]');
     var mount = root.querySelector('[data-role="mount"]');
-    mount.innerHTML = "";
-    var wrap = document.createElement("div");
-    wrap.className = "ttrace";
+    mount.innerHTML =
+      '<div class="ttele">' +
+      '<div class="ttele__top">' +
+      '<span class="tw-label ttele__title">Telemetry</span>' +
+      '<div class="ttele__legend">' +
+      '<span class="ttele__key"><i class="ttele__swatch ttele__swatch--you"></i>You</span>' +
+      '<span class="ttele__key"><i class="ttele__swatch ttele__swatch--ref"></i><b data-role="refname">Reference</b></span>' +
+      "</div></div></div>";
+    var wrap = mount.firstChild;
+    refNameEl = wrap.querySelector('[data-role="refname"]');
     canvas = document.createElement("canvas");
-    canvas.className = "ttrace__canvas";
+    canvas.className = "ttele__canvas";
     canvas.setAttribute("role", "img");
     canvas.setAttribute(
       "aria-label",
-      "Your throttle (up) and brake (down) over the last 250 metres, the reference lap's in violet outline; " +
-        "amber where you had less throttle, cyan where it braked harder than you. Ahead of the car line, " +
-        "the reference only, its braking zones in red with the metres to the next one. Steering underneath.",
+      "Throttle and brake, speed, and the time gap over the last 500 metres against the reference lap, " +
+        "which is drawn dotted and carries on 400 metres ahead of the car. Corners are shaded purple.",
     );
     wrap.appendChild(canvas);
-    mount.appendChild(wrap);
     gctx = canvas.getContext("2d");
     if (!TR || !POSE || !LAPS || !GHOST) {
-      console.error("[Apex] Trace needs training-trace.js, training-laps.js, training-ghost.js and ghost-pose.js loaded first");
+      console.error("[Apex] Telemetry needs training-trace.js, training-laps.js, training-ghost.js and ghost-pose.js loaded first");
       return;
     }
     var api = window.ApexOverlay;
     noteWork = api && typeof api.noteWidgetWork === "function" ? api.noteWidgetWork : null;
     readTokens();
+    var look = window.ApexAppearance;
+    if (look && typeof look.onSpeedUnit === "function") {
+      look.onSpeedUnit(function (u) {
+        unitMph = u === "mph";
+        retick();
+        paintVer++;
+        wake();
+      });
+    }
     sizeCanvas();
     watchSize(canvas);
     watchLayer();

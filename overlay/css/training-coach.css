@@ -1,3 +1,198 @@
-/* training-coach.css: the Coach card (trainingcoach) — its own file so the training widgets can be restyled independently.
-   Linked from training.html and widget.html after training.css. */
+/* training-coach.css: the Coach card (trainingcoach) — its own file so the
+   training widgets can be restyled independently. Linked from training.html
+   and widget.html after training.css.
 
+   Mockup (2026-10-08): a header with the Apex mark, "COACH" and the gap chip;
+   under it four readings side by side — the input trace, the pedal tubes,
+   speed and gear against the reference, the steering ring. */
+
+#widget-trainingcoach > .tw__body {
+  padding: 16px 20px 18px;
+}
+.tcoach__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+}
+.tcoach__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tcoach__brand img {
+  width: 26px;
+  height: 26px;
+}
+.tcoach__brand .tw-label {
+  color: var(--text-secondary);
+}
+.tcoach__grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 74px minmax(196px, auto) 92px;
+  gap: 16px;
+  align-items: center;
+  height: 150px;
+  margin-top: 12px;
+}
+.tcoach__trace {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+/* --- Pedal tubes: fill by transform, the reference as a white tick. */
+.tcoach__pedals {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  height: 150px;
+}
+.tcoach__pedal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.tcoach__pedal > span {
+  font: 600 15px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  min-width: 2ch;
+  text-align: center;
+}
+.tcoach__tube {
+  position: relative;
+  flex: 1;
+  width: 18px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.tcoach__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  border-radius: 9px;
+  transform: scaleY(0);
+  transform-origin: bottom;
+}
+.tcoach__pedal--brk .tcoach__fill {
+  background: linear-gradient(0deg, #d8304c, var(--pedal-brake));
+  box-shadow: 0 0 14px rgba(255, 84, 112, 0.6);
+}
+.tcoach__pedal--thr .tcoach__fill {
+  background: linear-gradient(0deg, #23a866, var(--pedal-throttle));
+  box-shadow: 0 0 12px rgba(53, 208, 127, 0.45);
+}
+.tcoach__tube > em {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tw-ref);
+  box-shadow: 0 0 0 1px rgba(8, 9, 16, 0.55);
+  opacity: 0;
+}
+
+/* --- Speeds. */
+.tcoach__speeds {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 4px;
+  min-width: 0;
+}
+.tcoach__sp {
+  display: grid;
+  grid-template-columns: 42px auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+.tcoach__sp i {
+  font: 600 12px/1 var(--tw-ui);
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tcoach__sp b {
+  font: 600 38px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tcoach__sp b small {
+  margin-left: 4px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.tcoach__gear {
+  justify-self: end;
+  align-self: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font: 600 22px/1 var(--tw-num);
+  color: var(--text-primary);
+}
+.tcoach__sp--ref b {
+  font-size: 30px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.tcoach__sp--ref .tcoach__gear {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.tcoach__note {
+  min-height: 15px;
+  font: 600 15px/1 var(--tw-num);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Steering ring. */
+.tcoach__ring {
+  display: block;
+  width: 92px;
+  height: 92px;
+}
+.tcoach__ringbg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 7;
+}
+.tcoach__arc {
+  fill: none;
+  stroke: var(--ac-cyan);
+  stroke-width: 7;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.55));
+}
+.tcoach__refdot {
+  fill: var(--text-primary);
+}
+.tcoach__deg {
+  text-anchor: middle;
+  fill: var(--text-primary);
+  font: 600 20px var(--tw-num);
+}
+.tcoach__steer {
+  text-anchor: middle;
+  fill: var(--text-muted);
+  font: 600 10px var(--tw-ui);
+  letter-spacing: 0.14em;
+}

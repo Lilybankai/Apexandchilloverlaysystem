@@ -1,116 +1,161 @@
-/* training-corner.css: Corner Analysis (trainingcorner) — its own file so the training widgets can be restyled independently.
-   Linked from training.html and widget.html after training.css. */
+/* training-corner.css: Corner Analysis (trainingcorner) — its own file so the
+   training widgets can be restyled independently. Linked from training.html
+   and widget.html after training.css.
 
-:is(.tcorner, .tlap__sec)[data-tone="gain"] { --tc: var(--pos-gain); }
-:is(.tcorner, .tlap__sec)[data-tone="loss"] { --tc: var(--pos-loss); }
-:is(.tcorner, .tlap__sec)[data-tone="level"] { --tc: var(--text-primary); }
-:is(.tcorner, .tlap__sec)[data-tone="none"] { --tc: var(--text-muted); }
+   The card is always about the LAST corner: name and time big, the corner
+   drawn as speed against distance (reference dotted, you solid in the
+   verdict's colour), one line of advice, and what is next. Its colour is
+   carried as --tc from data-tone on .tcan, so the number, your trace and the
+   name's edge never disagree. */
 
-/* --- Corner card. Two faces on one element: the verdict for four seconds
-   after a corner, the quiet "next" line the rest of the time. */
-.tcorner {
-  position: relative;
-  font-family: var(--font-display);
-  min-height: calc(44px * var(--fs-scale));
+.tcan { --tc: var(--text-muted); position: relative; display: flex; flex-direction: column; min-height: 318px; }
+.tcan[data-tone="gain"] { --tc: var(--pos-gain); }
+.tcan[data-tone="loss"] { --tc: var(--pos-loss); }
+.tcan[data-tone="level"] { --tc: var(--text-primary); }
+
+.tcan__top {
   display: flex;
+  justify-content: space-between;
   align-items: center;
 }
-.tcorner__card {
-  display: none;
-  position: relative;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 2px 2px 7px;
-}
-.tcorner[data-mode="verdict"] .tcorner__card {
+.tcan__last { letter-spacing: 0.08em; }
+
+.tcan__head {
   display: flex;
-  animation: tcorner-in 160ms ease-out;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
 }
-.tcorner[data-mode="verdict"] .tcorner__next {
-  display: none;
-}
-/* The corner's number on a plate with the verdict's colour down its edge:
-   found first, read second. */
-.tcorner__name {
-  flex: none;
-  min-width: 2.4em;
-  text-align: center;
-  padding: 3px 7px 2px;
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--tc);
-  background: var(--bg-panel-3);
-  color: var(--text-primary);
-  font-size: var(--fs-value);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.tcorner__body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.tcorner__delta {
-  color: var(--tc);
-  font-size: var(--fs-crit);
-  font-weight: 700;
+.tcan__who { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tcan__name {
+  font-size: 36px;
+  font-weight: 600;
   line-height: 1;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
 }
-.tcorner__notes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px 10px;
-  margin-top: 3px;
+.tcan__sub {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.03em;
   color: var(--text-secondary);
-  font-size: var(--fs-body);
+  white-space: nowrap;
+  min-height: 15px;
 }
-.tcorner__note:empty {
+.tcan__verdict { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.tcan__delta { font-size: 44px; }
+.tcan__dunit { font-size: 22px; margin-left: 2px; }
+.tcan__apex {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-height: 15px;
+}
+
+/* --- The corner, as speed against distance. */
+.tcan__plot { position: relative; margin-top: 12px; }
+.tcan__chart { display: block; width: 100%; height: 132px; overflow: visible; }
+.tcan__grid { stroke: var(--tw-grid); stroke-width: 1; }
+.tcan__slow { fill: rgba(255, 84, 112, 0.16); stroke: none; }
+.tcan__ref {
+  fill: none;
+  stroke: var(--tw-ref);
+  stroke-width: 2.4;
+  stroke-dasharray: 0.5 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.tcan__you {
+  fill: none;
+  stroke: var(--tc);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.tcan__apex {
+  stroke: rgba(139, 92, 246, 0.7);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+.tcan__axis {
+  fill: var(--text-muted);
+  font: 500 12px var(--tw-num);
+  letter-spacing: 0.04em;
+}
+.tcan__axis--apex {
+  fill: var(--ac-purple);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.tcan__chartnote {
   display: none;
-}
-/* How long the verdict has left: a hairline in its own colour, running down. */
-.tcorner__clock {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--tc);
-  transform-origin: left center;
-  transform: scaleX(0);
+  top: 46px;
+  text-align: center;
+  color: var(--text-muted);
+  font: 500 14px/1 var(--tw-ui);
 }
-/* Two identical runs, alternated by the widget, restart the bar for every
-   corner without forcing a layout. 4 s = VERDICT_MS in trainingcorner.js. */
-.tcorner__clock[data-run="1"] { animation: tcorner-clock-a 4s linear forwards; }
-.tcorner__clock[data-run="2"] { animation: tcorner-clock-b 4s linear forwards; }
-@keyframes tcorner-clock-a { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-@keyframes tcorner-clock-b { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-@keyframes tcorner-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
+.tcan[data-chart="none"] .tcan__chartnote,
+.tcan[data-chart="ref"] .tcan__chartnote { display: block; }
+.tcan[data-chart="ref"] .tcan__chartnote { top: auto; bottom: 30px; font-size: 13px; }
+
+/* --- The advice, in a cyan pill. */
+.tcan__tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.22);
+  color: var(--text-primary);
+  font: 500 16px/1.25 var(--tw-ui);
+  min-height: 42px;
+}
+.tcan__tiptext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcan__bulb {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--ac-cyan);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.tcorner__next {
+/* --- What is next. */
+.tcan__foot {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 12px;
+}
+.tcan__next {
   color: var(--text-secondary);
-  font-size: var(--fs-data);
-  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 500;
   white-space: nowrap;
 }
-.tcorner__label {
-  color: var(--text-muted);
-  font-size: var(--fs-label);
-  letter-spacing: 0.08em;
-}
-.tcorner[data-mode="none"] .tcorner__label {
-  display: none;
-}
-.tcorner[data-mode="none"] .tcorner__next {
-  color: var(--text-muted);
-  font-size: var(--fs-body);
-}
 
+/* --- Nothing to analyse yet: one quiet line; the card keeps its size. */
+.tcan__note {
+  display: none;
+  position: absolute;
+  inset: 40px 0 34px;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.tcan:is([data-mode="none"], [data-mode="wait"]) .tcan__note { display: flex; }
+.tcan:is([data-mode="none"], [data-mode="wait"]) :is(.tcan__head, .tcan__plot, .tcan__tip) { visibility: hidden; }
+.tcan[data-mode="none"] .tcan__foot { visibility: hidden; }

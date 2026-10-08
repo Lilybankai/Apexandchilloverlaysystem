@@ -146,7 +146,7 @@ function frame() {
       motion: { heading, pitch: 0, roll: 0, yawRate: 0, slipAngle: 0, speedMs: kph / 3.6, latG: 0, lonG: 0, vertG: 1 },
       ...(g ? { ghost: g } : {}),
     },
-    standings: [{ slotId: 1, position: 1, isPlayer: true, lapFraction: d, sector: d < 0.33 ? 1 : d < 0.66 ? 2 : 0 }],
+    standings: [{ slotId: 1, position: 1, isPlayer: true, lapFraction: d, sector: d < 0.33 ? 1 : d < 0.66 ? 2 : 3 }],
     relative: [],
     trackMap: { key: trackmap.key, revision: trackmap.revision, ready: true, progress: 1, cars: [{ slotId: 1, isPlayer: true, inPit: false, x, y: 0, z, lapFraction: d }] },
   };

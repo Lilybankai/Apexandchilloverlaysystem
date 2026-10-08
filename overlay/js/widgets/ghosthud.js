@@ -2,11 +2,15 @@
  * ghosthud.js — Ghost HUD: a fast lap's racing line, on the road ahead of you.
  * -----------------------------------------------------------------------------
  * The road in front of the car, drawn from the learned circuit so it bends the
- * way the circuit bends, with a chosen lap's racing line painted on it — green
- * where that lap was on the power, amber off it, red under braking. Red boards
- * lie across the road where that lap started braking, pins stand where its line
- * turned hardest, a gate stands where it is on the clock right now, and the
- * signed seconds sit in the corner.
+ * way the circuit bends, with a chosen lap's racing line painted on it — white
+ * with a cyan glow, tinted red where that lap was braking. Glowing red boards
+ * lie across the road where it started braking, purple pins (C1..Cn) stand
+ * where its line turned hardest, a magenta arrow is where it is on the clock
+ * right now, a green arrow is you, and the signed seconds sit in the corner.
+ *
+ * The training look (2026-10-08): no card. A soft dark vignette sits behind
+ * the road and the whole picture fades out at every edge, so the widget has
+ * no box to see against the sky or the cockpit.
  *
  * ## What v1 got wrong
  * The first version drew a fixed trapezoid with a bar whose height encoded the
@@ -97,12 +101,12 @@
   var SMOOTH_SIGMA_M = 1.5;
 
   /** Ribbon width in METRES, so it narrows with distance like paint would… */
-  var GHOST_W = 0.36;
+  var GHOST_W = 0.2;
   /** …but never below this in PIXELS, or the far line breaks into dashes. */
-  var GHOST_MIN_PX = 1.6;
-  /** Extra half-width of the dark keyline and the faint glow, pixels. */
-  var KEYLINE_PX = 1.4;
-  var GLOW_PX = 3.2;
+  var GHOST_MIN_PX = 1.4;
+  /** Extra half-width of the dark keyline, and the glow's blur radius / 2, pixels. */
+  var KEYLINE_PX = 1.2;
+  var GLOW_PX = 5;
   /**
    * Samples (metres) either side of a pedal change that the colour blends
    * over. A hard step from red to amber reads as a seam in the paint, not as
@@ -127,17 +131,16 @@
   /** An apex pin nearer than this is under the car and says nothing. */
   var PIN_MIN_AHEAD_M = 3;
 
-  /** The ghost's gate: half its width and its height, metres. */
-  var GATE_HALF_M = 1.0;
-  var GATE_TOP_M = 1.5;
   /**
-   * The gate fades out as the ghost closes in, fully drawn at GATE_FULL_M and
+   * The ghost is a magenta arrow on its own line. It fades out as it closes in, fully drawn at GATE_FULL_M and
    * gone by GATE_GONE_M. Closer than that it stands on top of your own
    * chevron and hides the one thing you need to see — and the gap readout
    * already says "level" more precisely than a marker under the car could.
    */
   var GATE_FULL_M = 12;
   var GATE_GONE_M = 6;
+  /** The ghost arrow's least on-screen length, px — found however far ahead. */
+  var GHOST_ARROW_MIN_PX = 12;
 
   /* ------------------------------- locating ------------------------------- */
 
@@ -181,16 +184,31 @@
     muted: "#6b7387",
     cyan: "#22d3ee",
     purple: "#8b5cf6",
+    magenta: "#ec4899",
     fontDisplay: '"Bahnschrift", "Arial Narrow", "Segoe UI Semibold", sans-serif',
   };
 
-  /** Fixed paint, not themed: the road and the inks that keep marks legible on it. */
-  var C_EDGE = "rgba(225,232,246,0.62)";
-  var C_TICK = "rgba(174,182,200,0.16)";
-  var C_INK = "rgba(4,6,12,0.70)";
+  /**
+   * Fixed paint, not themed — the training look (training.css): the road is a
+   * faint white wash over a dark vignette, its edges thin white, the line
+   * white with a cyan glow, the ghost magenta, you green.
+   */
+  var C_EDGE = "rgba(255,255,255,0.32)";
+  var C_TICK = "rgba(255,255,255,0.07)";
+  var C_INK = "rgba(4,6,12,0.55)";
   var C_INK_STRONG = "rgba(4,6,12,0.85)";
-  var C_PLATE = "rgba(8,10,16,0.78)";
-  var C_PLATE_EDGE = "rgba(49,56,80,0.9)";
+  var C_PLATE = "rgba(10,12,22,0.88)";
+  var C_LINE = "#f4f6fb";
+  /** The braking stretch of the line keeps a hint of red; everything else is white. */
+  var C_LINE_BRAKE = "#ffc2cc";
+  var C_LINE_GLOW = "rgba(34,211,238,0.85)";
+  var C_PIN_LABEL = "#c4b5fd";
+  var C_GHOST_LABEL = "#f9a8d4";
+  var C_BRAKE_LABEL = "#ff8095";
+  var C_BOARD_GLOW = "rgba(255,61,90,0.9)";
+  var F_UI = '"Segoe UI", system-ui, sans-serif';
+  /** The vignette's darkness at its centre, before --panel-alpha. */
+  var VIGNETTE_ALPHA = 0.78;
 
   /** Derived from the tokens in `readTokens`; indexed by `GEO.pedalKind`. */
   var kindColour = ["", "", ""];
@@ -199,6 +217,7 @@
   var brakeEdge = "";
   var pinMast = "";
   var gatePost = "";
+  var carGlow = "";
 
   /* -------------------------------- state --------------------------------- */
 
@@ -254,6 +273,8 @@
   var apexM = null;
   var apexX = null;
   var apexZ = null;
+  /** Each pin's corner name, "C1".."Cn" — strings made once per lap, not per paint. */
+  var apexName = null;
 
   /** The newest frame's ghost block, and its server-side road position hints. */
   var ghostState = null;
@@ -299,6 +320,7 @@
   var RS = { x: 0, z: 0, y: 0, tx: 0, tz: 1 };
   var RS2 = { x: 0, z: 0, y: 0, tx: 0, tz: 1 };
   var PA = { x: 0, z: 0, nx: 0, nz: 0, i: 0 };
+  var PA2 = { x: 0, z: 0, nx: 0, nz: 0, i: 0 };
   var Q = { x: 0, y: 0, z: 0 };
   var Q1 = { x: 0, y: 0, z: 0 };
   var Q2 = { x: 0, y: 0, z: 0 };
@@ -338,26 +360,46 @@
    * steady stream of garbage from the render loop.
    */
   var gBlend = null; // [from*3 + to] for the core colour
-  var gBlendGlow = null; // the same for the glow
   var gFog = null;
-  var gGate = null;
-  var gBrand = null;
   /** The asphalt: a real-space gradient, rebuilt only when size or alpha moves. */
   var gRoad = null;
   var gRoadVer = -1;
+  /**
+   * The vignette: the widget has no card, so this soft dark pool behind the
+   * road is what keeps it legible over a bright sky. A unit radial gradient,
+   * squashed to an ellipse by the transform at fill time; rebuilt only when
+   * the size or the operator's alpha moves.
+   */
+  var gVignette = null;
+  var gVignetteVer = -1;
+
+  function drawVignette() {
+    if (!gVignette || gVignetteVer !== paintVer) {
+      var a = VIGNETTE_ALPHA * panelAlpha;
+      gVignette = gctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gVignette.addColorStop(0, "rgba(10,12,22," + a + ")");
+      gVignette.addColorStop(0.55, "rgba(10,12,22," + a * 0.72 + ")");
+      gVignette.addColorStop(0.8, "rgba(10,12,22," + a * 0.3 + ")");
+      gVignette.addColorStop(1, "rgba(10,12,22,0)");
+      gVignetteVer = paintVer;
+    }
+    // Gone by every edge of the canvas, so the widget has no box to see.
+    var rx = cssW * 0.5;
+    var ry = cssH * 0.5;
+    gctx.setTransform(dpr * rx, 0, 0, dpr * ry, dpr * cssW * 0.5, dpr * cssH * 0.52);
+    gctx.fillStyle = gVignette;
+    gctx.fillRect(-1, -1, 2, 2);
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 
   function buildGradients() {
     gBlend = [];
-    gBlendGlow = [];
     for (var a = 0; a < 3; a++) {
       for (var b = 0; b < 3; b++) {
         gBlend.push(unitGradient(kindColour[a], kindColour[b]));
-        gBlendGlow.push(unitGradient(kindGlow[a], kindGlow[b]));
       }
     }
     gFog = unitGradient("rgba(0,0,0,0)", "rgba(0,0,0,1)");
-    gGate = unitGradient(withAlpha(C.purple, 0.55, "#8b5cf6"), withAlpha(C.purple, 0, "#8b5cf6"));
-    gBrand = unitGradient(C.cyan, C.purple);
   }
 
   function unitGradient(from, to) {
@@ -404,20 +446,25 @@
       C.muted = pick("--text-muted", C.muted);
       C.cyan = pick("--ac-cyan", C.cyan);
       C.purple = pick("--ac-purple", C.purple);
-      C.fontDisplay = pick("--font-display", C.fontDisplay);
+      C.magenta = pick("--ac-magenta", C.magenta);
+      // Bahnschrift for every number, as on the training cards.
+      C.fontDisplay = pick("--tw-num", pick("--font-display", C.fontDisplay));
     } catch (e) {
       /* no computed style here; the fallbacks stand */
     }
-    kindColour[GEO.PEDAL_THROTTLE] = C.throttle;
-    kindColour[GEO.PEDAL_COAST] = C.coast;
-    kindColour[GEO.PEDAL_BRAKE] = C.brake;
-    kindGlow[GEO.PEDAL_THROTTLE] = withAlpha(C.throttle, 0.18, "#35d07f");
-    kindGlow[GEO.PEDAL_COAST] = withAlpha(C.coast, 0.18, "#ffb020");
-    kindGlow[GEO.PEDAL_BRAKE] = withAlpha(C.brake, 0.18, "#ff5470");
-    brakeFill = withAlpha(C.brake, 0.34, "#ff5470");
-    brakeEdge = withAlpha(C.brake, 0.95, "#ff5470");
-    pinMast = withAlpha(C.cyan, 0.75, "#22d3ee");
-    gatePost = withAlpha(C.purple, 0.55, "#8b5cf6");
+    // The reference line is white (the training look: the reference is
+    // always white), its braking stretch tinted so where it brakes still reads.
+    kindColour[GEO.PEDAL_THROTTLE] = C_LINE;
+    kindColour[GEO.PEDAL_COAST] = C_LINE;
+    kindColour[GEO.PEDAL_BRAKE] = C_LINE_BRAKE;
+    kindGlow[GEO.PEDAL_THROTTLE] = C_LINE_GLOW;
+    kindGlow[GEO.PEDAL_COAST] = C_LINE_GLOW;
+    kindGlow[GEO.PEDAL_BRAKE] = withAlpha(C.brake, 0.8, "#ff5470");
+    brakeFill = withAlpha(C.brake, 0.3, "#ff5470");
+    brakeEdge = withAlpha(C.brake, 1, "#ff5470");
+    pinMast = withAlpha(C.purple, 0.8, "#8b5cf6");
+    gatePost = withAlpha(C.magenta, 0.9, "#ec4899");
+    carGlow = withAlpha(C.gain, 0.85, "#35d07f");
   }
 
   /** A `#rgb`/`#rrggbb` token at an alpha. A token in any other form uses `fallbackHex`. */
@@ -548,16 +595,21 @@
     var am = [];
     var ax = [];
     var az = [];
+    var an = [];
     for (var c = 0; c < corners.length; c++) {
       var k = corners[c];
       if (!k || !isFinite(k.apexD) || !isFinite(k.apexX) || !isFinite(k.apexZ)) continue;
       am.push(wrapLap(k.apexD * lapM));
       ax.push(k.apexX);
       az.push(k.apexZ);
+      // "C5": the reference's own corner order — the same numbering the
+      // Corner card and Lap strip use (training-laps.js cornerName).
+      an.push("C" + (c + 1));
     }
     apexM = Float64Array.from(am);
     apexX = Float64Array.from(ax);
     apexZ = Float64Array.from(az);
+    apexName = an;
   }
 
   /* -------------------------------- sizing -------------------------------- */
@@ -565,7 +617,10 @@
   var fontValue = "";
   var fontLabel = "";
   var fontNote = "";
+  /** Marks on the road: apex names, the ghost's gap. Bahnschrift. */
+  var fontMark = "";
   var valuePx = 18;
+  var labelPx = 11;
 
   function sizeCanvas() {
     if (!canvas) return;
@@ -586,10 +641,14 @@
     if (extra > 0) canvas.style.height = cssH + extra + "px";
     canvas.width = bw;
     canvas.height = bh;
-    valuePx = Math.max(18, Math.round(cssW * 0.05));
+    valuePx = Math.max(16, Math.round(cssW * 0.034));
     fontValue = "600 " + valuePx + "px " + C.fontDisplay;
-    fontLabel = "600 " + Math.max(9, Math.round(valuePx * 0.42)) + "px " + C.fontDisplay;
-    fontNote = "600 " + Math.max(11, Math.round(cssW * 0.021)) + "px " + C.fontDisplay;
+    // Labels in the training cards' small caps: Segoe UI 600, tracked out.
+    labelPx = Math.max(10, Math.round(cssW * 0.0185));
+    fontLabel = "600 " + labelPx + "px " + F_UI;
+    fontNote = "600 " + Math.max(11, Math.round(cssW * 0.02)) + "px " + F_UI;
+    fontMark = "600 " + Math.max(11, Math.round(cssW * 0.022)) + "px " + C.fontDisplay;
+    gVignette = null;
     paintVer++;
     wake();
   }
@@ -767,11 +826,14 @@
     topY = Math.max(horizonY, top);
 
     if (gRoadVer !== paintVer) {
-      // Lighter near the car, falling off toward the horizon, and through
-      // --panel-alpha like every other widget surface.
+      // Dark enough to hold the line on a bright frame, with a faint white
+      // wash that is lighter near the car and dies toward the horizon — the
+      // road reads as a surface, not a hole. Through --panel-alpha like every
+      // other widget surface.
       gRoad = gctx.createLinearGradient(0, cssH, 0, horizonY);
-      gRoad.addColorStop(0, "rgba(34,39,54," + 0.96 * panelAlpha + ")");
-      gRoad.addColorStop(1, "rgba(18,21,32," + 0.9 * panelAlpha + ")");
+      gRoad.addColorStop(0, "rgba(44,49,66," + 0.82 * panelAlpha + ")");
+      gRoad.addColorStop(0.55, "rgba(28,32,46," + 0.72 * panelAlpha + ")");
+      gRoad.addColorStop(1, "rgba(18,21,32," + 0.6 * panelAlpha + ")");
       gRoadVer = paintVer;
     }
     gctx.beginPath();
@@ -851,13 +913,20 @@
       quad(Q1, Q2, Q3, Q4);
       gctx.fillStyle = brakeFill;
       gctx.fill();
-      // The near edge is the line itself: drawn hard, like a painted board.
+      // The near edge is the line itself: drawn hard, like a painted board,
+      // and lit — a red bar with a glow, the thing the eye is sent to. The
+      // glow is a canvas shadow: a handful of boards in view, never more.
+      gctx.lineCap = "round";
       gctx.strokeStyle = brakeEdge;
-      gctx.lineWidth = 1.5;
+      gctx.lineWidth = Math.max(2, Math.min(5, Math.abs(Q1.y - Q4.y) * 1.4));
+      gctx.shadowColor = C_BOARD_GLOW;
+      gctx.shadowBlur = 12;
       gctx.beginPath();
       gctx.moveTo(Q1.x, Q1.y);
       gctx.lineTo(Q2.x, Q2.y);
       gctx.stroke();
+      gctx.shadowBlur = 0;
+      gctx.shadowColor = "transparent";
     }
     return next;
   }
@@ -995,19 +1064,27 @@
       trLo[j] = Math.max(s, lo);
       trHi[j] = Math.min(e, hi);
     }
-    paintPieces(s, e, nt, GLOW_PX, kindGlow, gBlendGlow, 0);
     // The opaque core overlaps its neighbours by a vertex, so no seam of the
-    // keyline shows through between pieces.
-    paintPieces(s, e, nt, 0, kindColour, gBlend, 1);
+    // keyline shows through between pieces. Its glow is a real blur (a canvas
+    // shadow in the stretch's own glow colour — cyan, red where it brakes),
+    // not a widened band: a band reads as an outline, not light.
+    gctx.shadowBlur = GLOW_PX * 2;
+    paintPieces(s, e, nt, 0, kindColour, gBlend, 1, kindGlow);
+    gctx.shadowBlur = 0;
+    gctx.shadowColor = "transparent";
   }
 
-  /** Paint a span as solid pieces between blends, then the blends. */
-  function paintPieces(s, e, nt, widen, solid, blend, overlap) {
+  /**
+   * Paint a span as solid pieces between blends, then the blends. With
+   * `glow`, each piece's shadow takes its pedal state's glow colour.
+   */
+  function paintPieces(s, e, nt, widen, solid, blend, overlap, glow) {
     var from = s;
     for (var j = 0; j <= nt; j++) {
       var to = j < nt ? trLo[j] : e;
       if (to > from) {
         stripPath(Math.max(s, from - overlap), Math.min(e, to + overlap), widen);
+        if (glow) gctx.shadowColor = glow[rbKind[from]];
         gctx.fillStyle = solid[rbKind[from]];
         gctx.fill();
       }
@@ -1019,6 +1096,7 @@
       var ka = rbKind[trAt[b] - 1];
       var kb = rbKind[trAt[b]];
       stripPath(Math.max(s, lo - overlap), Math.min(e, hi + overlap), widen);
+      if (glow) gctx.shadowColor = glow[kb];
       fillAlong(blend[ka * 3 + kb], rbX[lo], rbY[lo], rbX[hi], rbY[hi], solid[kb]);
     }
   }
@@ -1036,25 +1114,42 @@
       if (!toScreen(apexX[i], apexZ[i], e, Q1) || !toScreen(apexX[i], apexZ[i], e + 1.1, Q2)) continue;
       var h = Q1.y - Q2.y;
       if (h < 3) continue;
-      var r = Math.max(2.2, Math.min(5, h * 0.22));
+      // Over a crest a far pin can stand up into the title and chips; there
+      // it says less than the words it would cover.
+      if (Q2.y < CHIP_INSET + valuePx * 2) continue;
+      // Full strength within 90 m, dimming to a third at the end of the view.
+      gctx.globalAlpha = ahead < 90 ? 1 : 1 - (0.65 * (ahead - 90)) / (VIEW_AHEAD_M - 90);
+      var r = Math.max(3, Math.min(6.5, h * 0.26));
       gctx.strokeStyle = pinMast;
       gctx.lineWidth = 1.25;
       gctx.beginPath();
       gctx.moveTo(Q1.x, Q1.y);
       gctx.lineTo(Q2.x, Q2.y + r);
       gctx.stroke();
+      // A purple dot in a white ring, on a soft purple halo.
+      gctx.fillStyle = withAlpha(C.purple, 0.25, "#8b5cf6");
       gctx.beginPath();
-      gctx.moveTo(Q2.x, Q2.y - r);
-      gctx.lineTo(Q2.x + r, Q2.y);
-      gctx.lineTo(Q2.x, Q2.y + r);
-      gctx.lineTo(Q2.x - r, Q2.y);
-      gctx.closePath();
-      gctx.fillStyle = C.cyan;
-      gctx.strokeStyle = C_INK_STRONG;
-      gctx.lineWidth = 1;
+      gctx.arc(Q2.x, Q2.y, r * 2, 0, Math.PI * 2);
       gctx.fill();
+      gctx.beginPath();
+      gctx.arc(Q2.x, Q2.y, r, 0, Math.PI * 2);
+      gctx.fillStyle = C.purple;
+      gctx.fill();
+      gctx.strokeStyle = C.text;
+      gctx.lineWidth = Math.max(1.25, r * 0.36);
       gctx.stroke();
+      // Its name, beside it — only while it is near enough to be worth reading.
+      if (apexName && ahead < VIEW_AHEAD_M * 0.75) {
+        gctx.font = fontMark;
+        gctx.textAlign = "left";
+        gctx.textBaseline = "middle";
+        gctx.fillStyle = C_INK_STRONG;
+        gctx.fillText(apexName[i], Q2.x + r * 2.2 + 1, Q2.y + 1);
+        gctx.fillStyle = C_PIN_LABEL;
+        gctx.fillText(apexName[i], Q2.x + r * 2.2, Q2.y);
+      }
     }
+    gctx.globalAlpha = 1;
   }
 
   /**
@@ -1069,55 +1164,90 @@
    * @returns {boolean} Whether it was drawn.
    */
   function drawGate(at, gapM) {
+    ghostMark.on = false;
     if (!(gapM > GATE_GONE_M)) return false;
     var fade = Math.min(1, (gapM - GATE_GONE_M) / (GATE_FULL_M - GATE_GONE_M));
     var gm = at + gapM;
     GEO.preparedAt(prep, wrapLap(gm) / lapM, PA);
+    var gx = PA.x;
+    var gz = PA.z;
+    // Its direction along its own line, from a metre and a half further on.
+    GEO.preparedAt(prep, wrapLap(gm + 1.5) / lapM, PA2);
+    var tx = PA2.x - gx;
+    var tz = PA2.z - gz;
+    var tl = Math.hypot(tx, tz);
+    if (!(tl > 1e-3)) return false;
+    tx /= tl;
+    tz /= tl;
     var e = GEO.roadElevationAt(shape, gm);
-    var lx = PA.x + PA.nx * GATE_HALF_M;
-    var lz = PA.z + PA.nz * GATE_HALF_M;
-    var rx = PA.x - PA.nx * GATE_HALF_M;
-    var rz = PA.z - PA.nz * GATE_HALF_M;
-    if (!toScreen(lx, lz, e, Q1) || !toScreen(rx, rz, e, Q2)) return false;
-    if (!toScreen(rx, rz, e + GATE_TOP_M, Q3) || !toScreen(lx, lz, e + GATE_TOP_M, Q4)) return false;
-
+    // Life size where it is close; never smaller than GHOST_ARROW_MIN_PX tall
+    // on screen, or far up the road it shrinks to a speck.
+    var k = 1.15;
+    if (toScreen(gx, gz, e, Q1) && toScreen(gx + tx * 2.6 * k, gz + tz * 2.6 * k, e, Q2)) {
+      var len = Math.hypot(Q2.x - Q1.x, Q2.y - Q1.y);
+      if (len > 0.1 && len < GHOST_ARROW_MIN_PX) k *= Math.min(4, GHOST_ARROW_MIN_PX / len);
+    }
     gctx.globalAlpha = fade;
-    quad(Q1, Q2, Q3, Q4);
-    fillAlong(gGate, (Q1.x + Q2.x) / 2, (Q1.y + Q2.y) / 2, (Q3.x + Q4.x) / 2, (Q3.y + Q4.y) / 2, gatePost);
-
-    gctx.lineCap = "round";
-    gctx.strokeStyle = C_INK;
-    gctx.lineWidth = 4.5;
-    gctx.beginPath();
-    gctx.moveTo(Q1.x, Q1.y);
-    gctx.lineTo(Q2.x, Q2.y);
-    gctx.stroke();
-    // The base bar as a thin filled band rather than a stroke, so the brand
-    // gradient can be laid along it (a transformed stroke would scale its width).
-    var dx = Q2.x - Q1.x;
-    var dy = Q2.y - Q1.y;
-    var dl = Math.hypot(dx, dy) || 1;
-    var px = (-dy / dl) * 1.25;
-    var py = (dx / dl) * 1.25;
-    gctx.beginPath();
-    gctx.moveTo(Q1.x + px, Q1.y + py);
-    gctx.lineTo(Q2.x + px, Q2.y + py);
-    gctx.lineTo(Q2.x - px, Q2.y - py);
-    gctx.lineTo(Q1.x - px, Q1.y - py);
-    gctx.closePath();
-    fillAlong(gBrand, Q1.x, Q1.y, Q2.x, Q2.y, C.cyan);
-
-    // Posts, faint: body without a frame.
-    gctx.strokeStyle = gatePost;
-    gctx.lineWidth = 1.25;
-    gctx.beginPath();
-    gctx.moveTo(Q1.x, Q1.y);
-    gctx.lineTo(Q4.x, Q4.y);
-    gctx.moveTo(Q2.x, Q2.y);
-    gctx.lineTo(Q3.x, Q3.y);
-    gctx.stroke();
+    var drawnOk = drawChevron(gx, gz, tx, tz, e + 0.06, k, C.magenta, gatePost, "#fbcfe8");
     gctx.globalAlpha = 1;
+    if (!drawnOk) return false;
+    // Where its gap goes: beside the arrow, written after the fade so it
+    // never fades with the road.
+    ghostMark.on = true;
+    ghostMark.x = chevLeftX;
+    ghostMark.y = chevMidY;
+    ghostMark.alpha = fade;
     return true;
+  }
+
+  /** The ghost arrow's last screen position, for its gap label. */
+  var ghostMark = { on: false, x: 0, y: 0, alpha: 1 };
+  /** Set by drawChevron: the arrow's left extreme and vertical middle on screen. */
+  var chevLeftX = 0;
+  var chevMidY = 0;
+
+  /**
+   * An arrow lying on the road at (px, pz) pointing along unit (s, c) — `s`
+   * the world-x and `c` the world-z component of forward. Filled `fill`, with
+   * a soft glow of `glow` and a fine `edge` outline.
+   */
+  function drawChevron(px, pz, s, c, e, size, fill, glow, edge) {
+    var k = size || 1;
+    var ok =
+      toScreen(px + s * 2.6 * k, pz + c * 2.6 * k, e, Q1) && // tip
+      toScreen(px + (c * 0.85 - s * 0.6) * k, pz + (-s * 0.85 - c * 0.6) * k, e, Q2) && // right
+      toScreen(px + s * 0.3 * k, pz + c * 0.3 * k, e, Q3) && // notch
+      toScreen(px + (-c * 0.85 - s * 0.6) * k, pz + (s * 0.85 - c * 0.6) * k, e, Q4); // left
+    if (!ok) return false;
+    quad(Q1, Q2, Q3, Q4);
+    gctx.lineJoin = "round";
+    gctx.shadowColor = glow;
+    gctx.shadowBlur = 14;
+    gctx.fillStyle = fill;
+    gctx.fill();
+    gctx.shadowBlur = 0;
+    gctx.shadowColor = "transparent";
+    gctx.strokeStyle = edge;
+    gctx.lineWidth = 1.25;
+    gctx.stroke();
+    chevLeftX = Math.min(Q1.x, Q2.x, Q3.x, Q4.x);
+    chevMidY = (Math.min(Q1.y, Q2.y, Q4.y) + Math.max(Q1.y, Q2.y, Q4.y)) / 2;
+    return true;
+  }
+
+  /** The ghost's gap beside its arrow: "+0.42", in light magenta. */
+  function drawGhostGap() {
+    if (!ghostMark.on || !ghostState || !ghostState.active) return;
+    if (chipGap.value === "") return;
+    gctx.globalAlpha = ghostMark.alpha;
+    gctx.font = fontMark;
+    gctx.textAlign = "right";
+    gctx.textBaseline = "middle";
+    gctx.fillStyle = C_INK_STRONG;
+    gctx.fillText(chipGap.value, ghostMark.x - 7, ghostMark.y + 1);
+    gctx.fillStyle = C_GHOST_LABEL;
+    gctx.fillText(chipGap.value, ghostMark.x - 8, ghostMark.y);
+    gctx.globalAlpha = 1;
   }
 
   /** Fade everything drawn so far into the horizon. One composite op. */
@@ -1126,27 +1256,33 @@
     gctx.rect(0, 0, cssW, cssH);
     gctx.globalCompositeOperation = "destination-in";
     fillAlong(gFog, 0, topY, 0, topY + cssH * 0.14, "#000");
+    // …and out at the foot too: the widget has no card, so the road must not
+    // end on the canvas's bottom edge as a hard cut.
+    gctx.beginPath();
+    gctx.rect(0, 0, cssW, cssH);
+    fillAlong(gFog, 0, cssH, 0, cssH * (1 - BOTTOM_FADE), "#000");
+    // …and at the sides, where a wide road runs off the canvas. Each over the
+    // WHOLE canvas: destination-in clears everything outside the filled path,
+    // and the gradient pads to opaque past its end.
+    var side = cssW * SIDE_FADE;
+    gctx.beginPath();
+    gctx.rect(0, 0, cssW, cssH);
+    fillAlong(gFog, 0, 0, side, 0, "#000");
+    gctx.beginPath();
+    gctx.rect(0, 0, cssW, cssH);
+    fillAlong(gFog, cssW, 0, cssW - side, 0, "#000");
     gctx.globalCompositeOperation = "source-over";
   }
 
-  /** You: a brand-gradient chevron lying on the road at the car, along its heading. */
+  /** The shares of the height and width the road fades out over at the bottom and sides. */
+  var BOTTOM_FADE = 0.12;
+  var SIDE_FADE = 0.08;
+
+  /** You: a green arrow lying on the road at the car, along its heading, glowing. */
   function drawCar(e) {
     var h = (pose.h * Math.PI) / 180;
-    var c = Math.cos(h);
-    var s = Math.sin(h);
-    // Car-local (lat right, lon ahead) to world: x = px + c·lat + s·lon, z = pz − s·lat + c·lon.
-    var ok =
-      toScreen(pose.x + s * 2.6, pose.z + c * 2.6, e + 0.05, Q1) && // tip
-      toScreen(pose.x + c * 0.85 - s * 0.6, pose.z - s * 0.85 - c * 0.6, e + 0.05, Q2) && // right
-      toScreen(pose.x + s * 0.3, pose.z + c * 0.3, e + 0.05, Q3) && // notch
-      toScreen(pose.x - c * 0.85 - s * 0.6, pose.z + s * 0.85 - c * 0.6, e + 0.05, Q4); // left
-    if (!ok) return;
-    quad(Q1, Q2, Q3, Q4);
-    gctx.strokeStyle = C_INK_STRONG;
-    gctx.lineWidth = 2;
-    gctx.lineJoin = "round";
-    gctx.stroke();
-    fillAlong(gBrand, Q4.x, Q4.y, Q2.x, Q2.y, C.cyan);
+    // Car-local (lat right, lon ahead) to world: forward is (sin h, cos h).
+    drawChevron(pose.x, pose.z, Math.sin(h), Math.cos(h), e + 0.05, 1, C.gain, carGlow, C_INK_STRONG);
   }
 
   /* --------------------------------- chips --------------------------------- */
@@ -1156,12 +1292,16 @@
    * only when it changes — `measureText` returns a fresh object every call.
    */
   function makeChip() {
-    return { label: "", value: "", key: NaN, colour: "", valueColour: "", lw: -1, vw: -1, ver: -1 };
+    return { label: "", value: "", key: NaN, tint: "", labelColour: "", valueColour: "", lw: -1, vw: -1, ver: -1 };
   }
   var chipGap = makeChip();
   var chipCue = makeChip();
 
-  function setChip(ch, label, value, colour, valueColour) {
+  /**
+   * @param {string} tint - "r,g,b" of the pill's tint and edge, as `.tw-chip`
+   *   does for loss/gain; "" for a neutral pill.
+   */
+  function setChip(ch, label, value, tint, labelColour, valueColour) {
     if (label !== ch.label) {
       ch.label = label;
       ch.lw = -1;
@@ -1170,45 +1310,73 @@
       ch.value = value;
       ch.vw = -1;
     }
-    ch.colour = colour;
-    ch.valueColour = valueColour || colour;
+    ch.tint = tint;
+    ch.labelColour = labelColour;
+    ch.valueColour = valueColour;
   }
 
+  /** Small caps, tracked out — the canvas has letterSpacing in Chromium 99+. */
+  function setTracking(px) {
+    if ("letterSpacing" in gctx) gctx.letterSpacing = px + "px";
+  }
+
+  /**
+   * A readout pill — the training cards' `.tw-chip`: a dark plate (it has to
+   * hold over the game, not over a card), the tone's tint and edge on top,
+   * a small-caps label and the value in Bahnschrift.
+   */
   function drawChip(ch, x, y, alignRight) {
     if (ch.ver !== paintVer) {
       ch.lw = ch.vw = -1;
       ch.ver = paintVer;
     }
+    var track = Math.max(1, Math.round(labelPx * 0.16));
     if (ch.lw < 0) {
       gctx.font = fontLabel;
-      ch.lw = ch.label ? gctx.measureText(ch.label).width + 8 : 0;
+      setTracking(track);
+      ch.lw = ch.label ? gctx.measureText(ch.label).width + Math.round(labelPx * 0.7) : 0;
+      setTracking(0);
     }
     if (ch.vw < 0) {
       gctx.font = fontValue;
       ch.vw = gctx.measureText(ch.value).width;
     }
-    var padX = 10;
-    var w = padX * 2 + ch.lw + ch.vw + 3;
-    var h = valuePx + 12;
+    var padX = Math.round(valuePx * 0.55);
+    var w = padX * 2 + ch.lw + ch.vw;
+    var h = Math.round(valuePx * 1.75);
     var left = alignRight ? x - w : x;
-    roundRect(left, y, w, h, 6);
+    var r = Math.round(h * 0.3);
+    roundRect(left, y, w, h, r);
     gctx.fillStyle = C_PLATE;
     gctx.fill();
-    gctx.strokeStyle = C_PLATE_EDGE;
+    if (ch.tint) {
+      gctx.fillStyle = "rgba(" + ch.tint + ",0.15)";
+      gctx.fill();
+      gctx.strokeStyle = "rgba(" + ch.tint + ",0.45)";
+    } else {
+      gctx.strokeStyle = "rgba(255,255,255,0.12)";
+    }
     gctx.lineWidth = 1;
+    roundRect(left + 0.5, y + 0.5, w - 1, h - 1, r);
     gctx.stroke();
-    gctx.fillStyle = ch.colour;
-    gctx.fillRect(left, y + 5, 3, h - 10);
     gctx.textBaseline = "middle";
     gctx.textAlign = "left";
     if (ch.label) {
       gctx.font = fontLabel;
-      gctx.fillStyle = C.text2;
-      gctx.fillText(ch.label, left + padX + 2, y + h / 2 + 1);
+      setTracking(track);
+      gctx.fillStyle = ch.labelColour;
+      gctx.fillText(ch.label, left + padX, y + h / 2 + 1);
+      setTracking(0);
     }
     gctx.font = fontValue;
     gctx.fillStyle = ch.valueColour;
-    gctx.fillText(ch.value, left + padX + 2 + ch.lw, y + h / 2 + 1);
+    gctx.fillText(ch.value, left + padX + ch.lw, y + h / 2 + 1);
+  }
+
+  /** "r,g,b" of a delta's tone, for a pill's tint; "" when level. */
+  function deltaTint(gapSec) {
+    if (Math.abs(gapSec) <= LEVEL_SEC) return "";
+    return gapSec > 0 ? "255,84,112" : "53,208,127";
   }
 
   function roundRect(x, y, w, h, r) {
@@ -1231,27 +1399,56 @@
     var key = Math.round(g * 100);
     if (key !== chipGap.key) {
       chipGap.key = key;
-      setChip(chipGap, "GAP", fmtDelta(g), deltaColour(g));
+      setChip(chipGap, "GAP", fmtDelta(g), deltaTint(g), C.text2, deltaColour(g));
     }
-    drawChip(chipGap, 12, 12, false);
+    drawChip(chipGap, CHIP_INSET, CHIP_INSET, false);
   }
 
-  /** "BRAKE 63 m" — the metres rebuilt only when they change. */
+  /** "BRK 63 m" — the metres rebuilt only when they change. */
   function drawBrakeChip(aheadM) {
     var m = Math.round(aheadM);
-    if (chipCue.label !== "BRAKE" || m !== chipCue.key) {
+    if (chipCue.label !== "BRK" || m !== chipCue.key) {
       chipCue.key = m;
-      setChip(chipCue, "BRAKE", m + " m", C.brake, C.text);
+      setChip(chipCue, "BRK", m + " m", "255,84,112", C_BRAKE_LABEL, C.text);
     }
-    drawChip(chipCue, cssW - 12, 12, true);
+    drawChip(chipCue, cssW - CHIP_INSET, CHIP_INSET, true);
   }
 
   function drawBehindChip() {
     if (chipCue.label !== "GHOST") {
       chipCue.key = NaN;
-      setChip(chipCue, "GHOST", "behind", C.purple, C.text2);
+      setChip(chipCue, "GHOST", "behind", "236,72,153", C_GHOST_LABEL, C.text2);
     }
-    drawChip(chipCue, cssW - 12, 12, true);
+    drawChip(chipCue, cssW - CHIP_INSET, CHIP_INSET, true);
+  }
+
+  /** The chips' inset from the canvas corners, px. */
+  var CHIP_INSET = 12;
+
+  /**
+   * "RACING LINE · C6" — small caps, centred at the top: the corner the car
+   * is in or coming to, in the reference's own C1..Cn numbering (never an
+   * official name). The string is rebuilt only when the corner changes.
+   */
+  var titleIdx = -2;
+  var titleText = "RACING LINE";
+  function drawTitle() {
+    var c = ghostState && ghostState.corner;
+    var idx = c && isFinite(c.index) ? c.index : -1;
+    if (idx !== titleIdx) {
+      titleIdx = idx;
+      titleText = idx >= 0 ? "RACING LINE · C" + (idx + 1) : "RACING LINE";
+    }
+    gctx.font = fontLabel;
+    setTracking(Math.max(1, Math.round(labelPx * 0.18)));
+    gctx.textAlign = "center";
+    gctx.textBaseline = "middle";
+    var y = CHIP_INSET + Math.round(valuePx * 0.875);
+    gctx.fillStyle = C_INK_STRONG;
+    gctx.fillText(titleText, cssW / 2, y + 1);
+    gctx.fillStyle = C.text2;
+    gctx.fillText(titleText, cssW / 2, y);
+    setTracking(0);
   }
 
   /* -------------------------------- frames --------------------------------- */
@@ -1278,11 +1475,18 @@
     shownNoteVer = paintVer;
     gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     gctx.clearRect(0, 0, cssW, cssH);
+    // The vignette alone, faint, so the note has something to sit on and the
+    // widget does not vanish into the scenery while it waits.
+    gctx.globalAlpha = 0.6;
+    drawVignette();
+    gctx.globalAlpha = 1;
     gctx.font = fontNote;
+    setTracking(Math.max(1, Math.round(labelPx * 0.18)));
     gctx.textAlign = "center";
     gctx.textBaseline = "middle";
     gctx.fillStyle = C.muted;
     gctx.fillText(note, cssW / 2, cssH / 2);
+    setTracking(0);
     if (withGap) drawGapChip();
     return false;
   }
@@ -1332,6 +1536,7 @@
     var myE = setCamera(at);
     noteTrail(pose.x, pose.z, myE);
 
+    drawVignette();
     if (!drawRoad(at)) {
       shownNote = null; // the canvas was just cleared, so the note must be drawn
       return paintNote(NOTE_OFF);
@@ -1340,14 +1545,18 @@
     var nextBrake = drawBrakeBoards(at);
     drawTrail();
     drawGhostLine(buildRibbon(at));
-    drawApexPins(at);
     var active = !!ghostState.active;
-    var gateDrawn = active && drawGate(at, pose.gapM);
     fogMask();
+    // Pins and the ghost after the fade: far up the road they must still be
+    // found (the pins dim with distance themselves).
+    drawApexPins(at);
+    var gateDrawn = active && drawGate(at, pose.gapM);
     drawCar(myE);
 
     // The readouts sit OVER the fade, on plates, so they never fade with it.
+    drawTitle();
     if (active) drawGapChip();
+    if (gateDrawn) drawGhostGap();
     if (active && !gateDrawn && pose.gapM < 0) drawBehindChip();
     else if (nextBrake <= BRAKE_CUE_M) drawBrakeChip(nextBrake);
 
@@ -1448,9 +1657,9 @@
     canvas.setAttribute("role", "img");
     canvas.setAttribute(
       "aria-label",
-      "The reference lap's racing line on the road ahead: green on the power, amber off it, red braking. " +
-        "Red boards across the road: where it started braking. Cyan pins: where its line curved hardest " +
-        "in each corner, not where the kerbs are. The purple gate: where it is now.",
+      "The reference lap's racing line on the road ahead, white, tinted red where it brakes. " +
+        "Red boards across the road: where it started braking. Purple pins: where its line curved hardest " +
+        "in each corner, not where the kerbs are. The pink arrow: where it is now; the green arrow is you.",
     );
     wrap.appendChild(canvas);
     mount.appendChild(wrap);

@@ -58,12 +58,18 @@
       thr: new Float32Array(cap),
       brk: new Float32Array(cap),
       str: new Float32Array(cap),
+      /** Road speed, km/h; NaN where the frame carried none. */
+      spd: new Float32Array(cap),
+      /** The gap to the reference, seconds (positive = behind); NaN = not live. */
+      gap: new Float32Array(cap),
       /** The metre each slot currently holds; NaN = empty. */
       at: at,
       lastBin: NaN,
       lastThr: 0,
       lastBrk: 0,
       lastStr: 0,
+      lastSpd: NaN,
+      lastGap: NaN,
     };
   }
 
@@ -72,12 +78,19 @@
     tr.lastBin = NaN;
   }
 
-  function put(tr, bin, thr, brk, str) {
+  function put(tr, bin, thr, brk, str, spd, gp) {
     var s = ((bin % tr.cap) + tr.cap) % tr.cap;
     tr.at[s] = bin;
     tr.thr[s] = thr;
     tr.brk[s] = brk;
     tr.str[s] = str;
+    tr.spd[s] = spd;
+    tr.gap[s] = gp;
+  }
+
+  /** `a` to `b` by `f`; NaN when either end is (an unknown is not interpolated). */
+  function mix(a, b, f) {
+    return a + (b - a) * f;
   }
 
   /**
@@ -85,11 +98,16 @@
    * previous frame's and this one's are filled on a straight line between the
    * two readings — what a 30 Hz sample of a smooth pedal looks like.
    *
+   * `spd` (km/h) and `gp` (gap to the reference, s) are optional: left out,
+   * they are NaN, and a reader skips those metres.
+   *
    * A frame at or behind the last bin (the car crawling, or the filtered
    * position settling back) just overwrites its own bin.
    */
-  function writeTrail(tr, m, thr, brk, str) {
+  function writeTrail(tr, m, thr, brk, str, spd, gp) {
     if (!isFinite(m)) return;
+    var v = typeof spd === "number" && isFinite(spd) ? spd : NaN;
+    var g = typeof gp === "number" && isFinite(gp) ? gp : NaN;
     var bin = Math.floor(m);
     var last = tr.lastBin;
     var gap = bin - last;
@@ -99,17 +117,21 @@
         put(
           tr,
           last + k,
-          tr.lastThr + (thr - tr.lastThr) * f,
-          tr.lastBrk + (brk - tr.lastBrk) * f,
-          tr.lastStr + (str - tr.lastStr) * f,
+          mix(tr.lastThr, thr, f),
+          mix(tr.lastBrk, brk, f),
+          mix(tr.lastStr, str, f),
+          mix(tr.lastSpd, v, f),
+          mix(tr.lastGap, g, f),
         );
       }
     }
-    put(tr, bin, thr, brk, str);
+    put(tr, bin, thr, brk, str, v, g);
     tr.lastBin = bin;
     tr.lastThr = thr;
     tr.lastBrk = brk;
     tr.lastStr = str;
+    tr.lastSpd = v;
+    tr.lastGap = g;
   }
 
   /** The slot holding metre `bin`, or −1 when it is empty or overwritten. */
@@ -130,8 +152,9 @@
    * not cover are left out of `ok`, and the painter leaves them blank rather
    * than inventing inputs there.
    *
-   * @param {object} line - `/ghost.json`: `d`, optional `throttle`, `brake`, `steer`.
-   * @returns {object|null} `{ n, thr, brk, str, ok }`, or null with no pedals.
+   * @param {object} line - `/ghost.json`: `d`, optional `throttle`, `brake`, `steer`, `speedKph`.
+   * @returns {object|null} `{ n, thr, brk, str, spd, ok }`, or null with no pedals.
+   *          `spd` is km/h, NaN throughout when the lap has no speed column.
    */
   function resampleRef(line, lapM) {
     if (!line || !line.d || !(lapM > 0)) return null;
@@ -139,6 +162,7 @@
     var brk = line.brake;
     if (!thr || !brk) return null;
     var st = line.steer && line.steer.length === line.d.length ? line.steer : null;
+    var sp = line.speedKph && line.speedKph.length === line.d.length ? line.speedKph : null;
     var d = line.d;
     var N = d.length;
     var n = Math.max(1, Math.floor(lapM));
@@ -147,6 +171,7 @@
       thr: new Float32Array(n),
       brk: new Float32Array(n),
       str: new Float32Array(n),
+      spd: new Float32Array(n),
       ok: new Uint8Array(n),
     };
     var full = line.full !== false;
@@ -159,6 +184,7 @@
         out.thr[m] = thr[e];
         out.brk[m] = brk[e];
         out.str[m] = st ? st[e] : 0;
+        out.spd[m] = sp ? sp[e] : NaN;
         out.ok[m] = 1;
         continue;
       }
@@ -171,6 +197,7 @@
       out.thr[m] = thr[i - 1] + (thr[i] - thr[i - 1]) * w;
       out.brk[m] = brk[i - 1] + (brk[i] - brk[i - 1]) * w;
       out.str[m] = st ? st[i - 1] + (st[i] - st[i - 1]) * w : 0;
+      out.spd[m] = sp ? sp[i - 1] + (sp[i] - sp[i - 1]) * w : NaN;
       out.ok[m] = 1;
     }
     return out;

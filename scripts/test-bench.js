@@ -60,11 +60,13 @@ check('trackmap is throttled', byId.trackmap && byId.trackmap.throttleMs > 0, by
 // interpolation needs. Its drawing is not in dispatch at all; client.js's
 // `noteWidgetWork` keeps that cost visible to the layer health report.
 // The training Trace (`traininginputs`) is the same arrangement for the same
-// reason, and lives in the training window, not the race layer.
+// reason, and lives in the training window, not the race layer. So do the
+// Coach card (live pedals) and the Brake Cue (a countdown to the reference's
+// braking point): per-frame by nature, and training-window only.
 const fullRate = widgets.filter((w) => w.fullRate).map((w) => w.id).sort();
 check(
-  'the 30 Hz set is the five instruments and the two pose intakes, not the whole HUD',
-  fullRate.join(',') === 'ghosthud,motion,pedals,pedalsv,radar,speedo,traininginputs',
+  'the 30 Hz set is the five instruments, the two pose intakes and the two live training cues, not the whole HUD',
+  fullRate.join(',') === 'ghosthud,motion,pedals,pedalsv,radar,speedo,trainingbrake,trainingcoach,traininginputs',
   fullRate.join(','),
 );
 check(
