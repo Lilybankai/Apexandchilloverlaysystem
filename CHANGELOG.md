@@ -6,6 +6,15 @@
 
 -->
 
+## 1.3.6 — 2026-10-08
+
+### Fixed
+
+- **The Engineer tab shows your voices again.** In 1.3.5 the tab stopped
+  drawing partway down, so the voice list, the radio settings and everything
+  below them were missing. The engineer itself kept working the whole time;
+  only the tab was broken. Your chosen voice and settings were never lost.
+
 ## 1.3.5 — 2026-10-08
 
 ### Added
