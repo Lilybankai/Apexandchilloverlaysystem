@@ -2363,6 +2363,7 @@
     const tKey = typeKey(s.sessionType);
 
     els.detail.innerHTML = `
+      <div class="rv-pr-bannerslot">${pendingBannerHtml()}</div>
       <div class="rv-card">
         <div class="rv-head">
           <h2>${esc(s.track || 'Unknown circuit')}</h2>
@@ -2374,6 +2375,8 @@
         </div>
         ${reportHtml(s)}
       </div>
+
+      <div class="rv-pr-slot">${practiceHtml()}</div>
 
       ${refBarHtml()}
 
@@ -2554,6 +2557,456 @@
   }
 
   /* ---------------------------------------------------------------------- */
+  /*  Practice review (docs/PRACTICE-REVIEW-PLAN.md, phase 1)               */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The debrief a practice session gets: every lap against the lap the driver
+   * CHASED in Training (a snapshot taken during the session, so a board time
+   * beaten next week cannot rewrite it), where the time went corner by corner,
+   * and a corner × lap grid. Built in main (`review:practice`) from the pure
+   * practiceReview module; this file only lays it out.
+   *
+   * Corners are C1..Cn in the reference lap's own order and are never given
+   * circuit names — the same rule the overlay's Corner Analysis card keeps.
+   *
+   * `state`: `idle` (not a practice session), `loading`, `ok`, `none` (no
+   * review was made for this session — it predates the feature, or had no
+   * timed lap), `error`, or `unavailable` (an older main with no IPC).
+   */
+  let practice = { id: null, state: 'idle', review: null };
+  /** A review main says is waiting, shown as a banner while the tab is open. */
+  let pendingBanner = null;
+  /** Scroll the debrief into view once it paints (it was opened for the driver). */
+  let practiceFocus = false;
+
+  /** Practice and test days get a debrief; races and qualifying do not. */
+  function isPracticeSession(s) {
+    const k = String((s && s.sessionType) || '').toLowerCase();
+    return k.startsWith('prac') || k.startsWith('test');
+  }
+
+  /** `+0.21` / `-0.10` from seconds; level inside half the last digit. */
+  const secSigned = (sec, dp = 2) => fmtSec(sec, dp);
+  const lapFromSec = (sec) => (known(sec) && sec > 0 ? fmtLap(sec * 1000) : dash);
+
+  /** Gain, loss or level for a delta in seconds — the overlay's thresholds. */
+  function toneOfSec(sec) {
+    if (!known(sec)) return 'none';
+    if (sec > 0.02) return 'loss';
+    if (sec < -0.02) return 'gain';
+    return 'level';
+  }
+
+  /** 0..1 strength of a corner delta's colour: full at two tenths. */
+  const strengthOf = (sec) => (known(sec) ? Math.max(0.3, Math.min(1, Math.abs(sec) / 0.2)) : 0);
+
+  const cornerLabel = (index) => `C${Number(index) + 1}`;
+
+  /** The driver's name out of a reference label: `A. Winters · 1:19.299 · board`. */
+  function targetName(t) {
+    if (!t) return '';
+    if (t.kind === 'sessionBest') return 'your session best';
+    const first = String(t.label || '').split(' · ')[0].trim();
+    return first || 'the reference';
+  }
+
+  /** "Braking 14 m early" — the overlay's sign: positive braked LATER. */
+  function brakeWords(m) {
+    if (!known(m) || Math.abs(m) < 3) return '';
+    return `Braking ${Math.round(Math.abs(m))} m ${m < 0 ? 'early' : 'late'}`;
+  }
+
+  /** "6 km/h down at the apex" — positive is faster. */
+  function apexWords(kph) {
+    if (!known(kph) || Math.abs(kph) < 1) return '';
+    const v = Math.round(Math.abs(speedUnit === 'mph' ? kph * 0.621371 : kph));
+    return `${v} ${speedUnitLabel()} ${kph < 0 ? 'down' : 'up'} at the apex`;
+  }
+
+  /** What to try next time, from the same two numbers. */
+  function tipWords(c) {
+    const parts = [];
+    if (known(c.avgBrakeDeltaM) && c.avgBrakeDeltaM <= -3) parts.push(`brake ${Math.round(-c.avgBrakeDeltaM)} m later`);
+    if (known(c.avgBrakeDeltaM) && c.avgBrakeDeltaM >= 3) parts.push(`brake ${Math.round(c.avgBrakeDeltaM)} m earlier`);
+    if (known(c.avgApexKphDelta) && c.avgApexKphDelta <= -1) {
+      const v = Math.round(Math.abs(speedUnit === 'mph' ? c.avgApexKphDelta * 0.621371 : c.avgApexKphDelta));
+      parts.push(`carry ${v} ${speedUnitLabel()} more to the apex`);
+    }
+    if (!parts.length) return 'Entry and apex match the reference — the time goes on the way out. Look at your throttle pick-up.';
+    const s = parts.join(', ');
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+  }
+
+  /** One lap's corner losses as a strip of tiny cells. */
+  function cornerStripHtml(lap, count) {
+    const byIndex = new Map((lap.corners || []).map((c) => [c.index, c]));
+    let cells = '';
+    for (let i = 0; i < count; i += 1) {
+      const c = byIndex.get(i);
+      const d = c ? c.deltaSec : null;
+      cells += `<i data-tone="${toneOfSec(d)}" style="--a:${strengthOf(d).toFixed(2)}"></i>`;
+    }
+    return `<span class="rv-pr-strip" aria-hidden="true">${cells}</span>`;
+  }
+
+  /** The three corners that cost the most on average, worst first. */
+  function worstCorners(r) {
+    return (r.corners || [])
+      .filter((c) => known(c.avgLossSec) && c.avgLossSec > 0.005)
+      .sort((a, b) => b.avgLossSec - a.avgLossSec)
+      .slice(0, 3);
+  }
+
+  /** A corner's delta on every lap, for the little bars on its loss card. */
+  function cornerSeries(r, index) {
+    return (r.laps || []).map((lap) => {
+      const c = (lap.corners || []).find((x) => x.index === index);
+      return { lapNo: lap.lapNo, at: lap.at, valid: lap.valid, d: c ? c.deltaSec : null };
+    });
+  }
+
+  function lossCardHtml(r, c, rank) {
+    const series = cornerSeries(r, c.index);
+    const worst = Math.max(0.05, ...series.map((p) => (known(p.d) ? Math.abs(p.d) : 0)));
+    const bars = series.map((p) => {
+      const h = known(p.d) ? Math.max(6, Math.round((Math.abs(p.d) / worst) * 100)) : 0;
+      return `<i data-tone="${toneOfSec(p.d)}" style="height:${h}%" title="Lap ${esc(p.lapNo)}: ${esc(secSigned(p.d))} s"></i>`;
+    }).join('');
+    const faults = [brakeWords(c.avgBrakeDeltaM), apexWords(c.avgApexKphDelta)].filter(Boolean);
+    return `
+      <div class="rv-pr-loss" data-tone="${toneOfSec(c.avgLossSec)}">
+        <div class="rv-pr-loss__top">
+          <span class="rv-pr-loss__rank">${rank}</span>
+          <span class="rv-pr-loss__name">${esc(cornerLabel(c.index))}</span>
+          <span class="rv-pr-loss__avg">${esc(secSigned(c.avgLossSec))}<small> s a lap</small></span>
+        </div>
+        <div class="rv-pr-loss__fault">${faults.length ? esc(faults.join(' · ')) : 'Lost between entry and exit'}</div>
+        <div class="rv-pr-loss__bars" aria-hidden="true">${bars}</div>
+        <div class="rv-pr-loss__range">
+          <span>Best <b>${esc(secSigned(c.bestSec))}</b></span>
+          <span>Worst <b>${esc(secSigned(c.worstSec))}</b></span>
+          <span>${esc(String(c.laps))} lap${c.laps === 1 ? '' : 's'} scored</span>
+        </div>
+        <div class="rv-pr-loss__tip">
+          <svg class="icon"><use href="#i-sparkles" /></svg><span>${esc(tipWords(c))}</span>
+        </div>
+      </div>`;
+  }
+
+  function practiceLapsHtml(r) {
+    const n = (r.corners || []).length;
+    const best = r.bestLapSec;
+    const rows = (r.laps || []).map((lap) => {
+      const isBest = known(best) && lap.valid && Math.abs(lap.lapSec - best) < 0.0005;
+      return `
+        <tr data-prlap="${esc(lap.at)}" data-valid="${String(!!lap.valid)}" data-best="${String(isBest)}"
+            tabindex="0" role="button" title="Study this lap">
+          <td class="rv-pr-laps__no">${esc(String(lap.lapNo))}</td>
+          <td class="rv-pr-laps__time">${esc(lapFromSec(lap.lapSec))}</td>
+          <td class="rv-pr-laps__delta" data-tone="${toneOfSec(lap.deltaSec)}">${esc(fmtSec(lap.deltaSec, 3))}</td>
+          <td class="rv-pr-laps__strip">${lap.hasTrace && n ? cornerStripHtml(lap, n) : '<span class="rv-pr-muted">no trace</span>'}</td>
+          <td class="rv-pr-laps__flag">${lap.valid ? (isBest ? '<span class="rv-pr-tag rv-pr-tag--best">Best</span>' : '')
+            : '<span class="rv-pr-tag">Invalid</span>'}</td>
+        </tr>`;
+    }).join('');
+    return `
+      <table class="rv-pr-laps">
+        <thead><tr><th>Lap</th><th>Time</th><th>vs target</th><th>Corners${n ? ` · C1–C${n}` : ''}</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function practiceGridHtml(r) {
+    const laps = r.laps || [];
+    const corners = r.corners || [];
+    if (!laps.length || !corners.length) return '';
+    const cols = laps.length;
+    const head = laps.map((lap) =>
+      `<span class="rv-pr-grid__lap" data-valid="${String(!!lap.valid)}">${esc(String(lap.lapNo))}</span>`).join('');
+    const rows = corners.map((c) => {
+      const cells = laps.map((lap) => {
+        const hit = (lap.corners || []).find((x) => x.index === c.index);
+        const d = hit ? hit.deltaSec : null;
+        const tip = [
+          `${cornerLabel(c.index)} · lap ${lap.lapNo}`,
+          known(d) ? `${secSigned(d)} s` : 'not scored',
+          hit ? brakeWords(hit.brakeDeltaM) : '',
+          hit ? apexWords(hit.apexKphDelta) : '',
+        ].filter(Boolean).join('\n');
+        return `<button type="button" class="rv-pr-cell" data-tone="${toneOfSec(d)}" data-valid="${String(!!lap.valid)}"
+                  style="--a:${strengthOf(d).toFixed(2)}" data-prlap="${esc(lap.at)}" data-tip="${esc(tip)}"
+                  aria-label="${esc(tip.replace(/\n/g, ', '))}"></button>`;
+      }).join('');
+      return `
+        <span class="rv-pr-grid__name">${esc(cornerLabel(c.index))}</span>
+        ${cells}
+        <span class="rv-pr-grid__avg" data-tone="${toneOfSec(c.avgLossSec)}">${esc(secSigned(c.avgLossSec))}</span>`;
+    }).join('');
+    return `
+      <div class="rv-pr-grid" style="--cols:${cols}">
+        <span class="rv-pr-grid__corner">Lap</span>${head}<span class="rv-pr-grid__avghead">Avg</span>
+        ${rows}
+      </div>`;
+  }
+
+  /** The whole debrief card, for the open session's current practice state. */
+  function practiceHtml() {
+    if (!current || !isPracticeSession(current)) return '';
+    if (practice.id !== currentId || practice.state === 'idle' || practice.state === 'unavailable') return '';
+    if (practice.state === 'loading') {
+      return `
+        <div class="rv-card rv-pr rv-pr--quiet">
+          <div class="rv-pr__head"><span class="rv-pr__badge"><svg class="icon"><use href="#i-target" /></svg>Practice review</span></div>
+          <p class="rv-pr__note">Lining every lap up against the lap you chased…</p>
+        </div>`;
+    }
+    if (practice.state !== 'ok' || !practice.review) {
+      return `
+        <div class="rv-card rv-pr rv-pr--quiet">
+          <div class="rv-pr__head"><span class="rv-pr__badge"><svg class="icon"><use href="#i-target" /></svg>Practice review</span></div>
+          <p class="rv-pr__note">${practice.state === 'error'
+            ? 'The review for this session could not be read.'
+            : 'No review was made for this session. Reviews are built when you leave a practice session in which you set a timed lap.'}</p>
+        </div>`;
+    }
+
+    const r = practice.review;
+    const t = r.target;
+    const gapBest = known(r.bestLapSec) && t && known(t.lapSec) ? r.bestLapSec - t.lapSec : null;
+    const gapTheo = known(r.theoreticalBestSec) && t && known(t.lapSec) ? r.theoreticalBestSec - t.lapSec : null;
+    const worst = worstCorners(r);
+    const lostTotal = worst.reduce((sum, c) => sum + c.avgLossSec, 0);
+    const scored = (r.laps || []).filter((l) => l.hasTrace).length;
+
+    const stat = (label, value, note, tone, big) => `
+      <div class="rv-pr-stat${big ? ' rv-pr-stat--hero' : ''}">
+        <div class="rv-pr-stat__label">${esc(label)}</div>
+        <div class="rv-pr-stat__value"${tone ? ` data-tone="${tone}"` : ''}>${value}</div>
+        ${note ? `<div class="rv-pr-stat__note">${note}</div>` : ''}
+      </div>`;
+
+    return `
+      <div class="rv-card rv-pr">
+        <div class="rv-pr__head">
+          <span class="rv-pr__badge"><svg class="icon"><use href="#i-target" /></svg>Practice review</span>
+          ${t ? `<span class="rv-pr__vs">vs <b>${esc(targetName(t))}</b><span class="rv-pr__vstime">${esc(lapFromSec(t.lapSec))}</span></span>` : ''}
+          <span class="rv-pr__meta">${esc(String((r.laps || []).length))} laps · ${esc(String((r.corners || []).length))} corners</span>
+        </div>
+
+        <div class="rv-pr__stats">
+          ${stat('Best lap', esc(lapFromSec(r.bestLapSec)),
+            known(gapBest) ? `<span data-tone="${toneOfSec(gapBest)}">${esc(fmtSec(gapBest, 3))}</span> to the target` : '', '', true)}
+          ${stat('Theoretical best', esc(lapFromSec(r.theoreticalBestSec)),
+            known(gapTheo) ? `<span data-tone="${toneOfSec(gapTheo)}">${esc(fmtSec(gapTheo, 3))}</span> · your best corners, joined` : 'your best corners, joined')}
+          ${stat('Consistency', known(r.consistencySec) ? `±${esc(fix(r.consistencySec, 2))}s` : dash,
+            'spread of your valid laps')}
+          ${stat('Top three cost', worst.length ? `${esc(secSigned(lostTotal))}s` : dash,
+            worst.length ? `a lap, in ${worst.map((c) => esc(cornerLabel(c.index))).join(', ')}` : 'nothing stands out', worst.length ? 'loss' : '')}
+        </div>
+
+        <div class="rv-pr__cols">
+          <section class="rv-pr__losses">
+            <div class="rv-pr__title">Where the time went</div>
+            ${worst.length
+              ? worst.map((c, i) => lossCardHtml(r, c, i + 1)).join('')
+              : `<p class="rv-pr__note">${scored
+                ? 'No corner costs you time on average — the gap is spread thin across the lap.'
+                : 'None of these laps kept a trace, so their corners could not be scored.'}</p>`}
+          </section>
+          <section class="rv-pr__lapsbox">
+            <div class="rv-pr__title">Every lap against the target</div>
+            ${practiceLapsHtml(r)}
+          </section>
+        </div>
+
+        ${(r.corners || []).length && scored ? `
+        <section class="rv-pr__gridbox">
+          <div class="rv-pr__gridhead">
+            <span class="rv-pr__title">Corner by corner</span>
+            <span class="rv-pr__legend">
+              <span><i data-tone="gain"></i>Faster than the target</span>
+              <span><i data-tone="loss"></i>Slower</span>
+              <span class="rv-pr-muted">Click a cell to study that lap</span>
+            </span>
+          </div>
+          ${practiceGridHtml(r)}
+          <div class="rv-pr-tipbox" hidden></div>
+        </section>` : ''}
+      </div>`;
+  }
+
+  /** The banner for a review that arrived while the tab is open. */
+  function pendingBannerHtml() {
+    if (!pendingBanner || lapView) return '';
+    const p = pendingBanner;
+    const bits = [p.track, known(p.laps) ? `${p.laps} laps` : '', known(p.bestLapSec) ? `best ${lapFromSec(p.bestLapSec)}` : '']
+      .filter(Boolean).map(esc).join(' · ');
+    return `
+      <div class="rv-pr-banner" role="status">
+        <svg class="icon"><use href="#i-target" /></svg>
+        <span><b>Practice review ready</b>${bits ? ` — ${bits}` : ''}</span>
+        <button type="button" class="btn btn--sm" data-propen>Open</button>
+        <button type="button" class="iconbtn rv-pr-banner__x" data-prdismiss aria-label="Dismiss">
+          <svg class="icon"><use href="#i-x" /></svg>
+        </button>
+      </div>`;
+  }
+
+  /** Repaint just the debrief slot — the rest of the session stays put. */
+  function refreshPractice() {
+    if (!els.detail || lapView) return;
+    const slot = els.detail.querySelector('.rv-pr-slot');
+    if (!slot) return;
+    slot.innerHTML = practiceHtml();
+    if (practiceFocus && practice.state === 'ok') {
+      practiceFocus = false;
+      const card = slot.querySelector('.rv-pr');
+      if (card) card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  }
+
+  /** The review main built for a session, normalised over the IPC's shapes. */
+  async function loadPractice(id) {
+    if (!current || currentId !== id || !isPracticeSession(current)) {
+      practice = { id, state: 'idle', review: null };
+      return;
+    }
+    if (!window.apex || typeof window.apex.reviewPractice !== 'function') {
+      practice = { id, state: 'unavailable', review: null };
+      return;
+    }
+    practice = { id, state: 'loading', review: null };
+    refreshPractice();
+    let review = null;
+    let failed = false;
+    try {
+      const res = await window.apex.reviewPractice(id);
+      if (res && Array.isArray(res.laps)) review = res;
+      else if (res && res.review && Array.isArray(res.review.laps)) review = res.review;
+      else if (res && res.ok === false) failed = true;
+    } catch {
+      failed = true;
+    }
+    // The driver moved on while it was being read.
+    if (currentId !== id) return;
+    practice = { id, state: review ? 'ok' : (failed ? 'error' : 'none'), review };
+    refreshPractice();
+  }
+
+  /** The lap in the open session that a debrief row stands for. */
+  function sessionLapAt(at) {
+    if (!current || !at) return null;
+    for (const stint of current.stints) {
+      const found = stint.laps.find((l) => l.at === at);
+      if (found) return found;
+    }
+    // Fall back to the lap number, in case the two clocks were written apart.
+    const pl = practice.review && (practice.review.laps || []).find((l) => l.at === at);
+    if (!pl) return null;
+    for (const stint of current.stints) {
+      const found = stint.laps.find((l) => l.lapNo === pl.lapNo);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /** Read what main has waiting, in either IPC shape: `{ sessionId, … }`. */
+  async function readPending() {
+    if (!window.apex || typeof window.apex.reviewPending !== 'function') return null;
+    let p = null;
+    try { p = await window.apex.reviewPending(); } catch { return null; }
+    if (p && typeof p === 'object' && 'pending' in p) p = p.pending;
+    if (!p || typeof p !== 'object') return null;
+    const sessionId = p.sessionId || p.id || null;
+    return sessionId ? { ...p, sessionId } : null;
+  }
+
+  async function ackPending(sessionId) {
+    try { await window.apex.reviewPendingAck?.(sessionId); } catch { /* best effort */ }
+  }
+
+  /** Open a pending review's session with its debrief in view, then ack it. */
+  async function openPending(p) {
+    if (!p) return;
+    pendingBanner = null;
+    practiceFocus = true;
+    if (lapOff) { lapOff(); lapOff = null; }
+    if (currentId === p.sessionId && current && !lapView) {
+      renderDetail();
+      refreshPractice();
+    } else {
+      lapView = null;
+      await openSession(p.sessionId);
+    }
+    if (!current || currentId !== p.sessionId) {
+      // The lap list has not caught up with the session yet; re-read once.
+      await loadList(true);
+      if (currentId !== p.sessionId) await openSession(p.sessionId);
+    }
+    void ackPending(p.sessionId);
+  }
+
+  /**
+   * Arrival: a review waiting for the driver opens by itself, once. While the
+   * tab is already open, a new one is only offered (a banner), never forced —
+   * the driver may be in the middle of another lap.
+   */
+  async function checkPending(auto) {
+    const p = await readPending();
+    if (!p) {
+      if (pendingBanner) { pendingBanner = null; renderBanner(); }
+      return;
+    }
+    if (auto) {
+      await openPending(p);
+      return;
+    }
+    if (currentId === p.sessionId && !lapView) {
+      // Already looking at it: just say so where it is, and clear it.
+      practiceFocus = true;
+      void loadPractice(p.sessionId);
+      void ackPending(p.sessionId);
+      return;
+    }
+    pendingBanner = p;
+    renderBanner();
+  }
+
+  function renderBanner() {
+    if (!els.detail) return;
+    const slot = els.detail.querySelector('.rv-pr-bannerslot');
+    if (slot) slot.innerHTML = pendingBannerHtml();
+    else if (!lapView) renderDetail();
+  }
+
+  /** The grid's hover card: the native title is too slow and too plain. */
+  function wirePracticeTips(root) {
+    root.addEventListener('mouseover', (evt) => {
+      const cell = evt.target.closest && evt.target.closest('.rv-pr-cell');
+      const box = cell && cell.closest('.rv-pr__gridbox');
+      const tip = box && box.querySelector('.rv-pr-tipbox');
+      if (!tip) return;
+      const lines = String(cell.dataset.tip || '').split('\n');
+      tip.innerHTML = `<b>${esc(lines[0] || '')}</b>${lines.slice(1).map((l) => `<span>${esc(l)}</span>`).join('')}`;
+      const b = box.getBoundingClientRect();
+      const c = cell.getBoundingClientRect();
+      tip.hidden = false;
+      tip.style.left = `${Math.round(c.left - b.left + c.width / 2)}px`;
+      tip.style.top = `${Math.round(c.top - b.top)}px`;
+      tip.setAttribute('data-tone', cell.dataset.tone || 'none');
+    });
+    root.addEventListener('mouseout', (evt) => {
+      const cell = evt.target.closest && evt.target.closest('.rv-pr-cell');
+      if (!cell) return;
+      const tip = cell.closest('.rv-pr__gridbox')?.querySelector('.rv-pr-tipbox');
+      if (tip && !(evt.relatedTarget && evt.relatedTarget.closest && evt.relatedTarget.closest('.rv-pr-cell'))) {
+        tip.hidden = true;
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------------- */
   /*  Loading                                                               */
   /* ---------------------------------------------------------------------- */
 
@@ -2626,10 +3079,14 @@
       for (const st of current.stints) collapsed.add(st.no);
       collapsed.delete(current.stints[current.stints.length - 1].no);
     }
+    // A practice session's debrief is read after the session paints, like the
+    // board: the session is on disk and is never made to wait for it.
+    practice = { id, state: 'idle', review: null };
     renderDetail();
     // The leaderboard card fills in when the board arrives; it is a round
     // trip and the session is on disk, so the session is never made to wait.
     void ensureBoard(current);
+    void loadPractice(id);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -2676,6 +3133,24 @@
         if (toRace) { window.apexRaceLog?.openRace(toRace.dataset.racelog); return; }
         if (evt.target.closest('[data-lapback]')) {
           closeLap();
+          return;
+        }
+        // The practice debrief: the banner, and any lap or grid cell in it.
+        if (evt.target.closest('[data-propen]') && pendingBanner) {
+          void openPending(pendingBanner);
+          return;
+        }
+        if (evt.target.closest('[data-prdismiss]') && pendingBanner) {
+          const sid = pendingBanner.sessionId;
+          pendingBanner = null;
+          renderBanner();
+          void ackPending(sid);
+          return;
+        }
+        const prLap = evt.target.closest('[data-prlap]');
+        if (prLap && current) {
+          const lap = sessionLapAt(prLap.dataset.prlap);
+          if (lap) void openLap(lap);
           return;
         }
         if (evt.target.closest('[data-unpin]') && lapView) {
@@ -2859,6 +3334,13 @@
     if (els.detail) {
       els.detail.addEventListener('keydown', (evt) => {
         if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        const prRow = evt.target.closest && evt.target.closest('tr[data-prlap]');
+        if (prRow && current) {
+          evt.preventDefault();
+          const lap = sessionLapAt(prRow.dataset.prlap);
+          if (lap) void openLap(lap);
+          return;
+        }
         const row = evt.target.closest && evt.target.closest('tr[data-open]');
         if (!row || !current) return;
         evt.preventDefault();
@@ -2891,6 +3373,12 @@
     window.apex.getState().then((state) => applyTempUnit(state && state.settings))
       .catch(() => { /* Celsius stands */ });
     window.apex.onSettings(applyTempUnit);
+    if (els.detail) wirePracticeTips(els.detail);
+    // A practice review finished while the panel is open: offer it, don't
+    // force it. While hidden, arrival (shown) picks it up instead.
+    if (typeof window.apex.onReviewPending === 'function') {
+      window.apex.onReviewPending(() => { if (visible) void checkPending(false); });
+    }
     ready = true;
 
     // The other half of the ordering problem in this function's note: the
@@ -2909,7 +3397,8 @@
       // Always re-read. Sessions land while the driver is in the sim, not while
       // they are looking at this window, so arriving IS the refresh event — and
       // the whole lap log is a few hundred kilobytes, read in one pass.
-      void loadList(true);
+      // Then a practice review waiting for the driver opens by itself, once.
+      void Promise.resolve(loadList(true)).then(() => (visible ? checkPending(true) : null));
       // The races too, in the background: main caches every results file by
       // mtime, so after the first visit this is a directory listing. It is
       // what puts the Race log button on a race session's header. No game

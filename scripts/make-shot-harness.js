@@ -802,6 +802,18 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // JSON — so the harness cannot drift from what the tab actually receives.
     reviewSessions: P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
+    // The practice debrief (docs/PRACTICE-REVIEW-PLAN.md): a synthetic review
+    // of the Spa practice above, built by practiceFixture() below.
+    // ?pending=1 has one waiting on arrival (the tab opens on it by itself);
+    // ?pending=push sends one 1.5 s after load (?pushms= to change), which
+    // offers it as a banner unless that session is already open.
+    reviewPractice: (id) => Promise.resolve({ ok: true, review: (PRACTICE_FIXTURE)[id] || null }),
+    reviewPending: () => Promise.resolve(q.get('pending') === '1' || window.__prPushed ? PENDING_FIXTURE : null),
+    reviewPendingAck: () => { window.__prPushed = false; return Promise.resolve({ ok: true }); },
+    onReviewPending: (cb) => {
+      if (q.get('pending') === 'push') setTimeout(() => { window.__prPushed = true; cb(PENDING_FIXTURE); }, Number(q.get('pushms')) || 1500);
+      return () => {};
+    },
     // The race log: real output of the compiled raceLog module over the
     // results files in scripts/fixtures/results (see raceLogFixture below).
     // Silverstone has no car picked, so it opens on "Which car was yours?";
@@ -976,6 +988,76 @@ function reviewFixture() {
 }
 
 /**
+ * The practice debrief's fixture, in the plan's PracticeReview shape: the Spa
+ * practice above measured against a chased board lap, ten corners, with three
+ * corners that cost time on purpose (C7 braked early, C9 slow at the apex, C2
+ * braked late) and a driver who improves through the session. Seeded, so two
+ * runs of the harness draw the same picture.
+ */
+function practiceFixture(byId) {
+  const byIdOut = {};
+  let pending = null;
+  let seed = 7;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648 - 0.5;
+  };
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  // Per corner: mean loss (s), braking offset (m, + = later), apex (km/h, + = faster).
+  const SHAPE = [
+    [0.02, 1, 0], [0.11, 7, -3], [0.04, -2, -1], [-0.02, 0, 1], [0.06, -4, -2],
+    [0.01, 0, 0], [0.19, -14, -6], [0.03, -3, 0], [0.13, -5, -5], [-0.01, 1, 1],
+  ];
+  for (const s of Object.values(byId)) {
+    if (s.sessionType !== 'practice') continue;
+    const target = { kind: 'chased', label: 'A. Winters · 1:46.112 · board', lapId: 'board:fx:106112', lapSec: 106.112 };
+    const laps = [];
+    let n = 0;
+    const all = [];
+    for (const st of s.stints) for (const lap of st.laps) all.push(lap);
+    for (const lap of all) {
+      if (lap.isOutLap || lap.isInLap || !(lap.lapMs > 0)) continue;
+      n += 1;
+      const learn = 1 - 0.35 * (n / all.length);
+      const corners = SHAPE.map(([loss, brake, apex], index) => ({
+        index,
+        deltaSec: r4(loss * learn + rnd() * 0.07),
+        brakeDeltaM: r2(brake * learn + rnd() * 4),
+        apexKphDelta: Math.round((apex * learn + rnd() * 2) * 10) / 10,
+      }));
+      laps.push({
+        at: lap.at, lapNo: lap.lapNo || n, lapSec: lap.lapMs / 1000, valid: !!lap.clean, hasTrace: true,
+        deltaSec: r4(lap.lapMs / 1000 - target.lapSec), corners,
+      });
+    }
+    const valid = laps.filter((l) => l.valid).map((l) => l.lapSec);
+    const best = valid.length ? Math.min(...valid) : null;
+    const inside = valid.filter((v) => best !== null && v <= best * 1.07);
+    const mean = inside.reduce((a, b) => a + b, 0) / Math.max(1, inside.length);
+    const spread = Math.sqrt(inside.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, inside.length));
+    const corners = SHAPE.map((_, index) => {
+      const ds = laps.map((l) => l.corners[index]);
+      const vals = ds.map((c) => c.deltaSec);
+      const avg = (k) => r4(ds.reduce((a, c) => a + c[k], 0) / ds.length);
+      return {
+        index, entryD: 0.05 + index * 0.09, apexD: 0.075 + index * 0.09, exitD: 0.1 + index * 0.09,
+        laps: ds.length, avgLossSec: avg('deltaSec'), bestSec: Math.min(...vals), worstSec: Math.max(...vals),
+        avgBrakeDeltaM: r2(avg('brakeDeltaM')), avgApexKphDelta: Math.round(avg('apexKphDelta') * 10) / 10,
+      };
+    });
+    const theo = target.lapSec + corners.reduce((a, c) => a + c.bestSec, 0) + 0.31;
+    byIdOut[s.id] = {
+      id: s.id, track: s.track, car: s.car, carClass: s.carClass, trackLengthM: 6980,
+      startedAt: s.startedAt, endedAt: s.endedAt, target, laps,
+      bestLapSec: best, theoreticalBestSec: r4(theo), consistencySec: r4(spread), corners,
+    };
+    pending = { sessionId: s.id, at: s.endedAt, track: s.track, laps: laps.length, bestLapSec: best };
+  }
+  return { byId: byIdOut, pending };
+}
+
+/**
  * A real lap for the detail view: the newest clean lap on this machine that
  * still has its trace, plus the circuit it was driven on.
  *
@@ -1102,12 +1184,16 @@ if (!html.includes(marker)) {
   }
   const { lap, lapVs } = reviewLapFixture();
   const raceLogs = raceLogFixture();
+  const practice = practiceFixture(fixture.byId);
+  console.log(`  practice review: ${Object.keys(practice.byId).length} session(s)`);
   console.log(`  racelog: ${raceLogs.races.length} races, ${Object.keys(raceLogs.picks).length} pickable cars`);
   fs.writeFileSync(
     path.join(DIR, '__shot-stub.js'),
     // A function replacement: JSON can hold a '$', which a string replacement
     // would read as a pattern.
     STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
+        .replace('PRACTICE_FIXTURE', () => JSON.stringify(practice.byId))
+        .split('PENDING_FIXTURE').join(JSON.stringify(practice.pending))
         .replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
         .replace('REVIEW.career', `${JSON.stringify(fixture.career)}`)

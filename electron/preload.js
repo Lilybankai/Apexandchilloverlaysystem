@@ -375,6 +375,28 @@ contextBridge.exposeInMainWorld('apex', {
    */
   reviewBestLap: (req) => ipcRenderer.invoke('review:bestLap', req),
 
+  /* ---- Practice Review (docs/PRACTICE-REVIEW-PLAN.md) ---- */
+
+  /**
+   * The finished practice session waiting to be opened, or null:
+   * `{ sessionId, at, track, laps, bestLapSec }`. Set when the driver leaves a
+   * practice session with at least one timed lap; survives an app restart.
+   */
+  reviewPending: () => ipcRenderer.invoke('review:pending'),
+
+  /** The Review tab has opened it: clears it (only if it is still `sessionId`). */
+  reviewPendingAck: (sessionId) => ipcRenderer.invoke('review:pendingAck', sessionId),
+
+  /** One practice session's debrief: `sessionId` → `{ ok, review: PracticeReview | null, error? }`. */
+  reviewPractice: (sessionId) => ipcRenderer.invoke('review:practice', sessionId),
+
+  /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
+  onReviewPending: (callback) => {
+    const listener = (_evt, pending) => callback(pending);
+    ipcRenderer.on('review:pendingChanged', listener);
+    return () => ipcRenderer.removeListener('review:pendingChanged', listener);
+  },
+
   /* ---- Training ▸ Chase (electron/trainingReference.js) ---- */
 
   /**

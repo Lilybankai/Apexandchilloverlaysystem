@@ -62,6 +62,7 @@ const stallWatch = require('./stall-watch');
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
 const { createTrainingGate, sessionOfFrame } = require('./trainingGate');
+const { createPracticeWatch } = require('./practiceSession');
 const { createTrainingLayer, layerOfSender } = require('./trainingLayer');
 const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
@@ -1603,6 +1604,9 @@ function dialStatusFeed() {
       // Which session this is decides whether the training layer runs. A
       // field read and a compare; it does work only when the answer changes.
       trainingGate.update({ session: sessionOfFrame(frame) }, now);
+      // Whether a practice session just finished (the Practice Review). A
+      // type compare and a lap-time compare per frame.
+      practiceWatch.update(frame, now);
       // A string compare while Ghost HUD is wanted, nothing otherwise. Last,
       // and fenced, so it can never cost the consumers above their frame.
       try {
@@ -1637,6 +1641,8 @@ function dialStatusFeed() {
       // A silent feed is no session; this beat is also what lets the training
       // gate's held answer run out between sessions.
       trainingGate.update(stale ? { session: null } : {}, Date.now());
+      // The same beat lets a silent feed end a practice session.
+      if (stale) practiceWatch.update(null, Date.now());
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -3140,6 +3146,218 @@ function toggleIngameInteract() {
  * whose messages main routes by sender — see `layerOf` in registerIpc.
  */
 
+/* -------------------------------------------------------------------------- */
+/*  Practice Review (docs/PRACTICE-REVIEW-PLAN.md, phase 1)                   */
+/* -------------------------------------------------------------------------- */
+/*
+ * electron/practiceSession.js decides when a practice session the driver
+ * actually drove has finished. Here: snapshot the lap they were chasing while
+ * they chase it, and when the session ends write the review's record, say so
+ * on the in-game layer, and leave it pending for the Review tab to open the
+ * next time the app is looked at. Never a window popped over the sim.
+ */
+
+/** Where each session's review record lives: `<userData>/practice-reviews/`. */
+function practiceReviewsDir() {
+  return path.join(app.getPath('userData'), 'practice-reviews');
+}
+
+/**
+ * The file a session's record is kept in. A session id is `<ISO time>~<track
+ * key>` and Windows will not take the colons, so every character outside
+ * `[A-Za-z0-9._-]` becomes `_`. The id itself is inside the file as
+ * `sessionKey`, so nothing has to reverse this.
+ */
+function practiceReviewFileOf(sessionId) {
+  let key;
+  try {
+    // The loader's own naming, so writer and reader cannot drift apart.
+    key = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js')).sessionFileKey(sessionId);
+  } catch {
+    key = String(sessionId).replace(/[^A-Za-z0-9._-]/g, '_');
+  }
+  return path.join(practiceReviewsDir(), key + '.json');
+}
+
+/** The lap being chased this session, as `/ghost.json` serves it, or null. */
+let practiceTarget = null;
+/** The review waiting to be opened: `{ sessionId, at, track, laps, bestLapSec }` or null. */
+let pendingPracticeReview = null;
+/** How long after an end the lap log is read: the last lap's record lands a moment after the line. */
+const PRACTICE_END_SETTLE_MS = 4000;
+
+/**
+ * Snapshot the ghost the server is publishing, if it is the lap the frame says
+ * is being chased. Read from the same module instance the in-process server
+ * publishes through, so this is the exact body `/ghost.json` serves.
+ */
+function snapshotPracticeTarget(sourceLapId) {
+  try {
+    const ghostLap = require(path.join(__dirname, '..', 'dist', 'telemetry', 'ghostLap.js'));
+    const lap = ghostLap.getPublishedGhost();
+    if (!lap) return;
+    const columns = ghostLap.ghostJson(lap);
+    if (!columns) return;
+    if (sourceLapId && columns.lapId && columns.lapId !== sourceLapId) return;
+    practiceTarget = {
+      kind: 'chased',
+      label: String(columns.label || ''),
+      lapId: String(columns.lapId || sourceLapId || ''),
+      lapSec: Number(columns.lapSec) || 0,
+      columns,
+    };
+  } catch (err) {
+    console.warn('[practice] could not snapshot the chased lap:', err.message);
+  }
+}
+
+function loadPendingPracticeReview() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(practiceReviewsDir(), 'pending.json'), 'utf8'));
+    pendingPracticeReview = raw && typeof raw.sessionId === 'string' && raw.sessionId ? raw : null;
+  } catch {
+    pendingPracticeReview = null;
+  }
+}
+
+/** Set or clear the pending review, on disk too (it outlives an app restart), and tell the panel. */
+function setPendingPracticeReview(next) {
+  pendingPracticeReview = next;
+  const file = path.join(practiceReviewsDir(), 'pending.json');
+  try {
+    if (next) {
+      fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(next), 'utf8');
+    } else {
+      fs.rmSync(file, { force: true });
+    }
+  } catch (err) {
+    console.warn('[practice] could not save the pending review:', err.message);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('review:pendingChanged', next);
+  }
+}
+
+/**
+ * The lap-log session a finished practice session became: same track, of a
+ * practice type, overlapping the time it was watched. Newest wins.
+ */
+function findPracticeSessionId(ended) {
+  const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
+  const from = Date.parse(ended.startedAt) - 60_000;
+  const to = Date.parse(ended.endedAt) + 120_000;
+  const track = String(ended.track || '').toLowerCase();
+  const rows = review.listSessions(undefined, 40) || [];
+  let best = null;
+  for (const s of rows) {
+    if (s.sessionType !== 'practice' && s.sessionType !== 'testday') continue;
+    const a = Date.parse(s.startedAt);
+    const b = Date.parse(s.endedAt);
+    if (!(b >= from && a <= to)) continue;
+    if (track && s.track && String(s.track).toLowerCase() !== track) continue;
+    if (!best || Date.parse(best.endedAt) < b) best = s;
+  }
+  return best;
+}
+
+function finishPracticeSession(ended) {
+  let summary = null;
+  try {
+    summary = findPracticeSessionId(ended);
+  } catch (err) {
+    console.warn('[practice] lap log unreadable at session end:', err.message);
+  }
+  // The snapshot is only this session's target if it is the lap the session
+  // ended chasing. A session that never chased anything has none — it is
+  // measured against its own best — whatever an earlier session left here.
+  if (ended.ghostLapId && (!practiceTarget || practiceTarget.lapId !== ended.ghostLapId)) {
+    snapshotPracticeTarget(ended.ghostLapId); // still published just after the session
+  }
+  const target =
+    ended.ghostLapId && practiceTarget && practiceTarget.lapId === ended.ghostLapId ? practiceTarget : null;
+  if (!summary) {
+    // The lap log has not shown the session (yet). Keep the target anyway,
+    // under the frame's own track and class and the time it ended: the loader
+    // finds a snapshot by content when the name does not match — see
+    // findSnapshot in practiceReviewLoad.ts. No notice: there is nothing to open.
+    console.warn(`[practice] ${ended.laps} lap(s) at ${ended.track} ended, but no logged practice session matches`);
+    if (target) {
+      try {
+        fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+        fs.writeFileSync(
+          practiceReviewFileOf(`${ended.startedAt}~${ended.track}`),
+          JSON.stringify({
+            v: 1,
+            track: ended.track,
+            car: ended.car,
+            carClass: ended.carClass,
+            trackLengthM: Number(target.columns.trackLengthM) || 0,
+            startedAt: ended.startedAt,
+            endedAt: ended.endedAt,
+            target,
+          }),
+          'utf8',
+        );
+      } catch (err) {
+        console.warn('[practice] could not write the review record:', err.message);
+      }
+    }
+    practiceTarget = null;
+    return;
+  }
+  const record = {
+    v: 1,
+    sessionKey: summary.id,
+    track: summary.track || ended.track,
+    car: summary.car || ended.car,
+    carClass: summary.carClass || ended.carClass,
+    trackLengthM: target && target.columns ? Number(target.columns.trackLengthM) || 0 : 0,
+    startedAt: summary.startedAt,
+    endedAt: summary.endedAt,
+    target,
+  };
+  try {
+    fs.mkdirSync(practiceReviewsDir(), { recursive: true });
+    fs.writeFileSync(practiceReviewFileOf(summary.id), JSON.stringify(record), 'utf8');
+  } catch (err) {
+    console.warn('[practice] could not write the review record:', err.message);
+  }
+  const laps = summary.laps || ended.laps;
+  const bestSec = summary.bestMs ? summary.bestMs / 1000 : ended.bestLapSec;
+  let best = '';
+  try {
+    const { formatLapTime } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
+    if (bestSec > 0) best = ` · best ${formatLapTime(bestSec)}`;
+  } catch {
+    /* the notice reads fine without it */
+  }
+  sendIngameNotice({
+    kind: 'ok',
+    // Through race control's banner when it is on the layer, which main holds
+    // visible off track — the driver is in the menus when this fires.
+    race: true,
+    text: `Practice review ready — ${laps} lap${laps === 1 ? '' : 's'}${best}`,
+    dwellMs: 12000,
+  });
+  setPendingPracticeReview({
+    sessionId: summary.id,
+    at: new Date().toISOString(),
+    track: record.track,
+    laps,
+    bestLapSec: bestSec || null,
+  });
+  practiceTarget = null;
+}
+
+const practiceWatch = createPracticeWatch({
+  onGhost: (g) => snapshotPracticeTarget(g.sourceLapId),
+  onEnded: (ended) => {
+    const t = setTimeout(() => finishPracticeSession(ended), PRACTICE_END_SETTLE_MS);
+    if (typeof t.unref === 'function') t.unref();
+  },
+});
+
 const trainingGate = createTrainingGate();
 
 const trainingLayer = createTrainingLayer({
@@ -4450,6 +4668,44 @@ function registerIpc() {
    * unbuilt `dist/` must cost this tab its content, not take down the window
    * that starts the server.
    */
+  /*
+   * The Practice Review (docs/PRACTICE-REVIEW-PLAN.md). `review:pending` says
+   * whether a finished practice session is waiting to be opened (the Review
+   * tab asks when it is shown, and hears `review:pendingChanged` while open);
+   * `review:pendingAck` is the tab saying it has opened it. Read from disk the
+   * first time, so a review left unopened survives an app restart.
+   */
+  let pendingPracticeLoaded = false;
+  ipcMain.handle('review:pending', () => {
+    if (!pendingPracticeLoaded) {
+      pendingPracticeLoaded = true;
+      if (!pendingPracticeReview) loadPendingPracticeReview();
+    }
+    return pendingPracticeReview;
+  });
+
+  ipcMain.handle('review:pendingAck', (_evt, sessionId) => {
+    pendingPracticeLoaded = true;
+    // Only the review that was opened: a newer one that arrived meanwhile stays.
+    if (pendingPracticeReview && (!sessionId || pendingPracticeReview.sessionId === sessionId)) {
+      setPendingPracticeReview(null);
+    }
+    return { ok: true };
+  });
+
+  /** One practice session's debrief: laps against the lap that was chased. */
+  ipcMain.handle('review:practice', (_evt, sessionId) => {
+    if (typeof sessionId !== 'string' || !sessionId) return { ok: false, review: null, error: 'no session' };
+    try {
+      const { loadPracticeReview } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js'));
+      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() });
+      return review ? { ok: true, review } : { ok: false, review: null, error: 'session not found' };
+    } catch (err) {
+      console.error('[app] practice review unavailable:', err.message);
+      return { ok: false, review: null, error: err.message };
+    }
+  });
+
   ipcMain.handle('review:sessions', () => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
