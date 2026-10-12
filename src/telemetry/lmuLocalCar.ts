@@ -348,6 +348,16 @@ const SCORING_GAME_PHASE_OFFSET = 120;
  */
 const SCORING_SECTOR_FLAGS_OFFSET = 122;
 const SCORING_IN_REALTIME_OFFSET = 127;
+/**
+ * `mCurrentET` (double) at absolute byte 80 and `mEndET` (double) right after
+ * it at 88 — the 12-byte MMF header + ScoringInfo offsets 68 / 76, the same
+ * pair rf2Provider reads. Read live 2026-08-22 in a 6 h MP race at Silverstone
+ * (`scripts/probe-race-finish.js`): currentET 21567.6 beside REST's 21567.8,
+ * endET 21772 = the green at 172.02 + the 21600 s race. So `mEndET` is the
+ * ABSOLUTE end on the event clock, unlike REST's `endEventTime` (21600, a
+ * length). See telemetry/sessionClock for why the clock is read from here.
+ */
+const SCORING_CURRENT_ET_OFFSET = 80;
 const FILE_MAP_READ = 0x0004;
 const TORN_READ_RETRIES = 4;
 /** Worst-case bytes we might need (clamped to the real region on open). */
@@ -799,6 +809,38 @@ export class LmuLocalCarReader {
       const b = w.readBytes(this.scoringView, SCORING_SECTOR_FLAGS_OFFSET, 3);
       if (!b || b.length < 3) return null;
       return [b[0]!, b[1]!, b[2]!];
+    } catch {
+      // Mapping may have gone away (sim closed); drop it so we re-open later.
+      this.stopScoring();
+      return null;
+    }
+  }
+
+  /**
+   * The Scoring header's event clock — `mCurrentET` and the session's absolute
+   * end `mEndET` — or `null` when shared memory is unavailable or the header
+   * fails the layout check {@link inRealtime} applies.
+   *
+   * One 16-byte read so the pair comes from the same instant as far as one copy
+   * can make it; a torn or stale read is the caller's to reject (the provider
+   * cross-checks `currentET` against REST — see telemetry/sessionClock).
+   */
+  public sessionClock(): { currentET: number; endET: number } | null {
+    const w = this.win32;
+    if (w === null) return null;
+    if (!this.scoringView) {
+      this.openScoring();
+      if (!this.scoringView) return null;
+    }
+    try {
+      const phase = w.readBytes(this.scoringView, SCORING_GAME_PHASE_OFFSET, 1)[0];
+      if (phase === undefined || phase > 10) return null; // not the layout we verified
+      const b = w.readBytes(this.scoringView, SCORING_CURRENT_ET_OFFSET, 16);
+      if (!b || b.length < 16) return null;
+      const currentET = b.readDoubleLE(0);
+      const endET = b.readDoubleLE(8);
+      if (!Number.isFinite(currentET) || !Number.isFinite(endET)) return null;
+      return { currentET, endET };
     } catch {
       // Mapping may have gone away (sim closed); drop it so we re-open later.
       this.stopScoring();

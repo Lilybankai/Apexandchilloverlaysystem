@@ -45,6 +45,9 @@ const PRACTICE_SESSIONS = new Set(['practice', 'testday']);
 function sessionTypeOf(frame) {
   if (!frame || typeof frame !== 'object' || frame.connected === false) return null;
   const s = frame.session;
+  // A replay is not a practice session being driven (THE-35): watching one
+  // must neither start a Practice Review nor keep one open.
+  if (s && s.replay === true) return 'replay';
   return s && typeof s.type === 'string' && s.type ? s.type : 'unknown';
 }
 

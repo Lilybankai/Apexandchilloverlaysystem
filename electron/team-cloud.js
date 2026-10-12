@@ -24,10 +24,12 @@
  *      freshest row full stop. The heavy blocks (learned circuit shape, race
  *      history) ride only when their revision moved — same contract as the
  *      local 1 Hz feed.
- *      The same poll also runs while this PC is WATCHING a car it is not
- *      driving (setOverlayWanted), whatever tab is open: every fresh driving
- *      row goes to the overlay server, which puts the watched teammate's
- *      tyres, damage and fuel on the overlays (telemetry/teammateRelay.ts).
+ *      The same poll also runs while this PC is watching OUR car with a
+ *      teammate at the wheel (setOverlayWanted), whatever tab is open: every
+ *      fresh driving row but our own goes to the overlay server, whose gate
+ *      (telemetry/teammateRelay.ts) puts only the teammate in our session, in
+ *      our car, on the overlays — or only the pinned one, or nobody, per the
+ *      Relay source setting (resolveRelaySource). Linear THE-34.
  *
  * Pure decision helpers (eligibleToPublish, pickActiveSource, thinHistory,
  * normalizeCode) are exported for scripts/test-teamcloud.js.
@@ -77,7 +79,18 @@ function eligibleToPublish(frame, snapshot) {
   // A frame carrying a TEAMMATE's relayed tyres is theirs, not ours: this PC
   // is spectating. Re-publishing it would echo their data back as our own.
   if (frame.player && frame.player.relayed) return false;
+  // A replay is a recording being watched, never the car being driven here.
+  if (frame.session && frame.session.replay === true) return false;
   if (frame.session && frame.session.onTrack === false) return false;
+  // On LMU the payload's car identity (number, class, DRIVER) comes off the
+  // watched row, so the watched row must be the car driven here. Otherwise a
+  // PC parked in its stall with the camera on a teammate would publish its
+  // own parked car's tyres under the teammate's name — exactly the identity
+  // the readers' gate (teammateRelay.ts) trusts.
+  if (frame.source === 'lmu' && Array.isArray(frame.standings)) {
+    const focus = frame.standings.find((r) => r && r.isPlayer);
+    if (!focus || focus.isOwn !== true) return false;
+  }
   if (!snapshot || !snapshot.car) return false;
   const t = snapshot.car.tyres;
   if (!t || !t.frontLeft || typeof t.frontLeft.wear !== 'number') return false;
@@ -89,8 +102,13 @@ function eligibleToPublish(frame, snapshot) {
  * payload carries tyre data (the car being driven), else the freshest row of
  * any kind (better a stale pit-wall than a blank one). Rows arrive newest
  * first but this does not rely on that. Returns null for an empty team.
+ *
+ * Sticky: `prevUserId` (the row shown last time) keeps the board while it is
+ * still a fresh driving row, so two teammates driving at once — one in the
+ * race, one lapping a practice server (THE-34) — do not flip the board every
+ * read as their ages leapfrog.
  */
-function pickActiveSource(sources) {
+function pickActiveSource(sources, prevUserId) {
   if (!Array.isArray(sources) || !sources.length) return null;
   const age = (s) => (typeof s.age_sec === 'number' ? s.age_sec : Infinity);
   const driving = sources.filter((s) => {
@@ -98,8 +116,28 @@ function pickActiveSource(sources) {
     return !!(car && car.tyres && car.tyres.frontLeft
       && typeof car.tyres.frontLeft.wear === 'number');
   });
+  if (prevUserId) {
+    const prev = driving.find((s) => s.user_id === prevUserId && age(s) <= OVERLAY_MAX_AGE_SEC);
+    if (prev) return prev;
+  }
   const pool = driving.length ? driving : sources;
   return pool.reduce((best, s) => (age(s) < age(best) ? s : best), pool[0]);
+}
+
+/**
+ * The stored Relay source setting ('auto' | 'off' | a teammate's user id)
+ * resolved against the active team: a pin on somebody no longer in the team
+ * falls back to auto. Returns `{ mode, pinUserId?, pinName? }` in
+ * teammateRelay.ts's RelayMode terms.
+ */
+function resolveRelaySource(setting, team) {
+  if (setting === 'off') return { mode: 'off' };
+  if (typeof setting === 'string' && setting && setting !== 'auto') {
+    const members = team && Array.isArray(team.members) ? team.members : [];
+    const m = members.find((x) => x && x.user_id === setting);
+    if (m) return { mode: 'pin', pinUserId: m.user_id, pinName: m.name || 'Teammate' };
+  }
+  return { mode: 'auto' };
 }
 
 /**
@@ -144,7 +182,15 @@ let auth = null;
 let collect = null;
 /** Persisted settings bridge: getActiveTeam() / setActiveTeam(id) /
  *  getWebRelay() — whether the driver's own row is published for the web. */
-let store = { getActiveTeam: () => null, setActiveTeam: () => {}, getWebRelay: () => true };
+let store = {
+  getActiveTeam: () => null,
+  setActiveTeam: () => {},
+  getWebRelay: () => true,
+  getRelaySource: () => 'auto',
+  setRelaySource: () => {},
+};
+/** () => RelayStatus | null — the overlay server's latest gate decision. */
+let getOverlayStatus = () => null;
 let onTeams = () => {};
 let onRelay = () => {};
 /** Every fresh driving row, for the overlay server — or null to clear it. */
@@ -162,9 +208,13 @@ const state = {
   lastPublishAt: null,
   publishError: null,
   watching: false,
-  /** This PC is watching a car it is not driving, so the overlays want the relay. */
+  /** This PC is watching our car while a teammate drives it, so the overlays want the relay. */
   overlayWanted: false,
 };
+/** The user id of the Team tab's last active source, for pickActiveSource. */
+let lastActiveUserId = null;
+/** Last relay status text pushed to the panel, so it only re-pushes on change. */
+let lastRelayStatusText = '';
 
 let publishTimer = null;
 let readTimer = null;
@@ -199,7 +249,77 @@ function stateForUi() {
     publishError: state.publishError,
     watching: state.watching,
     webRelay: webRelayOn(),
+    relaySource: relaySourceSetting(),
+    relaySourceEffective: currentRelaySource(),
+    relayStatus: relayStatusNow(),
+    // So the Relay source picker can leave "me" out of the teammate list.
+    selfUserId: selfUserId(),
   };
+}
+
+function activeTeam() {
+  return state.teams.find((t) => t && t.id === state.activeTeamId) || null;
+}
+
+/**
+ * The stored Relay source, cached: it is consulted several times a second
+ * while the relay runs, and main's loadSettings is a synchronous disk read.
+ * Re-read at init and whenever main says the setting changed.
+ */
+let relaySourceValue = 'auto';
+function loadRelaySource() {
+  try {
+    const v = store.getRelaySource ? store.getRelaySource() : 'auto';
+    relaySourceValue = typeof v === 'string' && v ? v : 'auto';
+  } catch {
+    relaySourceValue = 'auto';
+  }
+}
+function relaySourceSetting() {
+  return relaySourceValue;
+}
+
+/** The setting resolved against the active team's roster. */
+function currentRelaySource() {
+  return resolveRelaySource(relaySourceSetting(), activeTeam());
+}
+
+/** The status line for the Relay source picker. */
+function relayStatusNow() {
+  const src = currentRelaySource();
+  if (src.mode === 'off') {
+    return { state: 'off', text: "Relay off — teammates' telemetry is never put on your overlays." };
+  }
+  if (!state.activeTeamId) return { state: 'idle', text: 'No active team selected.' };
+  if (!state.overlayWanted) return { state: 'idle', text: 'Waiting for a teammate to drive your car.' };
+  let s = null;
+  try {
+    s = getOverlayStatus();
+  } catch {
+    s = null;
+  }
+  return s && typeof s.text === 'string' ? s : { state: 'idle', text: 'Waiting for relay data…' };
+}
+
+/** Re-push the roster state when the status line's wording has changed. */
+function refreshRelayStatus() {
+  const text = relayStatusNow().text;
+  if (text === lastRelayStatusText) return;
+  lastRelayStatusText = text;
+  pushTeams();
+}
+
+/** Main calls this after the Relay source setting changes. */
+function relaySourceChanged() {
+  loadRelaySource();
+  if (currentRelaySource().mode === 'off') overlayRelaySafe(null);
+  syncReadTimer();
+  lastRelayStatusText = '';
+  refreshRelayStatus();
+}
+
+function isOverlayWanted() {
+  return state.overlayWanted;
 }
 
 /** The Settings ▸ Application switch: publish my own row for the browser. */
@@ -240,8 +360,29 @@ async function refreshTeams() {
     state.activeTeamId = state.teams.length === 1 ? state.teams[0].id : null;
     store.setActiveTeam(state.activeTeamId);
   }
+  dropDepartedPin();
   pushTeams();
   return { ok: true };
+}
+
+/**
+ * A pinned Relay source whose teammate is no longer on the active team goes
+ * back to Auto — persisted, so they do not silently become the pin again if
+ * they rejoin. Only ever run against a roster that actually loaded: before
+ * that, an empty team list would look like "everybody left".
+ */
+function dropDepartedPin() {
+  const setting = relaySourceSetting();
+  if (setting === 'auto' || setting === 'off') return;
+  const team = activeTeam();
+  if (!team || !Array.isArray(team.members)) return;
+  if (team.members.some((m) => m && m.user_id === setting)) return;
+  relaySourceValue = 'auto';
+  try {
+    if (store.setRelaySource) store.setRelaySource('auto');
+  } catch {
+    /* the effective source is Auto regardless — resolveRelaySource */
+  }
 }
 
 /**
@@ -299,6 +440,7 @@ function setActiveTeam(id) {
   // pulls that team's shape and history fresh.
   relayShape = null;
   relayHistory = null;
+  lastActiveUserId = null;
   lastShapeRevSent = null;
   lastHistoryRevSent = null;
   lastHistorySentAt = 0;
@@ -431,11 +573,12 @@ function setOverlayWanted(on) {
   state.overlayWanted = want;
   if (!want) overlayRelaySafe(null);
   syncReadTimer();
+  refreshRelayStatus();
 }
 
 /** One timer serves both readers; it runs while either wants it. */
 function syncReadTimer() {
-  const want = state.watching || state.overlayWanted;
+  const want = state.watching || overlayReadWanted();
   if (want && readTimer) return;
   if (readTimer) {
     clearInterval(readTimer);
@@ -448,15 +591,32 @@ function syncReadTimer() {
   }
 }
 
+/** The overlays want the relay, and the driver has not switched it off. */
+function overlayReadWanted() {
+  return state.overlayWanted && currentRelaySource().mode !== 'off';
+}
+
+/** The signed-in user's id, so their own relay row is never a source. */
+function selfUserId() {
+  try {
+    const u = auth && auth.stateForUi().user;
+    return u && u.id ? String(u.id) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The rows worth handing the overlays: fresh, and carrying tyre data (a car
- * actually being driven). Which of them is the WATCHED car is decided in the
- * server against the live frame, not here.
+ * The rows worth handing the overlays: fresh, carrying tyre data (a car
+ * actually being driven), and not our own. Which of them is the WATCHED car —
+ * same session, same car, the driver LMU has in it — is decided in the server
+ * against the live frame (teammateRelay.ts), not here.
  */
-function overlaySources(sources) {
+function overlaySources(sources, selfId) {
   if (!Array.isArray(sources)) return [];
   return sources
     .filter((s) => {
+      if (selfId && s && s.user_id === selfId) return false;
       const car = s && s.payload && s.payload.car;
       return !!(car && car.tyres && car.tyres.frontLeft
         && typeof car.tyres.frontLeft.wear === 'number'
@@ -466,7 +626,7 @@ function overlaySources(sources) {
 }
 
 async function readTick() {
-  if (reading || !(state.watching || state.overlayWanted)) return;
+  if (reading || !(state.watching || overlayReadWanted())) return;
   // Say WHY the pit wall went quiet. A dropped session used to early-return
   // here without a word, so a relay that stopped mid-race looked identical to
   // a team that simply had nobody driving — see the refresh race fixed in
@@ -491,16 +651,26 @@ async function readTick() {
       return;
     }
     const sources = Array.isArray(res.body.sources) ? res.body.sources : [];
-    const active = pickActiveSource(sources);
+    const active = pickActiveSource(sources, lastActiveUserId);
+    lastActiveUserId = active ? active.user_id : null;
     // The heavy blocks arrive on whichever row carries them; cache by content.
     for (const s of sources) {
       if (s.map_shape) relayShape = s.map_shape;
       if (s.history) relayHistory = s.history;
     }
-    if (state.overlayWanted) {
-      const fresh = overlaySources(sources);
-      overlayRelaySafe(fresh.length ? { receivedAt: Date.now(), sources: fresh } : null);
+    if (overlayReadWanted()) {
+      const self = selfUserId();
+      const src = currentRelaySource();
+      // Handed over even when empty: a pinned teammate with no fresh row is a
+      // status the driver should read ("isn't sending"), not a silent blank.
+      overlayRelaySafe({
+        receivedAt: Date.now(),
+        sources: overlaySources(sources, self),
+        ...(self ? { selfUserId: self } : {}),
+        ...src,
+      });
     }
+    refreshRelayStatus();
     if (!state.watching) return;
     onRelaySafe({
       at: Date.now(),
@@ -528,6 +698,7 @@ function onRelaySafe(update) {
   // cleared here too: a failed read must not leave a relayed block standing.
   // (The server's own age gate would drop it within seconds anyway.)
   if (update && update.error && state.overlayWanted) overlayRelaySafe(null);
+  if (update && update.error) refreshRelayStatus();
   if (!state.watching) return;
   try {
     onRelay(update);
@@ -568,7 +739,9 @@ function init(opts) {
   if (typeof opts.onTeams === 'function') onTeams = opts.onTeams;
   if (typeof opts.onRelay === 'function') onRelay = opts.onRelay;
   if (typeof opts.onOverlayRelay === 'function') onOverlayRelay = opts.onOverlayRelay;
+  if (typeof opts.getOverlayStatus === 'function') getOverlayStatus = opts.getOverlayStatus;
   state.activeTeamId = store.getActiveTeam() || null;
+  loadRelaySource();
 
   stop();
   publishTimer = setInterval(() => void publishTick(), PUBLISH_MS);
@@ -602,11 +775,14 @@ module.exports = {
   setActiveTeam,
   setWatching,
   setOverlayWanted,
+  isOverlayWanted,
+  relaySourceChanged,
   onAuthChanged,
   // Pure helpers, exported for scripts/test-teamcloud.js.
   eligibleToPublish,
   pickActiveSource,
   overlaySources,
+  resolveRelaySource,
   thinHistory,
   normalizeCode,
   PUBLISH_MS,

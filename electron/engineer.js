@@ -1143,6 +1143,7 @@ class EngineerService {
     this.audioInFlight = 0; // WAVs handed to the player, not yet PLAYED
     this.heldReadout = null; // { text, expiresAt } — at most one, newest wins
     this.lastFrame = null; // latest frame, for the busy-driver check
+    this.replaying = false; // the feed is a replay (THE-35): say nothing
     this.saidBudgetLine = false; // degrade-to-Tier-1, once per session
     this.lastCall = null; // last Tier-2 reply, for the useful/wrong buttons
     this.budget = null; // { used, cap, remaining } from engineer_budget
@@ -1818,6 +1819,18 @@ class EngineerService {
       try {
         const frame = JSON.parse(data);
         if (!frame || !frame.session) return;
+        // A replay on screen (THE-35) is a past race nobody is driving: the
+        // engineer neither calls it nor answers questions against it. The
+        // trigger engine still sees the frame so it can drop its levels and
+        // prime afresh when the live session comes back (it returns null).
+        if (frame.session.replay === true) {
+          if (!this.replaying && this.commands) this.commands.reset(); // no stale answers
+          this.replaying = true;
+          this.lastFrame = null;
+          if (this.triggers) this.triggers.update(frame);
+          return;
+        }
+        this.replaying = false;
         if (this.commands) this.commands.update(frame);
         this.observeFrame(frame);
         // Track B: the proactive readouts. `triggers.update` is the 0.24 µs

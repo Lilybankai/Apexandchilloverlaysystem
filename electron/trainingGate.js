@@ -40,6 +40,9 @@ const ELIGIBLE_SESSIONS = new Set(['practice', 'testday']);
  */
 function sessionOfFrame(frame) {
   if (!frame || typeof frame !== 'object') return null;
+  // A replay plays a past session back (THE-35): nobody is practising, so a
+  // replay of a practice session must not switch the training layer on.
+  if (frame.session && frame.session.replay === true) return { type: 'replay', demo: false };
   const type =
     frame.session && typeof frame.session.type === 'string' ? frame.session.type : 'unknown';
   return { type, demo: frame.connected === false };

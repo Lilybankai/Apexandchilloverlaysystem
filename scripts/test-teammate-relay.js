@@ -44,11 +44,11 @@ function spectatorFrame(over = {}) {
     source: 'lmu',
     connected: true,
     timestamp: 1,
-    session: { track: 'Daytona International Speedway', onTrack: true },
+    session: { track: 'Daytona International Speedway', type: 'race', onTrack: true },
     player: { slotId: 30, gear: 4, speedKph: 241, rpm: 8000, tyres: blankTyres() },
     standings: [
       { slotId: 7, carNumber: '12', carClass: 'GT3', driverName: 'Rival', isPlayer: false },
-      { slotId: 30, carNumber: '12', carClass: 'LMP2', driverName: 'Scott Cruz', isPlayer: true },
+      { slotId: 30, carNumber: '12', carClass: 'LMP2', driverName: 'Scott Cruz', isPlayer: true, teammateDriving: true },
       { slotId: 41, carNumber: '3', carClass: 'LMP2', driverName: 'Other', isPlayer: false },
     ],
     fuel: { levelLiters: U, capacityLiters: U, lapsRemaining: 9 },
@@ -66,7 +66,7 @@ function drivingPayload(over = {}) {
   const frame = {
     source: 'lmu',
     connected: true,
-    session: { track: 'Daytona International Speedway', onTrack: true },
+    session: { track: 'Daytona International Speedway', type: 'race', onTrack: true },
     player: {
       position: 5,
       tyres: { frontLeft: tyre(0.86, 88), frontRight: tyre(0.85, 89), rearLeft: tyre(0.9, 84), rearRight: tyre(0.91, 85) },

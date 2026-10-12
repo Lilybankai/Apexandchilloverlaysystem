@@ -482,6 +482,9 @@ export interface TriggerStats {
  * constantly, and a key that changes mid-session would reset the detector every
  * tick and therefore never fire anything.
  */
+/** The session key held while frames come from a replay; no live key can equal it. */
+const REPLAY_SESSION_KEY = '\u0000replay';
+
 export function sessionKeyOf(frame: TelemetryFrame): string {
   return `${frame.source}|${frame.session.track}|${frame.session.type}|${frame.session.numCars}`;
 }
@@ -1035,6 +1038,18 @@ export class EngineerTriggers {
       // Placeholder data. Not a reset — the sim reconnecting mid-session should
       // resume, not re-announce — but nothing is learned from it either, so the
       // levels stay as they were and the next real frame re-primes against them.
+      return null;
+    }
+
+    if (frame.session && frame.session.replay === true) {
+      // The sim is playing a REPLAY (telemetry/replayMode.ts): a past race on
+      // screen, nobody driving it. Nothing is said about it and nothing is
+      // learned from it, and the levels are dropped so the live session after
+      // it primes from scratch rather than firing edges against a replay.
+      if (this.sessionKey !== REPLAY_SESSION_KEY) {
+        this.sessionKey = REPLAY_SESSION_KEY;
+        this.reset();
+      }
       return null;
     }
 

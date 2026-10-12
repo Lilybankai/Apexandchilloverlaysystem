@@ -250,6 +250,17 @@ export interface SessionState {
    * source does not publish it.
    */
   elapsedSec?: number;
+  /**
+   * `true` while the sim is PLAYING A REPLAY (LMU `/navigation/state`
+   * `settingMode` = `SETTING_REPLAY_PLAYBACK`), never present otherwise.
+   *
+   * Every block then describes the replay camera's car, nobody on this PC is
+   * driving, and {@link onTrack} is `false` — so any consumer that is not
+   * replay-aware (the engineer, the team relay, the lap log) treats the frame
+   * as it treats the sim's menus. Only the display surfaces opt back in. See
+   * telemetry/replayMode.ts.
+   */
+  replay?: true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1422,6 +1433,19 @@ export interface StandingEntry {
    * WATCHING as themselves, and the channel announced strangers as ours.
    */
   isOwn?: boolean;
+  /**
+   * `true` on OUR team entry's car while LMU says a teammate is at its wheel
+   * (`teamVehicleState` / the roster — see `trackTeamStint` in the LMU
+   * provider). Absent on every other row, and on every row whenever we are
+   * driving, spectating a stranger, or not in a team entry.
+   *
+   * The team relay's gate (telemetry/teammateRelay.ts): a teammate's relayed
+   * tyres/damage/fuel are only ever put on a car carrying this flag. Gating on
+   * "the watched car is not {@link isOwn}" instead let a teammate lapping in a
+   * DIFFERENT session (a practice server) bleed into the race car's overlays
+   * (Linear THE-34).
+   */
+  teammateDriving?: boolean;
 }
 
 /**

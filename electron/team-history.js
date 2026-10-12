@@ -50,6 +50,7 @@ class TeamHistory {
   update(frame) {
     if (!frame || !frame.session || !Array.isArray(frame.standings)) return;
     if (frame.connected === false) return; // demo frames must never pollute a race
+    if (frame.session.replay === true) return; // nor a replay's laps the live race's
     const s = frame.session;
     const key = `${s.track || ''}|${s.type || ''}`;
     if (key !== this.sessionKey) {
