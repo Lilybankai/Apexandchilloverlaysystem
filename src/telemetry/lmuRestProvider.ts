@@ -50,6 +50,7 @@ import { LmuTraceLimitsReader } from './lmuTraceLimits';
 import { PaceAverageTracker, type PaceAvgResult } from './paceAverage';
 import { PitStopCounter } from './pitStopCounter';
 import { predictLapsToFlag } from './lapsToFlag';
+import { resolveTimeRemaining } from './sessionClock';
 import { buildRadar, type RadarCar } from './radar';
 import { TrackMapBuilder } from './trackMap';
 import {
@@ -435,8 +436,20 @@ interface RestSession {
   gamePhase?: string;
   currentEventTime?: number;
   endEventTime?: number;
-  /** Seconds left in the current game phase — the live countdown during green. */
+  /**
+   * Seconds left in the current game phase. Computed on THIS client as
+   * `maxTime − (currentEventTime − startEventTime)`, so it restarts from the
+   * whole session when the client rejoins one in progress — see
+   * telemetry/sessionClock before trusting it.
+   */
   timeRemainingInGamePhase?: number;
+  /**
+   * Event time this client saw the session go green. FLT_MIN (≈1.2e-38) until
+   * then; a client-side latch, not a server fact.
+   */
+  startEventTime?: number;
+  /** The session's booked length in seconds (21600 for a 6 h race). */
+  maxTime?: number;
   maximumLaps?: number;
   numberOfVehicles?: number;
   /** Per-sector flag strings, e.g. `["UNKNOWN","YELLOW","UNKNOWN"]`. */
@@ -2572,18 +2585,31 @@ export class LmuRestProvider implements TelemetryProvider {
     const classLeaderLap = classLeader ? (classLeader.lapsCompleted | 0) + 1 : UNKNOWN_VALUE;
     const endET = typeof si.endEventTime === 'number' ? si.endEventTime : 0;
     const curET = typeof si.currentEventTime === 'number' ? si.currentEventTime : 0;
-    // Prefer LMU's own "time left in the current phase" — during a green timed
-    // race this is the authoritative countdown to the checker, and it stays
-    // sane when the event-time clock has drifted past endEventTime. Fall back to
-    // end − current when the phase field is missing.
-    const phaseRemain =
-      typeof si.timeRemainingInGamePhase === 'number' ? si.timeRemainingInGamePhase : -1;
-    const timeRemaining =
-      phaseRemain > 0 && phaseRemain < 100000
-        ? Math.round(phaseRemain)
-        : endET > 0
-          ? Math.max(0, endET - curET)
-          : UNKNOWN_VALUE;
+    // Prefer the focused car's flag/phase strings (reliable); then
+    // GetGameState's GPHASE_* string, which exists even before any car does
+    // (GPHASE_BEFORE while the session loads); sessionInfo's gamePhase is
+    // numeric and only stands in when it happens to arrive as a string.
+    const phaseStr = focus?.gamePhase ?? gs?.gamePhase ?? si.gamePhase;
+    const phase = mapPhase(phaseStr);
+    // The clock. NOT LMU's `timeRemainingInGamePhase` taken on trust, which is
+    // what this used to be: that field is this CLIENT's phase timer, latched
+    // when the client sees the green — and a client that loads back into a
+    // race in progress sees a fresh green, so after leaving the session and
+    // coming back it counted down from the whole race again while every other
+    // number stayed right (THE-33). The session's absolute end from shared
+    // memory comes first now; the REST timer is the fallback for a rig without
+    // it. See telemetry/sessionClock.
+    const timeRemaining = resolveTimeRemaining({
+      running: !isPreGreen(phase),
+      rest: {
+        currentEventTime: si.currentEventTime,
+        endEventTime: si.endEventTime,
+        startEventTime: si.startEventTime,
+        maxTime: si.maxTime,
+        timeRemainingInGamePhase: si.timeRemainingInGamePhase,
+      },
+      sharedMemory: this.localCar.sessionClock(),
+    }).sec;
     // maximumLaps is a large sentinel (uint max) for timed races.
     const maxLaps =
       typeof si.maximumLaps === 'number' && si.maximumLaps > 0 && si.maximumLaps < 100000
@@ -2651,12 +2677,6 @@ export class LmuRestProvider implements TelemetryProvider {
     // so the overlay falls back to the exact lap subtraction it can do for
     // itself, and "lapsRemaining is present" keeps meaning "this is a guess".
     const lapsRemaining = toFlag.estimated ? toFlag.laps : UNKNOWN_VALUE;
-    // Prefer the focused car's flag/phase strings (reliable); then
-    // GetGameState's GPHASE_* string, which exists even before any car does
-    // (GPHASE_BEFORE while the session loads); sessionInfo's gamePhase is
-    // numeric and only stands in when it happens to arrive as a string.
-    const phaseStr = focus?.gamePhase ?? gs?.gamePhase ?? si.gamePhase;
-    const phase = mapPhase(phaseStr);
     // The full booked length, which is `endEventTime` — LMU publishes that as
     // soon as the session is loaded, well before the clock starts running, which
     // is exactly the window the pre-session header exists for. `timeRemaining`
