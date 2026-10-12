@@ -69,6 +69,20 @@ const SI = {
    * plausible string proves nothing; a pair in the right places is the layout.
    */
   mPlayerName: 116, // char[32]
+  /**
+   * The multiplayer server's name — `char[32]`. BRACKETED, not probed: the
+   * weather doubles before it are verified (`mRaining` 220 … `mMaxPathWetness`
+   * 276, read live by rf2Provider), then `mGameMode`(1) `mIsPassworded`(1)
+   * `mServerPort`(2) `mServerPublicIP`(4) `mMaxPlayers`(4) land it at 296, and
+   * the tail after it (`mStartET` float, `mAvgPathWetness` double,
+   * `mExpansion[200]`, the vehicle pointer) ends exactly at the verified
+   * {@link sizeof} 548. LMU's REST publishes no server name at all.
+   *
+   * Used for ONE thing: telling the team relay which session a teammate's row
+   * came from (telemetry/teammateRelay.ts). An empty or wrong read can only
+   * make the relay refuse a row, never accept a wrong one.
+   */
+  mServerName: 296, // char[32]
   /** `sizeof(rF2ScoringInfo)` — the vehicles array follows it. */
   sizeof: 548,
 } as const;
@@ -417,6 +431,36 @@ export class LmuScoringReader {
         if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
         if (SI.base + SI.mPlayerName + 32 > this.size) return '';
         const buf = w.readBytes(this.view, SI.base + SI.mPlayerName, 32);
+        if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
+        return readCString(buf, 0, 32);
+      }
+      return '';
+    } catch {
+      this.stop();
+      return '';
+    }
+  }
+
+  /**
+   * The multiplayer server's name (`mServerName`), or `""` when it cannot be
+   * read or the session is offline. See the offset note on `SI.mServerName`.
+   *
+   * Only the team relay consumes it, as session identity: a teammate's row is
+   * shown on our overlays only when it was published from the same server.
+   */
+  public readServerName(): string {
+    const w = this.win32;
+    if (w === null) return '';
+    if (!this.view) {
+      this.open();
+      if (!this.view) return '';
+    }
+    try {
+      for (let attempt = 0; attempt < TORN_READ_RETRIES; attempt++) {
+        const v1 = w.readU32(this.view, 0);
+        if (v1 !== w.readU32(this.view, 4)) continue; // writer mid-update
+        if (SI.base + SI.mServerName + 32 > this.size) return '';
+        const buf = w.readBytes(this.view, SI.base + SI.mServerName, 32);
         if (w.readU32(this.view, 0) !== v1 || w.readU32(this.view, 4) !== v1) continue;
         return readCString(buf, 0, 32);
       }

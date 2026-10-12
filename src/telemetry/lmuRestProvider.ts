@@ -699,6 +699,17 @@ export class LmuRestProvider implements TelemetryProvider {
   /** When the scene name was last probed, so a dead buffer is not hit at 30 Hz. */
   private simTrackNameAt = 0;
   /**
+   * The multiplayer server's name from the scoring header (`mServerName`), or
+   * `''` offline / unreadable. Published as `session.serverName`, which the team
+   * relay uses as session identity — a teammate's row is only ever put on our
+   * overlays when it came from the same server (telemetry/teammateRelay.ts).
+   */
+  private serverName = '';
+  /** Session key the cached server name belongs to; a change re-reads at once. */
+  private serverNameFor = '';
+  /** When the server name was last read. */
+  private serverNameAt = 0;
+  /**
    * Memoised pace score. Its inputs move once a lap while this runs at the
    * update rate, and resolving a layout is string work over the whole table.
    */
@@ -1777,13 +1788,20 @@ export class LmuRestProvider implements TelemetryProvider {
     // the raw feed because `session` is built a few lines further down.
     const frameSessionKey = `${si.trackName ?? ''}|${si.session ?? ''}`;
     const ownId = playerCar ? playerCar.slotID : UNKNOWN_VALUE;
-    const standings = this.buildStandings(cars, focusId, ownId, frameSessionKey, trackLen);
+    // Our entry's car while LMU says a teammate is at its wheel — the ONLY car
+    // the team relay may ever put a teammate's telemetry on (teammateRelay.ts).
+    const teamCarId =
+      teamStint.teammateDriving && teamStint.car ? teamStint.car.slotID : UNKNOWN_VALUE;
+    const standings = this.buildStandings(cars, focusId, ownId, frameSessionKey, trackLen, teamCarId);
     const relative = this.buildRelative(cars, focus, si);
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
     const session = this.buildSession(cars, si, focus, this.gameState);
     if (trackLen > 0) session.trackLengthM = Math.round(trackLen);
+    // Which server — the team relay's session identity (teammateRelay.ts).
+    this.refreshServerName(frameSessionKey, nowMs);
+    if (this.serverName) session.serverName = this.serverName;
     const weather = this.buildWeather(si, session.type);
     const fuel = this.buildFuel(focus, session, local, cars, trackLen, playerCar);
     // Track limits ride on the DRIVEN car (like the radar) rather than the
@@ -2161,6 +2179,7 @@ export class LmuRestProvider implements TelemetryProvider {
     ownId: number,
     sessionKey: string,
     trackLen: number,
+    teamCarId: number = UNKNOWN_VALUE,
   ): StandingEntry[] {
     // The whole build is a pure projection of the REST snapshot — and that
     // snapshot is replaced wholesale every 150 ms while this runs per frame,
@@ -2169,10 +2188,8 @@ export class LmuRestProvider implements TelemetryProvider {
     // identity of `cars` keys the memo; the scalar inputs ride beside it. A
     // badge or manufacturer that resolves between refreshes appears on the
     // next one, which is sooner than any eye can ask for it.
-    if (
-      cars === this.standingsCacheCars &&
-      this.standingsCacheKey === `${focusId}|${ownId}|${sessionKey}|${trackLen}`
-    ) {
+    const cacheKey = `${focusId}|${ownId}|${sessionKey}|${trackLen}|${teamCarId}`;
+    if (cars === this.standingsCacheCars && this.standingsCacheKey === cacheKey) {
       return this.standingsCache;
     }
     // Rolling last-5 pace for the whole field, fed from this same poll — see
@@ -2254,6 +2271,8 @@ export class LmuRestProvider implements TelemetryProvider {
       // The car we are IN — LMU's own player flag, which the camera cannot
       // move. See StandingEntry.isOwn for who depends on the difference.
       ...(ownId !== UNKNOWN_VALUE && c.slotID === ownId ? { isOwn: true } : {}),
+      // Our entry, with a teammate at the wheel — see StandingEntry.teammateDriving.
+      ...(teamCarId !== UNKNOWN_VALUE && c.slotID === teamCarId ? { teammateDriving: true } : {}),
       };
     });
     rows.sort((a, b) => a.position - b.position);
@@ -2269,7 +2288,7 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     assignClassPositions(rows, classHints);
     this.standingsCacheCars = cars;
-    this.standingsCacheKey = `${focusId}|${ownId}|${sessionKey}|${trackLen}`;
+    this.standingsCacheKey = cacheKey;
     this.standingsCache = rows;
     return rows;
   }
@@ -3687,6 +3706,22 @@ export class LmuRestProvider implements TelemetryProvider {
     if (this.simTrackName || nowMs - this.simTrackNameAt < SCENE_NAME_RETRY_MS) return;
     this.simTrackNameAt = nowMs;
     this.simTrackName = this.scoring.readTrackName();
+  }
+
+  /**
+   * Keep {@link serverName} current. Unlike the scene name it is re-read on a
+   * slow timer even once it has answered: leaving one server for another at the
+   * same circuit and session type changes nothing else this provider keys on.
+   */
+  private refreshServerName(sessionKey: string, nowMs: number): void {
+    if (sessionKey !== this.serverNameFor) {
+      this.serverNameFor = sessionKey;
+      this.serverName = '';
+      this.serverNameAt = 0;
+    }
+    if (nowMs - this.serverNameAt < SCENE_NAME_RETRY_MS) return;
+    this.serverNameAt = nowMs;
+    this.serverName = this.scoring.readServerName();
   }
 
   /**
