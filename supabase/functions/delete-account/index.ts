@@ -8,6 +8,8 @@
 //      its own transaction records because tax law obliges *them* to, not us.
 //   2. feedback: deleted outright. The FK is only SET NULL, and a free-text
 //      message can name its author, so anonymising the user_id isn't enough.
+//      Bug reports from report-problem first have their Linear issue deleted
+//      (the copy of the message + logs held there), found via linear_issue_id.
 //   3. auth.users: deleted last. Every other user-linked table — profiles,
 //      public_drivers, setups (+ ratings/downloads on them), lap_traces,
 //      driver_best_laps, driver_activity_days, pit_stops, lap_consumption,
@@ -32,6 +34,7 @@
 
 import Stripe from 'npm:stripe@22.4.0';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { deleteIssue, linearKey } from '../_shared/linear.ts';
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
@@ -93,7 +96,31 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 2. Feedback rows (FK is SET NULL, not CASCADE).
+  // 2a. Bug reports filed through report-problem also opened a Linear issue
+  //     carrying the message and the driver's logs (0040). Delete those
+  //     before the rows that point at them. Best effort: an outage at the
+  //     issue tracker must not strand an erasure, so failures are logged for
+  //     a hand clean-up rather than returned.
+  const { data: linked } = await db
+    .from('feedback')
+    .select('id, linear_issue_id')
+    .eq('user_id', user.id)
+    .not('linear_issue_id', 'is', null);
+  if (linked?.length && !linearKey()) {
+    console.error(
+      `delete-account: LINEAR_API_KEY unset — delete by hand: ${linked.map((r) => r.linear_issue_id).join(', ')}`,
+    );
+  } else {
+    for (const r of linked ?? []) {
+      try {
+        await deleteIssue(r.linear_issue_id as string);
+      } catch (err) {
+        console.error(`delete-account: linear issue ${r.linear_issue_id} (feedback #${r.id}) not deleted`, err);
+      }
+    }
+  }
+
+  // 2b. Feedback rows (FK is SET NULL, not CASCADE).
   const { error: fbErr } = await db.from('feedback').delete().eq('user_id', user.id);
   if (fbErr) {
     console.error('delete-account: feedback delete failed', fbErr);
