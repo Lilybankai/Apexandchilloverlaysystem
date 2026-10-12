@@ -6,7 +6,9 @@
  * real electron/control-panel/relay-source.js in a vm against a small fake
  * DOM, feeds it the roster push it consumes (team-cloud's stateForUi shape),
  * and fails on any throw — then checks the list, the selection, the status
- * line, and that a change writes the setting.
+ * line, that a change writes the setting, and that it only shows in a team.
+ * Last, the placement: the control is in the Team tab (not Settings), hidden
+ * by default, and the web pit wall build does not ship its renderer.
  *
  * Run: npm run test:relay-source-panel
  */
@@ -34,6 +36,7 @@ function el(tag) {
     value: '',
     textContent: '',
     disabled: false,
+    hidden: false,
     replaceChildren(...kids) {
       this.children = kids;
       // A <select>'s value can only be one of its options.
@@ -72,8 +75,11 @@ function cloudState(over = {}) {
 async function run(initial) {
   const select = el('select');
   const status = el('span');
+  const wrap = el('label');
+  wrap.hidden = true; // the markup ships hidden
+  const byId = { '#relay-source': select, '#relay-source-status': status, '#team-relay-source': wrap };
   const document = {
-    querySelector: (sel) => (sel === '#relay-source' ? select : sel === '#relay-source-status' ? status : null),
+    querySelector: (sel) => byId[sel] || null,
     createElement: (tag) => el(tag),
     activeElement: null,
   };
@@ -100,14 +106,16 @@ async function run(initial) {
       errors.push(e);
     }
   };
-  return { select, status, errors, writes, push };
+  return { select, status, wrap, errors, writes, push };
 }
 
 (async () => {
   console.log('\nAuto, three-member team');
   {
-    const { select, status, errors, writes, push } = await run(cloudState());
+    const { select, status, wrap, errors, writes, push } = await run(cloudState());
     check('render() runs without throwing', errors.length === 0, errors.map((e) => String(e && e.message)).join(' | ') || 'clean');
+    check('shown in a team', wrap.hidden === false);
+    check('the full status is on hover too', status.title === status.textContent);
     const values = select.children.map((o) => o.value);
     check('offers Auto, each teammate (not me), and Off',
       JSON.stringify(values) === JSON.stringify(['auto', 'u-micky', 'u-scott', 'off']), values.join(','));
@@ -156,10 +164,48 @@ async function run(initial) {
 
   console.log('\nSigned out, no teams');
   {
-    const { select, status, errors } = await run({ signedIn: false, teams: [], activeTeamId: null });
+    const { select, status, wrap, errors } = await run({ signedIn: false, teams: [], activeTeamId: null });
     check('renders without throwing', errors.length === 0, errors.map((e) => String(e && e.message)).join(' | ') || 'clean');
+    check('hidden with no team', wrap.hidden === true);
     check('only Auto and Off', select.children.map((o) => o.value).join(',') === 'auto,off');
     check('disabled, with a sign-in hint', select.disabled === true && /Sign in/.test(status.textContent));
+  }
+
+  console.log('\nSigned in, no team yet');
+  {
+    const { wrap, errors } = await run(cloudState({ teams: [], activeTeamId: null }));
+    check('renders without throwing', errors.length === 0, errors.map((e) => String(e && e.message)).join(' | ') || 'clean');
+    check('hidden until a team is joined', wrap.hidden === true);
+  }
+
+  console.log('\nA bridge that does not know the setting (the web pit wall)');
+  {
+    const web = cloudState();
+    delete web.relaySource;
+    delete web.relaySourceEffective;
+    delete web.relayStatus;
+    const { wrap, errors } = await run(web);
+    check('renders without throwing', errors.length === 0, errors.map((e) => String(e && e.message)).join(' | ') || 'clean');
+    check('stays hidden even in a team', wrap.hidden === true);
+  }
+
+  console.log('\nPlacement');
+  {
+    const root = path.join(__dirname, '..');
+    const html = fs.readFileSync(path.join(root, 'electron', 'control-panel', 'index.html'), 'utf8');
+    const at = (needle) => html.indexOf(needle);
+    const teamStart = at('<section class="view" data-view="team">');
+    const teamEnd = html.indexOf('<section class="view" data-view="', teamStart + 10);
+    const pick = at('id="relay-source"');
+    check('the picker is on the Team tab', pick > teamStart && pick < teamEnd, `${teamStart} < ${pick} < ${teamEnd}`);
+    check('...and only once (gone from Settings)', html.split('id="relay-source"').length === 2);
+    check('...in the header strip, beside My car / Team',
+      pick > at('id="team-source"') && pick < at('id="team-age"'));
+    const wrapTag = /<label[^>]*id="team-relay-source"[^>]*>/.exec(html);
+    check('the wrapper ships hidden', !!wrapTag && /\shidden[\s>]/.test(wrapTag[0]));
+    const buildWeb = fs.readFileSync(path.join(root, 'scripts', 'build-web.js'), 'utf8');
+    check('the web pit wall build does not ship relay-source.js',
+      !/relay-source\.js/.test(buildWeb.replace(/\/\/.*$/gm, '')));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

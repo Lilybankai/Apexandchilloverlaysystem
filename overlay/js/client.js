@@ -1187,9 +1187,11 @@
    * fuel plan, radar, track limits, motion, reference pace and the ghost all
    * come from THIS PC's own car (garage screens, shared memory of the driven
    * car) — so in a replay they are hidden rather than left showing dashes or,
-   * worse, the garage car's numbers. The pedal traces hide too while the
-   * provider has no live input reading for the focused car (gear unknown),
-   * instead of drawing flat lines that look like a car coasting.
+   * worse, the garage car's numbers. Fuel too: the replay's own feeds carry
+   * no fuel at all, and REST's fuel fractions are the loaded session's,
+   * frozen at its start. The pedal traces hide while the provider has no live
+   * input reading for the focused car (gear unknown) — with LMU's replay
+   * websockets answering they have the camera car's real inputs and show.
    *
    * visibility, not display: the layout is untouched and the widget keeps
    * taking frames, so it is current the moment the replay ends. Edit mode
@@ -1199,6 +1201,7 @@
     tyres: true,
     damage: true,
     mfd: true,
+    fuel: true,
     fuelplan: true,
     radar: true,
     limits: true,

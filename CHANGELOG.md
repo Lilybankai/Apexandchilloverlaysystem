@@ -5,6 +5,33 @@
      app until it is renamed.
 -->
 
+## 1.3.8-beta.3 — 2026-10-12
+
+### Changed
+
+- **Replays now show the race as it happens.** In 1.3.8-beta.2 the overlays
+  came up over a replay but sat still: LMU's usual data stops at the start of
+  the session while a replay plays, so standings showed the grid and nothing
+  moved. The overlays now read the same live replay feed LMU's own broadcast
+  overlays use, so during a replay you get:
+  - **Standings** with the recording's drivers in their real order, laps down,
+    class positions and the PIT flag, with intervals and last laps filling in
+    as cars are seen crossing each part of the track;
+  - **Relative** with real road gaps around the car the camera is on;
+  - **Track map** with every car where it is in the replay;
+  - **Speedo and pedals** for the camera car — speed, gear, revs, throttle,
+    brake, clutch and steering.
+
+  Cut the camera to another car and everything follows it. Delta needs one
+  full lap of that car watched first. Tyres, damage and fuel stay hidden in a
+  replay, because LMU doesn't send them for a recording. Nothing you watch is
+  logged, uploaded or called on the radio, as before.
+
+- **Relay source has moved to the Team tab.** The choice of whose telemetry
+  the team relay puts on your overlays (Auto, one teammate, or Off) now sits in
+  the Team tab's header, next to My car / Team, instead of in Settings. It
+  shows only when you're in a team.
+
 ## 1.3.8-beta.2 — 2026-10-12
 
 ### Added

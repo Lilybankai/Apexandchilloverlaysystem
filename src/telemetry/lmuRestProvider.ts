@@ -106,6 +106,18 @@ import {
   parseFocusSlot,
   pickFocusCar,
 } from './replayMode';
+import {
+  ReplayFeed,
+  ReplayTiming,
+  buildReplayField,
+  metricsMatchCar,
+  metricsPhysics,
+  replayPhase,
+  replayRoadGap,
+  replayTimeRemaining,
+  type ReplayField,
+  type ReplayMetrics,
+} from './replayFeed';
 import { fingerprintGarageData } from './setupFingerprint';
 import {
   LapTraceRecorder,
@@ -295,6 +307,12 @@ interface RestStanding {
    * forgiven), `COUNT_NEITHER` on out-laps. Probed live 2026-08-04.
    */
   countLapFlag?: string;
+  /**
+   * The car's vehicle file (`"397_26_AMV"`). In a replay REST's rows are the
+   * loaded session's, but the machinery matches the recording's on this key,
+   * which is how a replayed car finds its manufacturer (telemetry/replayFeed).
+   */
+  vehicleFilename?: string;
 }
 
 /**
@@ -838,6 +856,24 @@ export class LmuRestProvider implements TelemetryProvider {
   private readonly replayGate = new ReplayPhysicsGate();
   /** Notices the replay being scrubbed. */
   private readonly replaySeek = new ReplaySeekDetector();
+  /**
+   * The replay's own live data — LMU's broadcast websockets on the REST port
+   * + 1 — because REST and shared memory are frozen at session start for the
+   * whole of a replay (telemetry/replayFeed.ts). Opened only while
+   * {@link replayPlayback} is true; inert otherwise.
+   */
+  private replayFeed: ReplayFeed;
+  /** Timing loops over the replay clock: the replay's gaps and last laps. */
+  private readonly replayTiming = new ReplayTiming();
+  /** The last LiveStandings push mapped, by its sequence number. */
+  private replayFieldSeq = -1;
+  private replayField: ReplayField | null = null;
+  /**
+   * When the snapshot this frame is built from arrived (wall ms), for the
+   * dead-reckoning that smooths 30 Hz frames between pushes. The REST refresh
+   * time live; the websocket push time in a replay (0 age while it is paused).
+   */
+  private snapshotAtMs = 0;
   private lastOkAt = 0;
   private timer: NodeJS.Timeout | null = null;
   private live = false;
@@ -956,6 +992,8 @@ export class LmuRestProvider implements TelemetryProvider {
     this.port = config.lmuApiPort ?? DEFAULT_API_PORT;
     this.verbose = config.verbose;
     this.traceLimits = new LmuTraceLimitsReader(config.verbose);
+    // Constructing it opens nothing; see refreshReplayMode.
+    this.replayFeed = new ReplayFeed({ port: this.port + 1, verbose: config.verbose });
   }
 
   public async start(): Promise<void> {
@@ -1104,6 +1142,7 @@ export class LmuRestProvider implements TelemetryProvider {
       clearInterval(this.tyreSpecTimer);
       this.tyreSpecTimer = null;
     }
+    this.replayFeed.setActive(false);
     this.fallback.stop();
     this.localCar.stop();
     this.scoring.stop();
@@ -1489,7 +1528,12 @@ export class LmuRestProvider implements TelemetryProvider {
     return { slot: car ? car.slotID : null, names: [...names], replay: this.replayPlayback };
   }
 
-  /** Reads {@link replayPlayback}. A failure keeps the last answer; a first failure (an older build) means no. */
+  /**
+   * Reads {@link replayPlayback}. A failure keeps the last answer; a first
+   * failure (an older build) means no. The replay websockets follow the answer:
+   * open while a replay plays, closed the moment it is not — live driving never
+   * opens them.
+   */
   private async refreshReplayMode(): Promise<void> {
     try {
       const nav = await this.getJson<{ state?: { settingMode?: string } }>('/navigation/state');
@@ -1497,6 +1541,109 @@ export class LmuRestProvider implements TelemetryProvider {
     } catch {
       if (this.replayPlayback === null) this.replayPlayback = false;
     }
+    this.replayFeed.setActive(this.replayPlayback === true);
+  }
+
+  /**
+   * The replay camera's slot. Three channels name it: REST `/rest/watch/focus`
+   * (a slot), LiveStandings `slotHasFocus` (a slot) and replaymetrics (a car
+   * number + class, which is the push the camera car's pedals come from). They
+   * agreed throughout the 2026-10-12 capture; when they do not — a cut one feed
+   * has seen before another — the slot the metrics push describes wins, so the
+   * name on screen and the inputs under it are the same car. With no feed this
+   * is REST's slot, as before.
+   */
+  private replayCameraSlot(
+    cars: RestStanding[],
+    feed: { metrics: ReplayMetrics | null } | null,
+  ): number | null {
+    const rest = this.replayFocusSlot;
+    if (!feed) return rest;
+    const flagged = cars.find((c) => c.hasFocus === true);
+    const m = feed.metrics;
+    if (m) {
+      for (const slot of [rest, flagged ? flagged.slotID : null]) {
+        if (slot === null) continue;
+        const car = cars.find((c) => c.slotID === slot);
+        if (car && metricsMatchCar(m, car)) return slot;
+      }
+      const named = cars.filter((c) => metricsMatchCar(m, c));
+      if (named.length === 1 && named[0]) return named[0].slotID;
+    }
+    return rest !== null && cars.some((c) => c.slotID === rest) ? rest : flagged ? flagged.slotID : rest;
+  }
+
+  /**
+   * The replay as its websockets describe it, or `null` — not in a replay, the
+   * feed not (or no longer) answering, no track length — in which case the
+   * frame is built from REST exactly as before this feed existed.
+   *
+   * A LiveStandings push is mapped once (the frame runs at 30–60 Hz, the push
+   * at ~7 Hz) and the timing loops are fed once per push, with the replay event
+   * time of the freshest metrics push.
+   */
+  private replaySnapshot(): {
+    field: ReplayField;
+    session: RestSession;
+    et: number;
+    metrics: ReplayMetrics | null;
+    remainingSec: number;
+    atMs: number;
+  } | null {
+    const feed = this.replayFeed;
+    const now = Date.now();
+    const push = feed.standingsUsable(now) ? feed.standings : null;
+    if (!push || push.rows.length === 0) return null;
+    const restSi = this.session ?? {};
+    const len = typeof restSi.lapDistance === 'number' && restSi.lapDistance > 1 ? restSi.lapDistance : 0;
+    if (len <= 0) return null;
+    if (push.seq !== this.replayFieldSeq || !this.replayField) {
+      this.replayTiming.update(
+        push.rows.map((r) => ({
+          slotId: r.slotID,
+          laps: r.currentLapsCompleted ?? 0,
+          lapDist: r.lapDist ?? 0,
+          inGarage: r.inGarage === true,
+        })),
+        push.et,
+        len,
+      );
+      // REST's frozen rows still list the recording's machinery by vehicle
+      // file, which is all the manufacturer badge needs.
+      const carIdByFile = new Map<string, string>();
+      for (const c of this.standings ?? []) {
+        if (typeof c.vehicleFilename === 'string' && c.vehicleFilename && c.carId) {
+          carIdByFile.set(c.vehicleFilename, c.carId);
+        }
+      }
+      this.replayField = buildReplayField(push.rows, this.replayTiming, len, push.et, carIdByFile);
+      this.replayFieldSeq = push.seq;
+    }
+    const metricsPush = feed.metricsUsable(now) ? feed.metrics : null;
+    const metrics = metricsPush ? metricsPush.body : null;
+    const et = metricsPush && metricsPush.et > 0 ? metricsPush.et : push.et;
+    const session: RestSession = {
+      ...restSi,
+      // The replay's clock, never REST's frozen 0 (seek detection, the race
+      // log's stamps and the delta clock all read it).
+      currentEventTime: et > 0 ? et : 0,
+      numberOfVehicles: this.replayField.cars.length,
+      // Frozen at the loaded session's start: no marshalling, gantry or FCY
+      // channel describes the replay.
+      sectorFlag: undefined,
+      yellowFlagState: undefined,
+      startLightFrame: undefined,
+      timeRemainingInGamePhase: undefined,
+    };
+    return {
+      field: this.replayField,
+      session,
+      et,
+      metrics,
+      remainingSec: replayTimeRemaining(et, restSi.endEventTime, metrics),
+      // A paused replay holds still: no dead-reckoning past the push.
+      atMs: feed.playing(now) ? push.at : now,
+    };
   }
 
   /**
@@ -1753,13 +1900,18 @@ export class LmuRestProvider implements TelemetryProvider {
   }
 
   private buildFrame(nowMs: number): TelemetryFrame {
-    const cars = this.standings ?? [];
-    const si = this.session ?? {};
-
     // Replay mode (THE-35): only on the sim's own positive answer — see
     // telemetry/replayMode.ts. Every replay-specific branch below hangs off this
     // one flag, so a live frame is built exactly as it always was.
     const replay = this.replayPlayback === true;
+    // In a replay REST is frozen at the loaded session's start; the replay's
+    // own cars, clock and camera-car physics come off its websockets instead
+    // (telemetry/replayFeed.ts). No feed (not answering, dropped) = the REST
+    // rows, exactly as before the feed existed.
+    const feed = replay ? this.replaySnapshot() : null;
+    const cars: RestStanding[] = feed ? feed.field.cars : this.standings ?? [];
+    const si: RestSession = feed ? feed.session : this.session ?? {};
+    this.snapshotAtMs = feed ? feed.atMs : this.lastOkAt;
     const curEtForSeek = typeof si.currentEventTime === 'number' ? si.currentEventTime : 0;
     if (replay !== this.lastFrameReplay) {
       this.lastFrameReplay = replay;
@@ -1771,7 +1923,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // The car with broadcast focus is the "player" for overlay purposes; fall
     // back to the local player entry, then to the leader. In a replay the
     // replay camera's slot, read off `/rest/watch/focus`, comes first.
-    const focus = pickFocusCar(cars, replay ? this.replayFocusSlot : null);
+    const focus = pickFocusCar(cars, replay ? this.replayCameraSlot(cars, feed) : null);
     const focusId = focus ? focus.slotID : UNKNOWN_VALUE;
 
     // The locally-driven car's physics (inputs + fuel in litres) come from
@@ -1836,8 +1988,15 @@ export class LmuRestProvider implements TelemetryProvider {
       playerCar.inGarageStall === true &&
       focus !== undefined &&
       focus.slotID !== playerCar.slotID;
+    // In a replay the camera car's pedals, gear, revs and speed are the
+    // replaymetrics push — when it names the car the overlays are on (a cut
+    // one feed has seen and the other not yet shows nothing, not the wrong car).
+    const replayMetrics =
+      feed && feed.metrics && focus && metricsMatchCar(feed.metrics, focus) ? feed.metrics : null;
     const displayLocal = replay
-      ? this.readReplayCar(focus)
+      ? replayMetrics
+        ? metricsPhysics(replayMetrics, feed ? feed.et : Number.NaN)
+        : this.readReplayCar(focus)
       : watchingFromGarage && focus
         ? this.readSpectatedCar(focus.slotID)
         : (local ?? (playerCar === undefined && focus ? this.readSpectatedCar(focus.slotID) : null));
@@ -1886,11 +2045,24 @@ export class LmuRestProvider implements TelemetryProvider {
     const teamCarId =
       teamStint.teammateDriving && teamStint.car ? teamStint.car.slotID : UNKNOWN_VALUE;
     const standings = this.buildStandings(cars, focusId, ownId, frameSessionKey, trackLen, teamCarId);
-    const relative = this.buildRelative(cars, focus, si);
+    // A replay's road gaps are timed off the replay clock (the feed's own gap
+    // fields are road-time figures that jump at the line — see replayFeed).
+    const replayGap =
+      feed && focus
+        ? (c: RestStanding): number | null =>
+            replayRoadGap(this.replayTiming, feed.field, focus.slotID, c.slotID, trackLen, feed.et)
+        : undefined;
+    const relative = this.buildRelative(cars, focus, si, replayGap);
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
-    const session = this.buildSession(cars, si, focus, this.gameState);
+    const session = this.buildSession(
+      cars,
+      si,
+      focus,
+      this.gameState,
+      feed ? { remainingSec: feed.remainingSec, phase: replayPhase(feed.field.cars) } : undefined,
+    );
     if (trackLen > 0) session.trackLengthM = Math.round(trackLen);
     // Which server — the team relay's session identity (teammateRelay.ts).
     this.refreshServerName(frameSessionKey, nowMs);
@@ -1944,8 +2116,13 @@ export class LmuRestProvider implements TelemetryProvider {
     // focused car is the one driven on this PC it gets the shared-memory lap
     // clock and that car's own live speed; every other car runs the same engine
     // off the REST feed — see {@link LapDeltaTracker}.
-    const restAgeSec = Math.min(0.5, Math.max(0, (nowMs - this.lastOkAt) / 1000));
-    const deltaClock = this.stepDeltaClock(local ? local.elapsedSec : UNKNOWN_VALUE, nowMs);
+    const restAgeSec = Math.min(0.5, Math.max(0, (nowMs - this.snapshotAtMs) / 1000));
+    // A replay's delta runs on the replay's own clock, so a paused replay
+    // freezes it instead of letting wall time run on under still cars.
+    const deltaClock = this.stepDeltaClock(
+      local ? local.elapsedSec : feed && feed.et > 0 ? feed.et : UNKNOWN_VALUE,
+      nowMs,
+    );
     const localIsFocus =
       local !== null && playerCar !== undefined && focus !== undefined &&
       playerCar.slotID === focus.slotID;
@@ -2093,6 +2270,21 @@ export class LmuRestProvider implements TelemetryProvider {
       finish,
       replay,
     );
+    if (replayMetrics) {
+      // The camera car's own timing, from the sim: time into this lap (−1 for
+      // a moment at the line, left to the fallback), the lap it just finished,
+      // and the sector it is in — none of which LiveStandings carries honestly.
+      const m = replayMetrics;
+      if (typeof m.timeIntoLap === 'number' && m.timeIntoLap >= 0) {
+        player.lap.current = round2(m.timeIntoLap);
+      }
+      if (typeof m.finalLapTime === 'number' && m.finalLapTime > 5 && m.finalLapTime < 3600) {
+        player.lap.last = round3(m.finalLapTime) as number;
+      }
+      if (typeof m.sectorNum === 'number' && m.sectorNum >= 1 && m.sectorNum <= 3) {
+        player.lap.sector = m.sectorNum;
+      }
+    }
     // The driving aids as the car holds them, from shared memory (the driven car
     // only — every other record publishes zeros there). The class rides along so
     // the projection can veto controls this class has no cockpit adjustment for,
@@ -2110,9 +2302,18 @@ export class LmuRestProvider implements TelemetryProvider {
     // on it. Fed the SCENE name as the layout — Monza's two layouts share a
     // venue name, and a map keyed on the venue alone would draw one over the
     // other (the same trap `refreshSimTrackName` exists to close for pace).
-    const trackMap = this.buildTrackMap(session, trackLen, playerCar, playerScoringCar, field, cars);
+    const trackMap = this.buildTrackMap(
+      session,
+      trackLen,
+      playerCar,
+      playerScoringCar,
+      field,
+      cars,
+      feed ? feed.field.positions : undefined,
+    );
     // In a replay the map marks the camera car, as the other widgets follow it.
-    // (Nothing is learned: with no driven car the builder gets no position.)
+    // (Nothing is learned: with no driven car the builder gets no position —
+    // the replay's world positions only PLACE the dots on a map already known.)
     if (replay && trackMap && focus) {
       for (const c of trackMap.cars) c.isPlayer = c.slotId === focus.slotID;
     }
@@ -2240,6 +2441,7 @@ export class LmuRestProvider implements TelemetryProvider {
     scoringCar: ScoringCar | null,
     field: RadarField | null,
     cars: RestStanding[],
+    replayPositions?: ReadonlyMap<number, { x: number; y: number; z: number }>,
   ): TrackMapState | undefined {
     if (trackLen <= 0) return undefined;
 
@@ -2259,6 +2461,11 @@ export class LmuRestProvider implements TelemetryProvider {
     if (field) {
       for (const c of field.cars) posById.set(c.slotId, c.pos);
       if (playerCar) posById.set(playerCar.slotID, field.playerPos);
+    } else if (replayPositions) {
+      // LiveStandings `posX/Y/Z` are the same world axes as shared memory's
+      // `mPos` (the bundled Road Atlanta line passes within metres of every
+      // moving car in the 2026-10-12 capture), so they place dots directly.
+      for (const [slot, p] of replayPositions) posById.set(slot, p);
     }
 
     const mapCars: TrackMapCar[] = [];
@@ -2464,6 +2671,13 @@ export class LmuRestProvider implements TelemetryProvider {
     cars: RestStanding[],
     focus: RestStanding | undefined,
     si: RestSession,
+    /**
+     * A replay's timed road gap to a car (positive = ahead), or null when not
+     * timed yet. When given it REPLACES the `timeBehindLeader` difference —
+     * the replay feed's leader gaps are not race gaps — and null falls to the
+     * road-distance estimate. Absent live, where nothing changes.
+     */
+    timedGap?: (c: RestStanding) => number | null,
   ): RelativeEntry[] {
     if (!focus || typeof focus.lapDistance !== 'number') return [];
     const trackLength = typeof si.lapDistance === 'number' && si.lapDistance > 1 ? si.lapDistance : 0;
@@ -2483,7 +2697,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // car's road position is extrapolated forward by its own velocity times the
     // snapshot's age, so the 30 Hz frames move smoothly between REST refreshes.
     // Pure per-car arithmetic — no extra polling or I/O.
-    const ageSec = Math.min(0.5, Math.max(0, (Date.now() - this.lastOkAt) / 1000));
+    const ageSec = Math.min(0.5, Math.max(0, (Date.now() - this.snapshotAtMs) / 1000));
     const speedOf = (c: RestStanding): number =>
       c.carVelocity &&
       typeof c.carVelocity.velocity === 'number' &&
@@ -2527,15 +2741,21 @@ export class LmuRestProvider implements TelemetryProvider {
 
       const carTime = leaderTime(c);
       let gap = roadGap;
-      if (focusTime !== null && carTime !== null) {
+      let timed: number | null = null;
+      if (timedGap) {
+        timed = timedGap(c);
+      } else if (focusTime !== null && carTime !== null) {
         // Ahead = closer to the leader = a SMALLER gap to it, so the subtraction
         // is this way round to land on "positive = ahead".
-        let sim = focusTime - carTime;
+        timed = focusTime - carTime;
         // The same half-lap wrap the distance gets, for the same reason: two
         // cars either side of the line hold leader-gaps at opposite ends of a
         // lap, and the short way round is the one on the road between them.
-        if (sim > halfLap) sim -= lapTime;
-        else if (sim < -halfLap) sim += lapTime;
+        if (timed > halfLap) timed -= lapTime;
+        else if (timed < -halfLap) timed += lapTime;
+      }
+      if (timed !== null) {
+        let sim = timed;
         // The snapshot is up to one refresh old (~150 ms) and the widget renders
         // at 30 Hz, so without this the number visibly steps. Extrapolate the
         // closing distance over the snapshot's age and convert it at the speed
@@ -2652,6 +2872,12 @@ export class LmuRestProvider implements TelemetryProvider {
     si: RestSession,
     focus: RestStanding | undefined,
     gs: RestGameState | null,
+    /**
+     * A replay built from its websockets: the session clock and phase the
+     * replay itself proves (telemetry/replayFeed). REST's phase strings, phase
+     * timer and marshalling channels are frozen at the loaded session's start.
+     */
+    replayClock?: { remainingSec: number; phase: SessionPhase },
   ): SessionState {
     const leaderLaps = cars.reduce((m, c) => Math.max(m, c.lapsCompleted | 0), 0);
     // The leader of the PLAYER'S class, which is who the driver's own race ends
@@ -2680,7 +2906,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // (GPHASE_BEFORE while the session loads); sessionInfo's gamePhase is
     // numeric and only stands in when it happens to arrive as a string.
     const phaseStr = focus?.gamePhase ?? gs?.gamePhase ?? si.gamePhase;
-    const phase = mapPhase(phaseStr);
+    const phase = replayClock ? replayClock.phase : mapPhase(phaseStr);
     // The clock. NOT LMU's `timeRemainingInGamePhase` taken on trust, which is
     // what this used to be: that field is this CLIENT's phase timer, latched
     // when the client sees the green — and a client that loads back into a
@@ -2689,7 +2915,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // number stayed right (THE-33). The session's absolute end from shared
     // memory comes first now; the REST timer is the fallback for a rig without
     // it. See telemetry/sessionClock.
-    const timeRemaining = resolveTimeRemaining({
+    const timeRemaining = replayClock ? replayClock.remainingSec : resolveTimeRemaining({
       running: !isPreGreen(phase),
       rest: {
         currentEventTime: si.currentEventTime,
@@ -2808,6 +3034,7 @@ export class LmuRestProvider implements TelemetryProvider {
     // Not in a replay: whether the Scoring buffer is rewritten during playback
     // is unmeasured, and a frozen one would hold the last live yellow forever.
     const smSectors = this.replayPlayback === true ? null : this.localCar.sectorFlagBytes();
+    if (replayClock) sectorFlags = undefined;
     if (smSectors) {
       const rest = sectorFlags ?? (['none', 'none', 'none'] as const);
       sectorFlags = smSectors.map((b, i) =>
@@ -2827,8 +3054,15 @@ export class LmuRestProvider implements TelemetryProvider {
     // flag: it is the one place a full-course yellow is published (per-car
     // flags stayed GREEN through every probe).
     const fcy = asUpper(si.yellowFlagState);
-    const flag: FlagState =
-      fcy && fcy !== 'NONE' ? 'yellow' : mapFlag(focus?.flag ?? phaseStr);
+    const flag: FlagState = replayClock
+      ? replayClock.phase === 'checkered'
+        ? 'checkered'
+        : replayClock.phase === 'green'
+          ? 'green'
+          : 'none'
+      : fcy && fcy !== 'NONE'
+        ? 'yellow'
+        : mapFlag(focus?.flag ?? phaseStr);
     // Two independent reads of "is the driver actually at the wheel", because
     // LMU splits the truth between them (both probed live, 2026-08-06/07,
     // Daytona):
@@ -3376,6 +3610,12 @@ export class LmuRestProvider implements TelemetryProvider {
     this.replayGate.reset();
     this.lastSpectated = null;
     this.lastLocal = null;
+    // Timing loops time the replay as it plays; across a jump they would
+    // compare one moment of the race with another.
+    this.replayTiming.reset();
+    this.replayFieldSeq = -1;
+    this.replayField = null;
+    this.gapHistory.clear();
   }
 
   /**
@@ -3616,7 +3856,8 @@ export class LmuRestProvider implements TelemetryProvider {
         last: row ? row.lastLapSec : UNKNOWN_VALUE,
         best: row ? row.bestLapSec : UNKNOWN_VALUE,
         delta: deltaSec,
-        sector: UNKNOWN_VALUE,
+        // Only a replay's camera car has a sector to say (set in buildFrame).
+        sector: UNKNOWN_VALUE as number,
       },
       tyres: {
         frontLeft: tyre(0),
