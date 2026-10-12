@@ -319,6 +319,8 @@ function decide(
   }
   // Only LMU says which car is ours and who is in it; never guess elsewhere.
   if (frame.source !== 'lmu') return drop(STATUS_IDLE_WAITING);
+  // A replay's car is a recording; a teammate's live tyres are not its tyres (THE-35).
+  if (frame.session && frame.session.replay === true) return drop(STATUS_IDLE_WAITING);
   const focus = focusRow(frame);
   // In the car ourselves: local telemetry is live, never override it — and no
   // hold, the relay ends on this frame.

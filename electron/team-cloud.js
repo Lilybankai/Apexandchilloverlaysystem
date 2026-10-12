@@ -79,6 +79,8 @@ function eligibleToPublish(frame, snapshot) {
   // A frame carrying a TEAMMATE's relayed tyres is theirs, not ours: this PC
   // is spectating. Re-publishing it would echo their data back as our own.
   if (frame.player && frame.player.relayed) return false;
+  // A replay is a recording being watched, never the car being driven here.
+  if (frame.session && frame.session.replay === true) return false;
   if (frame.session && frame.session.onTrack === false) return false;
   // On LMU the payload's car identity (number, class, DRIVER) comes off the
   // watched row, so the watched row must be the car driven here. Otherwise a
