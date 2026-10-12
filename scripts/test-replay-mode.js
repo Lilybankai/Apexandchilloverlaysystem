@@ -144,6 +144,7 @@ function makeProvider() {
     },
     readField: () => null,
     inRealtime: () => null,
+    sessionClock: () => null, // THE-33 reads the event clock here; no shared memory in this stub
     sectorFlagBytes: () => [1, 1, 1], // a frozen buffer showing yellow everywhere
     available: () => true,
     start: () => {},
@@ -153,6 +154,7 @@ function makeProvider() {
     read: () => null,
     readPlayerName: () => '',
     readTrackName: () => '',
+    readServerName: () => '', // THE-34's relay session identity; offline in this stub
     start: () => {},
     stop: () => {},
   };
@@ -315,6 +317,8 @@ try {
   const unflagged = JSON.parse(JSON.stringify(withTyres));
   delete unflagged.session.replay;
   unflagged.session.onTrack = true;
+  // THE-34: the publisher only speaks for the car driven on this PC.
+  for (const r of unflagged.standings || []) if (r && r.isPlayer) r.isOwn = true;
   check('control: the unflagged frame would be published', eligibleToPublish(unflagged, snap) === true);
   check('team relay: a replay frame is never published', eligibleToPublish(withTyres, snap) === false);
 
@@ -331,10 +335,22 @@ try {
       },
     }],
   };
-  const rfUnflagged = JSON.parse(JSON.stringify(rf));
+  // A teammate in our car, identity complete, as THE-34's relay gate demands —
+  // so the only difference between the control and the replay frame is the flag.
+  const asTeammateDriving = (x) => {
+    const r = (x.standings || []).find((s) => s && s.isPlayer);
+    if (r) { r.isOwn = false; r.teammateDriving = true; }
+    if (!x.session.type) x.session.type = 'race';
+    return r;
+  };
+  const rfTeam = JSON.parse(JSON.stringify(rf));
+  const ourRow = asTeammateDriving(rfTeam);
+  relay.sources[0].snapshot.session.type = rfTeam.session.type;
+  relay.sources[0].snapshot.car.driverName = ourRow ? ourRow.driverName : undefined;
+  const rfUnflagged = JSON.parse(JSON.stringify(rfTeam));
   delete rfUnflagged.session.replay;
   check('control: the unflagged frame WOULD take the relay', applyTeammateRelay(rfUnflagged, relay, clock) !== rfUnflagged);
-  check('team relay: never spliced into a replay frame', applyTeammateRelay(rf, relay, clock) === rf);
+  check('team relay: never spliced into a replay frame', applyTeammateRelay(rfTeam, relay, clock) === rfTeam);
 
   const hist = new TeamHistory();
   const hf = JSON.parse(JSON.stringify(rf));
