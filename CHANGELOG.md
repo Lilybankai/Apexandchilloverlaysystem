@@ -5,7 +5,7 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.3.8-beta.4 — 2026-10-12
 
 ### Fixed
 
