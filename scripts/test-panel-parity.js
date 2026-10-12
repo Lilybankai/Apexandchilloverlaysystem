@@ -409,9 +409,6 @@ const PANEL_CONTRACT = {
   // more — it is no longer a setting; the panel always minimises to the tray.)
   'startup-toggle': 'input:checkbox',
   'webrelay-toggle': 'input:checkbox',
-  // Whose relayed telemetry the overlays may show (THE-34) — relay-source.js.
-  'relay-source': 'select',
-  'relay-source-status': 'span',
 
   // Settings — appearance (all three ride the live appearance channel)
   'bg-range': 'input:range',
@@ -738,6 +735,12 @@ const PANEL_CONTRACT = {
   // feature correctly staying away.
   'team-crew': 'section',
   'team-source': 'nav',
+  // Team header ▸ Relay source: whose relayed telemetry the overlays may show
+  // (THE-34) — relay-source.js. Same reason: hidden outside a team, so a
+  // broken picker looks exactly like it correctly staying away.
+  'team-relay-source': 'label',
+  'relay-source': 'select',
+  'relay-source-status': 'span',
 
   // Floating
   toast: 'div',
@@ -1046,7 +1049,7 @@ verifyPage({
     // The Schedule tab. Its own file since the web pit wall started running
     // it too (scripts/build-web.js); every id it reads still lives here.
     'schedule-panel.js',
-    // Settings ▸ Application ▸ Relay source (THE-34).
+    // Team tab header ▸ Relay source (THE-34). Desktop only — not in the web build.
     'relay-source.js',
   ],
   contract: PANEL_CONTRACT,

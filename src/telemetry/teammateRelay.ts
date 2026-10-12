@@ -77,7 +77,7 @@ export const RELAY_GATE_HOLD_MS = 1500;
 
 /**
  * Where the overlays' relayed data may come from — the driver's choice in
- * Settings ▸ Application ▸ Relay source:
+ * Team tab ▸ Relay source:
  *   • `auto` — whichever teammate passes the gate (the default);
  *   • `pin`  — only {@link TeammateRelay.pinUserId}, and still only when they
  *              pass the gate (in our session, driving our car);
@@ -112,7 +112,7 @@ export interface TeammateRelay {
 }
 
 /**
- * What the gate decided on the latest frame, worded for the Settings status
+ * What the gate decided on the latest frame, worded for the Team tab status
  * line next to the Relay source picker.
  *   • `showing`        — relayed data is on the overlays (`driverName` set);
  *   • `idle`           — nothing to relay: we are driving, or no teammate has

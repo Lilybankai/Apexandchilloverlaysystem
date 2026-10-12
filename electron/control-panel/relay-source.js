@@ -1,5 +1,5 @@
 /**
- * relay-source.js — Settings ▸ Application ▸ Relay source.
+ * relay-source.js — Team tab header ▸ Relay source.
  * -----------------------------------------------------------------------------
  * Whose relayed tyres, damage and fuel the overlays may show while a teammate
  * drives our car (Linear THE-34):
@@ -17,6 +17,17 @@
  * somebody who left the team reads Auto), and `relayStatus` is the gate's
  * latest word. Writes go through updateSettings({ relaySource }).
  *
+ * It lives in the Team tab's header strip, beside My car / Team, and shows
+ * only for a signed-in driver who is in a team (the strip's own no-team state
+ * hides it, same rule as the My car / Team toggle). It used to sit in
+ * Settings ▸ Application; Carl moved it to where the crew watches the car.
+ *
+ * Desktop only. scripts/build-web.js copies the Team section's markup to the
+ * web pit wall but not this file, so the control keeps its static `hidden`
+ * there. Belt and braces: it also stays hidden unless the bridge's roster
+ * push carries `relaySource` — the web bridge's does not, as a browser has
+ * no overlays for the setting to steer.
+ *
  * scripts/test-relay-source-panel.js runs this file in a vm against a stub
  * DOM — a throw part-way through render() blanks the control without a sound.
  */
@@ -29,6 +40,7 @@
 
   const select = document.querySelector('#relay-source');
   const statusEl = document.querySelector('#relay-source-status');
+  const wrap = document.querySelector('#team-relay-source');
   if (!select) return;
 
   /** Teammates the picker offers: the active team's roster, minus me. */
@@ -47,6 +59,12 @@
   }
 
   function render(cloud) {
+    // In a team, on a bridge that knows the setting — otherwise there is no
+    // relay to choose and the header keeps its room.
+    if (wrap) {
+      const inTeam = !!(cloud && cloud.signedIn && Array.isArray(cloud.teams) && cloud.teams.length);
+      wrap.hidden = !(inTeam && typeof cloud.relaySource === 'string');
+    }
     const mates = teammates(cloud);
     const effective = (cloud && cloud.relaySourceEffective) || { mode: 'auto' };
     const value =
@@ -81,6 +99,8 @@
             ? st.text
             : '';
       statusEl.textContent = text;
+      // The header truncates a long line; the full sentence is a hover away.
+      statusEl.title = text;
       statusEl.dataset.state = (st && st.state) || 'idle';
     }
   }
