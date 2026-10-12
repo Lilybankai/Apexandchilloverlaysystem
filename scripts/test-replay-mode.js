@@ -12,6 +12,11 @@
  *      publishes it nor splices a teammate into it, the Team history skips it.
  *   3. No stale numbers — the garage screens (tyre wear, damage, MFD, pit) and a
  *      shared-memory buffer that is not provably live never reach the frame.
+ *   4. The replay's own live data (LMU's websockets on :6398) — opened only in
+ *      a replay, closed on exit, built into the frame from a real capture, and
+ *      every safeguard above still holding for a frame built from it; a dead
+ *      feed falls back to the REST frame. The mapping itself is pinned in
+ *      scripts/test-replay-feed.js.
  *
  * Drives the real provider's buildFrame with stubbed shared-memory readers and
  * spied recorders; no sim, no network. Live frames are built alongside as the
@@ -197,6 +202,7 @@ function frame(p, laps, et, replayState, cameraSlot) {
   return p.buildFrame(clock);
 }
 
+(async () => {
 try {
   // ---- control: a live frame is built exactly as before --------------------
   {
@@ -370,6 +376,180 @@ try {
   check('training gate: a practice REPLAY is not practice', sessionOfFrame(practiceReplay).type !== 'practice');
   check('control: a live practice frame reads as practice (practice review)', sessionTypeOf(practiceLive) === 'practice');
   check('practice review: a practice REPLAY is not practice', sessionTypeOf(practiceReplay) !== 'practice');
+
+  /* ------------------------------------------------------------------------ */
+  console.log('\nreplay websockets — the replay’s own live data (THE-35 follow-up)');
+  const { ReplayFeed } = require(dist('telemetry', 'replayFeed.js'));
+  const fx = require('./fixtures/replay-ws-road-atlanta.json');
+
+  /** Fake ws clients the provider's feed is given instead of real sockets. */
+  const fakeSockets = () => {
+    const made = [];
+    const factory = (url) => {
+      const h = {};
+      const s = {
+        url, sent: [], closed: false,
+        on(ev, fn) { (h[ev] = h[ev] || []).push(fn); },
+        send(d) { s.sent.push(d); },
+        close() { s.closed = true; }, terminate() { s.closed = true; },
+        fire(ev, arg) { for (const fn of h[ev] || []) fn(arg); },
+      };
+      made.push(s);
+      return s;
+    };
+    return { made, factory };
+  };
+
+  // Socket lifecycle through the provider's own replay detection.
+  {
+    const { p } = makeProvider();
+    const { made, factory } = fakeSockets();
+    p.replayFeed = new ReplayFeed({ port: 6398, factory });
+    let nav = 'SETTING_RACE';
+    p.getJson = async (route) => {
+      if (route === '/navigation/state') return { state: { settingMode: nav } };
+      throw new Error('not stubbed: ' + route);
+    };
+    await p.refreshReplayMode();
+    check('live session: no replay socket is ever opened', made.length === 0 && !p.replayFeed.isActive());
+    nav = 'SETTING_REPLAY_PLAYBACK';
+    await p.refreshReplayMode();
+    check('replay detected: both replay sockets open', made.length === 2 && p.replayFeed.isActive());
+    await p.refreshReplayMode();
+    check('still in the replay: no extra sockets', made.length === 2);
+    nav = 'SETTING_RACE';
+    await p.refreshReplayMode();
+    check('replay exit: both sockets closed', made.every((s) => s.closed) && !p.replayFeed.isActive());
+    nav = 'SETTING_REPLAY_PLAYBACK';
+    await p.refreshReplayMode();
+    p.stop();
+    check('provider stop closes them too', made.slice(2).every((s) => s.closed) && !p.replayFeed.isActive());
+  }
+
+  // A frame built from the feed — and every safeguard still holding.
+  const restSessionRA = {
+    trackName: 'Michelin Raceway Road Atlanta', session: 'RACE1', lapDistance: fx.trackLengthM,
+    currentEventTime: 0, endEventTime: fx.endEventTime, gamePhase: 9, numberOfVehicles: 39,
+    timeRemainingInGamePhase: 12486, sectorFlag: ['YELLOW', 'UNKNOWN', 'UNKNOWN'],
+  };
+  // REST in a replay: the LOADED session's rows, frozen — other drivers, lap 0,
+  // a fuel fraction, a FORMATION phase. None of it may reach the frame.
+  const frozenRest = () => [
+    { slotID: 2, driverName: 'Urtubia Javitxu', carClass: 'GT3', carNumber: '399', position: 3,
+      lapsCompleted: 0, bestLapTime: -1, lastLapTime: 0, lapDistance: -0.6, hasFocus: true,
+      carVelocity: { velocity: 0 }, fuelFraction: 0.83, gamePhase: 'FORMATION', flag: 'GREEN',
+      vehicleFilename: '397_26_AMV', carId: 'amr-car-id', timeBehindLeader: 1.6, player: true },
+    { slotID: 3, driverName: 'Someone Else', carClass: 'Hyper', carNumber: '73', position: 1,
+      lapsCompleted: 0, bestLapTime: -1, lastLapTime: 0, lapDistance: 0, carVelocity: { velocity: 0 },
+      fuelFraction: 0.9, gamePhase: 'FORMATION' },
+  ];
+  const wsFrame = (p, fire, restFocus = Number(fx.restFocus)) => {
+    if (fire) fire();
+    p.standings = frozenRest();
+    p.session = { ...restSessionRA };
+    p.replayPlayback = true;
+    p.replayFocusSlot = restFocus;
+    p.lastOkAt = clock;
+    return p.buildFrame(clock);
+  };
+  {
+    const { p, spy } = makeProvider();
+    p.manufacturerById.set('amr-car-id', 'Aston Martin');
+    const { made, factory } = fakeSockets();
+    p.replayFeed = new ReplayFeed({ port: 6398, factory });
+    p.replayFeed.setActive(true);
+    const ui = made.find((s) => s.url.endsWith('/ui'));
+    const rm = made.find((s) => s.url.endsWith('/replaymetrics'));
+    ui.fire('open');
+    rm.fire('open');
+    const m0 = fx.replaymetrics[0].msg.body;
+    const et0 = m0.replayStartET + m0.currentReplayPos;
+    clock += 50;
+    const f = wsFrame(p, () => {
+      rm.fire('message', JSON.stringify(fx.replaymetrics[0].msg));
+      ui.fire('message', JSON.stringify(fx.ui[0].msg));
+    });
+    check('ws frame: still a replay, nobody driving', f.session.replay === true && f.session.onTrack === false);
+    check('ws frame: the whole replay field, not the frozen REST two', f.standings.length === 39, f.standings.length);
+    check('ws frame: standings in the replay’s order (P1 Chastain)', f.standings[0].driverName === 'Oliver Chastain' && f.standings[0].position === 1);
+    const me = f.standings.find((r) => r.isPlayer);
+    check('ws frame: the camera car is the RECORDING’s driver, not REST’s', me && me.slotId === 2 && me.driverName === 'M Aranguren', me && me.driverName);
+    check('ws frame: P2 shows its laps down, not a seconds gap', f.standings[1].lapsBehind === 6 && f.standings[1].gapToLeaderSec === UNKNOWN);
+    check('ws frame: manufacturer joined by vehicle file', me.manufacturer === 'Aston Martin', me.manufacturer);
+    check('ws frame: player block = camera car', f.player.slotId === 2);
+    check('ws frame: speed from replaymetrics, mph → km/h', f.player.speedKph === Math.round(m0.speed * 1.609344), f.player.speedKph);
+    check('ws frame: gear / rpm / pedals live', f.player.gear === m0.gear && f.player.rpm === m0.rpm && f.player.maxRpm === m0.maxRPM && f.player.pedals.throttle === m0.throttle);
+    check('ws frame: lap clock / last lap / sector from the sim', f.player.lap.current === Math.round(m0.timeIntoLap * 100) / 100 && f.player.lap.last === Math.round(m0.finalLapTime * 1000) / 1000 && f.player.lap.sector === m0.sectorNum);
+    check('ws frame: the replay clock, not REST’s frozen 0', Math.abs(f.session.elapsedSec - et0) < 0.11, f.session.elapsedSec);
+    check('ws frame: time remaining = booked end − replay clock', Math.abs(f.session.timeRemainingSec - (fx.endEventTime - et0)) <= 1, f.session.timeRemainingSec);
+    check('ws frame: phase from the replay (green), not REST’s frozen FORMATION', f.session.phase === 'green' && f.session.notStarted === false);
+    check('ws frame: frozen REST yellow not on the rail', f.session.sectorFlags === undefined);
+    const dot = f.trackMap && f.trackMap.cars.find((c) => c.slotId === 2);
+    const raw = fx.ui[0].msg.body.find((r) => r.slotID === 2);
+    check('ws frame: map dot at the replay’s world position', dot && dot.x === Math.round(raw.posX * 100) / 100 && dot.z === Math.round(raw.posZ * 100) / 100 && dot.isPlayer === true);
+    check('ws frame: relative built around the camera car', f.relative.some((r) => r.isPlayer && r.slotId === 2) && f.relative.length > 1);
+    check('ws frame: no fuel from REST’s frozen fraction', f.fuel.levelFraction === undefined || f.fuel.levelFraction === UNKNOWN || f.fuel.levelLiters === UNKNOWN);
+    check('ws frame: no tyres / damage / MFD / radar / limits', f.player.tyres.frontLeft.wear === UNKNOWN && f.player.damage === undefined && f.mfd === undefined && f.radar === undefined && f.player.trackLimits === undefined);
+    check('ws frame: no hybrid, no motion invented', f.player.hybrid === undefined && f.player.motion === undefined);
+    check('ws frame: no row is ours (REST’s player:true row ignored)', !f.standings.some((r) => r.isOwn === true));
+
+    // Three channels name the camera car; a cut REST has not caught up with
+    // yet must not put one car's pedals under another car's name.
+    clock += 20;
+    const lagging = wsFrame(p, null, 3);
+    check('camera reconcile: REST focus lagging a cut → the car the metrics describe', lagging.player.slotId === 2 && lagging.player.gear === m0.gear, lagging.player.slotId);
+    clock += 20;
+    const unknownSlot = wsFrame(p, null, 77);
+    check('camera reconcile: REST focus on no row → the car the metrics describe', unknownSlot.player.slotId === 2);
+
+    // Play the 30 s through; the lap log, stop log and engineer stay out of it.
+    const trig = new EngineerTriggers({});
+    let cues = 0;
+    let last = f;
+    for (let i = 0; i < 60; i++) {
+      clock += 150;
+      const m = JSON.parse(JSON.stringify(fx.replaymetrics[0].msg));
+      m.body.currentReplayPos += i * 0.15;
+      last = wsFrame(p, () => {
+        rm.fire('message', JSON.stringify(m));
+        ui.fire('message', JSON.stringify(fx.ui[i % 2].msg));
+      });
+      if (trig.update(last, last.timestamp)) cues++;
+    }
+    check('ws replay: lap log never fed', spy.laps === 0, spy.laps);
+    check('ws replay: stop log never fed', spy.stops === 0, spy.stops);
+    check('ws replay: engineer silent', cues === 0, cues);
+    const snapWs = { car: { tyres: last.player.tyres } };
+    check('ws replay: never published to the team relay', eligibleToPublish(last, snapWs) === false);
+    const histWs = new TeamHistory();
+    histWs.update(JSON.parse(JSON.stringify(last)));
+    check('ws replay: team history ignores it', histWs.cars.size === 0);
+    const relayWs = JSON.parse(JSON.stringify(last));
+    check('ws replay: no teammate spliced in', applyTeammateRelay(relayWs, relay, clock) === relayWs);
+    const practiceWs = JSON.parse(JSON.stringify(last));
+    practiceWs.session.type = 'practice';
+    check('ws replay: training gate / practice review do not see practice',
+      sessionOfFrame(practiceWs).type !== 'practice' && sessionTypeOf(practiceWs) !== 'practice');
+
+    // A dead feed degrades to the frame the replay had before the feed existed.
+    ui.fire('close');
+    rm.fire('close');
+    clock += 2500;
+    const dead = wsFrame(p);
+    check('feed dropped: frame falls back to REST (no crash)', dead.session.replay === true && dead.standings.length === 2, dead.standings.length);
+    check('feed dropped: still nothing logged', spy.laps === 0 && spy.stops === 0);
+    p.replayFeed.setActive(false);
+  }
+
+  // Live driving with a (hypothetically) chatty feed object: never consulted.
+  {
+    const { p, spy } = makeProvider();
+    p.__sm.bySlot.set(3, () => physics({ elapsedSec: clock / 1000 }));
+    const { made, factory } = fakeSockets();
+    p.replayFeed = new ReplayFeed({ port: 6398, factory });
+    const lf2 = frame(p, 5, 1000, false, null);
+    check('live: no socket, REST standings, lap log fed', made.length === 0 && lf2.standings.length === 2 && spy.laps === 1);
+  }
 } finally {
   Date.now = realNow;
 }
@@ -398,10 +578,12 @@ console.log('\noverlay — widgets with nothing true to say about a replay step 
   const { replayHides } = sandbox.window.ApexOverlay;
   const withGear = { player: { gear: 4 } };
   const noGear = { player: { gear: -1 } };
-  for (const w of ['tyres', 'damage', 'mfd', 'fuelplan', 'radar', 'limits', 'motion', 'refpace', 'ghosthud']) {
+  // fuel joined the list with the replay feed: the replay carries no fuel at
+  // all, and REST's fraction is the loaded session's, frozen at its start.
+  for (const w of ['tyres', 'damage', 'mfd', 'fuel', 'fuelplan', 'radar', 'limits', 'motion', 'refpace', 'ghosthud']) {
     check(`${w}: hidden in a replay`, replayHides(w, withGear) === true);
   }
-  for (const w of ['standings', 'relative', 'delta', 'pacedelta', 'racecontrol', 'weather', 'trackmap', 'fuel', 'speedo']) {
+  for (const w of ['standings', 'relative', 'delta', 'pacedelta', 'racecontrol', 'weather', 'trackmap', 'speedo']) {
     check(`${w}: shown in a replay`, replayHides(w, noGear) === false);
   }
   check('pedals: hidden while the camera car has no live inputs', replayHides('pedals', noGear) === true);
@@ -410,3 +592,7 @@ console.log('\noverlay — widgets with nothing true to say about a replay step 
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
