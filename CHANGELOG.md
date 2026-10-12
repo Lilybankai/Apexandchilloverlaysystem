@@ -5,9 +5,25 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.3.8-beta.2 — 2026-10-12
 
 ### Added
+
+- **The overlays work in replays.** Open a replay — from the race log's Replay
+  button or LMU's own menu — and the overlays come up over it and follow
+  whichever car the replay camera is on. Standings, relative, flags, weather
+  and the track map work as they do live; delta, fuel and the speedo show what
+  LMU publishes for the car you are watching. Tyres, damage, the MFD and the
+  other widgets that only exist for the car in your own garage hide during a
+  replay rather than show your car's numbers. Nothing you watch counts as
+  driving: no laps are logged or uploaded, the engineer stays quiet, and the
+  training overlays and Practice Review ignore it.
+
+- **Choose whose telemetry the team relay shows.** Settings ▸ Application ▸
+  **Relay source**: Auto (the teammate driving your car), one teammate by
+  name, or Off. A teammate you pick still has to be in your session; if they
+  are not, it says so ("Scott isn't in your session") instead of showing
+  their numbers. The relay tag on the overlays names whose data it is.
 
 - **Bug reports can bring your logs with them.** Pick "Bug report" on the
   Suggestions tab and an "Attach my logs" switch appears, on by default. It
@@ -15,6 +31,22 @@
   so you no longer have to dig them out of your AppData folder and post them
   in Discord. Your Windows user name is taken out of the logs before they
   leave your PC, and replies still pop up in the app as before.
+
+### Fixed
+
+- **The race clock reset to the full race after rejoining.** Leave a race and
+  come back, or join after a driver swap, and the time and laps remaining
+  started again from the whole race length while everything else was right.
+  LMU starts that clock on each PC when it sees the green flag, and a PC that
+  rejoins sees a new one. The clock now comes from the session's real end
+  time, so it carries on where the race actually is.
+
+- **A teammate's practice laps leaked into the race relay.** With the relay
+  on, a teammate lapping a practice server at the same track could put their
+  tyres, fuel and damage on your race overlays in place of the driver in your
+  car. The relay now only takes telemetry from the teammate LMU says is
+  driving your car, in your session, and never your own; and a PC only
+  relays the car it is actually driving.
 
 ## 1.3.8-beta.1 — 2026-10-08
 
