@@ -1422,6 +1422,19 @@ export interface StandingEntry {
    * WATCHING as themselves, and the channel announced strangers as ours.
    */
   isOwn?: boolean;
+  /**
+   * `true` on OUR team entry's car while LMU says a teammate is at its wheel
+   * (`teamVehicleState` / the roster — see `trackTeamStint` in the LMU
+   * provider). Absent on every other row, and on every row whenever we are
+   * driving, spectating a stranger, or not in a team entry.
+   *
+   * The team relay's gate (telemetry/teammateRelay.ts): a teammate's relayed
+   * tyres/damage/fuel are only ever put on a car carrying this flag. Gating on
+   * "the watched car is not {@link isOwn}" instead let a teammate lapping in a
+   * DIFFERENT session (a practice server) bleed into the race car's overlays
+   * (Linear THE-34).
+   */
+  teammateDriving?: boolean;
 }
 
 /**

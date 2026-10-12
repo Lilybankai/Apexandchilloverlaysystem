@@ -667,6 +667,12 @@ function defaultSettings() {
     // useless without it and the switch is the first thing support would ask
     // someone to check. See electron/team-cloud.js.
     webRelay: true,
+    // Where the overlays' relayed tyres/damage/fuel may come from while a
+    // teammate drives our car: 'auto' (whoever passes the session + driver
+    // gate), 'off', or one teammate's user id (pinned — still gated on being
+    // in our session). See electron/team-cloud.js resolveRelaySource and
+    // src/telemetry/teammateRelay.ts. Linear THE-34.
+    relaySource: 'auto',
     // Account: the operator picked "Continue offline" on the sign-in screen, so
     // don't show it again on launch (they can still sign in from the top bar).
     offlineMode: false,
@@ -783,6 +789,19 @@ function normalizeLayoutEntry(l) {
   return entry;
 }
 
+/**
+ * The Relay source setting: 'auto', 'off', or a teammate's user id (a pin).
+ * Anything else reads as 'auto'. Defined here rather than borrowed from
+ * team-cloud.js because loadSettings can run before that module's const is
+ * initialised (a TDZ trap). team-cloud's resolveRelaySource falls a pin back
+ * to 'auto' when that teammate is no longer on the active team.
+ */
+function normalizeRelaySource(v) {
+  if (v === 'auto' || v === 'off') return v;
+  if (typeof v === 'string' && /^[0-9a-fA-F-]{8,64}$/.test(v.trim())) return v.trim();
+  return 'auto';
+}
+
 /** Load settings, merged over defaults so missing/old keys are filled in. */
 function loadSettings() {
   const defaults = defaultSettings();
@@ -896,6 +915,7 @@ function loadSettings() {
         ? stored.launchOnStartup
         : defaults.launchOnStartup,
     webRelay: typeof stored.webRelay === 'boolean' ? stored.webRelay : defaults.webRelay,
+    relaySource: normalizeRelaySource(stored.relaySource),
     offlineMode: typeof stored.offlineMode === 'boolean' ? stored.offlineMode : defaults.offlineMode,
     lastAuthEmail:
       typeof stored.lastAuthEmail === 'string' ? stored.lastAuthEmail : defaults.lastAuthEmail,
@@ -1595,10 +1615,10 @@ function dialStatusFeed() {
       }
       lastFeedFrame = frame;
       maybePushTeamSnapshot(frame);
-      // Watching a car nobody here is driving — a teammate's stint, or the
-      // camera on someone else — so ask the relay for the driving PCs' own
-      // tyres and damage. A no-op on every frame where the answer is unchanged.
-      teamCloud.setOverlayWanted(watchingAnotherCar(frame));
+      // Watching OUR car while a teammate drives it, so ask the relay for the
+      // driving PC's own tyres and damage. A no-op on every frame where the
+      // answer is unchanged; switching off is debounced (see below).
+      teamCloud.setOverlayWanted(overlayWantedDebounced(watchingAnotherCar(frame), Date.now()));
       // Costs a boolean and a name lookup. All it does is record that the game
       // is up and being driven, so the results poll knows there is any point
       // spending a request — see electron/results-harvest.js.
@@ -1664,16 +1684,37 @@ function dialStatusFeed() {
 }
 
 /**
- * Is the car on the overlays one this PC is NOT driving? LMU only: it is the
- * one source that marks the driven row (`isOwn`), and without that mark a
- * spectated car cannot be told from our own. The relayed data itself is only
- * ever applied to a matching teammate car — see telemetry/teammateRelay.ts.
+ * Is the camera on OUR car while a teammate drives it? LMU only. Keyed on the
+ * provider's `teammateDriving` row flag (our entry, nobody here in it, the
+ * sim saying a teammate is) — it used to be "the watched row is not isOwn",
+ * which also fired for every stranger the camera landed on and for any frame
+ * where LMU's player flag blinked, and kept the relay read running in sessions
+ * where no teammate had our car at all (THE-34). The relayed rows themselves
+ * are gated again, per frame, in telemetry/teammateRelay.ts.
  */
 function watchingAnotherCar(frame) {
   if (!frame || frame.connected === false || frame.source !== 'lmu') return false;
   if (!Array.isArray(frame.standings)) return false;
   const focus = frame.standings.find((row) => row && row.isPlayer);
-  return !!focus && focus.isOwn !== true;
+  return !!focus && focus.isOwn !== true && focus.teammateDriving === true;
+}
+
+/**
+ * On at once, off only after it has stayed off for OVERLAY_WANT_OFF_MS. Turning
+ * the overlay read off clears the relayed block from the overlays, so one
+ * frame without the flag would otherwise blank the widgets for the second it
+ * takes the next read to land. Safe to delay: the server's gate refuses the
+ * relay on its own the moment we are in the car or the camera leaves ours.
+ */
+const OVERLAY_WANT_OFF_MS = 3000;
+let overlayWantOffSince = 0;
+function overlayWantedDebounced(want, now) {
+  if (want) {
+    overlayWantOffSince = 0;
+    return true;
+  }
+  if (!overlayWantOffSince) overlayWantOffSince = now;
+  return now - overlayWantOffSince < OVERLAY_WANT_OFF_MS && teamCloud.isOverlayWanted();
 }
 
 function disconnectStatusFeed() {
@@ -3804,6 +3845,9 @@ function registerIpc() {
       if (typeof partial.webRelay === 'boolean') {
         next.webRelay = partial.webRelay;
       }
+      if (partial.relaySource !== undefined) {
+        next.relaySource = normalizeRelaySource(partial.relaySource);
+      }
       if (typeof partial.audioCues === 'boolean') {
         next.audioCues = partial.audioCues;
       }
@@ -3846,6 +3890,10 @@ function registerIpc() {
       }
     }
     saveSettings(next);
+
+    // The relay source picker acts at once: Off stops the overlay read, a pin
+    // re-words the status line before the next frame.
+    if (next.relaySource !== current.relaySource) teamCloud.relaySourceChanged();
 
     // Look-and-feel only: applied live to the server and the in-game layer, so
     // these are deliberately NOT part of the restart check below.
@@ -7209,7 +7257,18 @@ app.whenReady().then(async () => {
             saveSettings({ ...current, teamActiveId: id || null });
           },
           getWebRelay: () => loadSettings().webRelay !== false,
+          getRelaySource: () => loadSettings().relaySource,
+          setRelaySource: (v) => {
+            const current = loadSettings();
+            saveSettings({ ...current, relaySource: normalizeRelaySource(v) });
+          },
         },
+        // What the overlay server's relay gate decided on its latest frame,
+        // for the status line beside the Relay source picker.
+        getOverlayStatus: () =>
+          serverModule && typeof serverModule.getTeammateRelayStatus === 'function'
+            ? serverModule.getTeammateRelayStatus()
+            : null,
         onTeams: (state) => {
           if (mainWindow && !mainWindow.isDestroyed()) {
             try { mainWindow.webContents.send('team:cloud', state); } catch { /* teardown */ }

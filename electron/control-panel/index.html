@@ -3755,6 +3755,26 @@
                 </span>
               </label>
 
+              <!-- Whose relayed telemetry the overlays may show while a
+                   teammate drives our car (THE-34). Auto = whoever passes the
+                   session + driver gate; a pinned teammate is STILL gated on
+                   being in our session; Off = never. Rendered by
+                   relay-source.js from the roster push. -->
+              <label class="field">
+                <span class="field__label">Relay source</span>
+                <select class="field__input" id="relay-source">
+                  <option value="auto">Auto</option>
+                  <option value="off">Off</option>
+                </select>
+                <span class="field__hint">
+                  Whose tyres, damage and fuel your overlays show while a
+                  teammate drives your car. Auto picks the teammate LMU has in
+                  your car in your session; pin one to use only them — never
+                  from another session.
+                  <span id="relay-source-status" class="relay-source__status"></span>
+                </span>
+              </label>
+
             </div>
           </section>
         </div>
@@ -4595,6 +4615,9 @@
 <script src="racelog-guide.js"></script>
 <script src="vr-guide.js"></script>
 <script src="engineer-panel.js"></script>
+<!-- Settings ▸ Application ▸ Relay source. Self-contained; reads the team
+     roster push (onTeamCloud) for the teammate list and the gate's status. -->
+<script src="relay-source.js"></script>
 <!-- Get started checklist. LAST of all: it navigates through window.apexNav
      (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can
      be clicked the moment they paint — so everything it reaches for has to

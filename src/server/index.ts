@@ -41,7 +41,7 @@ import { buildRaceControlRows, noteLivePitPhase } from './raceControlRows';
 import { KeySender } from './keySender';
 import { ensureSharedMemoryPluginOnStartup } from './pluginInstaller';
 import { primeSteamRoots } from './lmuKeybinds';
-import { applyTeammateRelay, type TeammateRelay } from '../telemetry/teammateRelay';
+import { TeammateRelayGate, type RelayStatus, type TeammateRelay } from '../telemetry/teammateRelay';
 import { LiveRaceLog } from '../telemetry/raceLogRecorder';
 
 /** Maps file extensions to Content-Type headers for the static server. */
@@ -607,8 +607,15 @@ export function setStreamBotHandlers(handlers: {
  * telemetry/teammateRelay.ts. `null` switches it off. Safe before {@link start}.
  */
 let teammateRelay: TeammateRelay | null = null;
+/** The relay gate with memory (source lock + one-frame hold) — see teammateRelay.ts. */
+const teammateRelayGate = new TeammateRelayGate();
 export function setTeammateRelay(next: TeammateRelay | null): void {
   teammateRelay = next && Array.isArray(next.sources) ? next : null;
+  if (!teammateRelay) teammateRelayGate.reset();
+}
+/** What the relay gate decided on the latest frame, for the Settings status line. */
+export function getTeammateRelayStatus(): RelayStatus {
+  return teammateRelayGate.status();
 }
 
 /**
@@ -1181,7 +1188,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       // have?" — and a prototype's missing ABS becomes an invisible stop.
       noteLiveAids(frame.mfd ? frame.mfd.aids : null);
       // Last, so nothing above ever sees a teammate's data as this PC's own.
-      wsServer.broadcast(teammateRelay ? applyTeammateRelay(frame, teammateRelay, now) : frame);
+      wsServer.broadcast(teammateRelay ? teammateRelayGate.apply(frame, teammateRelay, now) : frame);
       // The race log records this PC's own frame, never the relayed one: a
       // teammate's damage or position written down as ours is a false record.
       try {
