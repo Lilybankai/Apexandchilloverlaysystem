@@ -2050,6 +2050,25 @@
               <button type="button" data-teamsource="my" data-active="true">My car</button>
               <button type="button" data-teamsource="team">Team</button>
             </nav>
+            <!-- Relay source (THE-34): whose relayed tyres, damage and fuel
+                 THIS PC's overlays show while a teammate drives our car. Auto =
+                 whoever passes the session + driver gate; a pinned teammate is
+                 STILL gated on being in our session; Off = never. Sits beside
+                 My car / Team because both answer "whose car", and lives on the
+                 Team tab (not Settings) because that is where a crew watching
+                 the team car looks. relay-source.js renders it and un-hides it
+                 only for a signed-in driver in a team. The web pit wall copies
+                 this block but not relay-source.js — there are no local
+                 overlays in a browser — so it stays hidden there. -->
+            <label class="team-relay" id="team-relay-source" hidden
+                   title="Whose tyres, damage and fuel your overlays show while a teammate drives your car. Auto picks the teammate LMU has in your car in your session; pin one to use only them — never from another session.">
+              <span class="team-relay__label">Relay</span>
+              <select class="field__input" id="relay-source" aria-label="Relay source — whose telemetry your overlays show">
+                <option value="auto">Auto</option>
+                <option value="off">Off</option>
+              </select>
+              <span id="relay-source-status" class="relay-source__status"></span>
+            </label>
             <span class="team-age" id="team-age" data-state="none">NO DATA</span>
             <span class="team-hud__sep" aria-hidden="true"></span>
             <!-- The walkthrough opens by itself the first time this tab is
@@ -3755,26 +3774,6 @@
                 </span>
               </label>
 
-              <!-- Whose relayed telemetry the overlays may show while a
-                   teammate drives our car (THE-34). Auto = whoever passes the
-                   session + driver gate; a pinned teammate is STILL gated on
-                   being in our session; Off = never. Rendered by
-                   relay-source.js from the roster push. -->
-              <label class="field">
-                <span class="field__label">Relay source</span>
-                <select class="field__input" id="relay-source">
-                  <option value="auto">Auto</option>
-                  <option value="off">Off</option>
-                </select>
-                <span class="field__hint">
-                  Whose tyres, damage and fuel your overlays show while a
-                  teammate drives your car. Auto picks the teammate LMU has in
-                  your car in your session; pin one to use only them — never
-                  from another session.
-                  <span id="relay-source-status" class="relay-source__status"></span>
-                </span>
-              </label>
-
             </div>
           </section>
         </div>
@@ -4615,8 +4614,9 @@
 <script src="racelog-guide.js"></script>
 <script src="vr-guide.js"></script>
 <script src="engineer-panel.js"></script>
-<!-- Settings ▸ Application ▸ Relay source. Self-contained; reads the team
-     roster push (onTeamCloud) for the teammate list and the gate's status. -->
+<!-- Team tab header ▸ Relay source. Self-contained; reads the team roster
+     push (onTeamCloud) for the teammate list and the gate's status. Desktop
+     only — scripts/build-web.js does not copy it. -->
 <script src="relay-source.js"></script>
 <!-- Get started checklist. LAST of all: it navigates through window.apexNav
      (control-panel.js) and opens window.APEX_BINDINGS_GUIDE, and its rows can
