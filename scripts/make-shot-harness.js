@@ -107,6 +107,32 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     }, 50);
   }
 
+  // ?tab=practice&plap=1 opens the first studiable lap of the Practice tab's
+  // debrief (docs/PRACTICE-REVIEW-PLAN.md), and &pc=5 then clicks corner row
+  // C5 of its corner table, which frames that corner on the map and charts.
+  if (new URLSearchParams(location.search).get('plap')) {
+    const pStop = Date.now() + 8000;
+    const pTick = () => {
+      const row = document.querySelector('[data-view="practice"] tr[data-prlap][data-trace="true"]');
+      if (row) {
+        row.click();
+        const pc = Number(new URLSearchParams(location.search).get('pc'));
+        if (pc > 0) {
+          const cStop = Date.now() + 6000;
+          const cTick = () => {
+            const cr = document.querySelector('[data-view="practice"] tr[data-prcorner="' + (pc - 1) + '"]');
+            if (cr) { cr.click(); return; }
+            if (Date.now() < cStop) setTimeout(cTick, 120);
+          };
+          setTimeout(cTick, 200);
+        }
+        return;
+      }
+      if (Date.now() < pStop) setTimeout(pTick, 120);
+    };
+    setTimeout(pTick, 300);
+  }
+
   // ?lap=1 opens the first studiable lap once the Review tab has painted, so the
   // lap-detail view can be screenshotted: the harness cannot click, and that
   // view is two clicks deep. Gives up after five seconds rather than polling
@@ -268,11 +294,13 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
    * can only show the ones the fixture already mentions, which is exactly the
    * half it is not meant to be checked on.
    *
-   * Ids and labels mirror OVERLAY_CATALOG in electron/main.js.
+   * Ids and labels mirror OVERLAY_CATALOG in electron/main.js; the training
+   * widgets (TRAINING_CATALOG) ride after them with group 'training', which
+   * mounts their cards in the Training tab.
    */
   const overlayCatalog = [
     ['standings', 'Standings'], ['relative', 'Relative / Timing'], ['delta', 'Delta'],
-    ['pacedelta', 'Pace Delta'], ['ghosthud', 'Ghost HUD'],
+    ['pacedelta', 'Pace Delta'],
     ['refpace', 'Reference Pace'], ['weather', 'Weather'],
     ['fuel', 'Fuel Calculator'], ['fuelplan', 'Fuel & Stint Plan'], ['tyres', 'Tyre Temps'],
     ['speedo', 'Speedometer'], ['pedals', 'Pedal Inputs'], ['pedalsv', 'Pedal Inputs (Vertical)'],
@@ -281,10 +309,35 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     ['racecontrol', 'Race Control'], ['mfd', 'MFD Control'],
   ].map(([id, label]) => ({ id, label, enabled: true, url: '' }));
   const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
-  const overlays = overlayCatalog.concat(streamingOverlays);
+  const trainingOverlays = [{ id: 'ghosthud', label: 'Ghost HUD', enabled: true, ingame: true,
+    url: 'http://127.0.0.1:8082/widget.html?w=ghosthud', group: 'training', gated: 'beta',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    obs: { w: 640, h: 307 } }];
+  const overlays = overlayCatalog.concat(streamingOverlays, trainingOverlays);
+  /*
+   * The Training tab's status line: ?training=live|no-session|session|stopped|
+   * race-mode|idle (idle = live, nothing switched on), plus &gpu=software for
+   * the software-compositing note. ?tab=training also needs ?beta=1, or the
+   * channel gate hides the tab, and selects Training mode for the shot.
+   */
+  const trainingReason = q.get('training') || 'live';
+  const trainingStatus = {
+    active: trainingReason === 'live' || trainingReason === 'idle',
+    reason: trainingReason === 'idle' ? 'live' : trainingReason,
+    sessionType: trainingReason === 'session' ? 'race' : 'practice',
+    windowOpen: trainingReason === 'live',
+    editing: false,
+    softwareCompositing: q.get('gpu') === 'software',
+  };
+  if (q.get('tab') === 'training') {
+    settings.trainingMode = true;
+    localStorage.setItem('apex.panel.mode', 'training');
+    localStorage.setItem('apex.panel.mode.main', '1');
+  }
 
   window.apex = {
-    getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—' } }),
+    getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—', training: trainingStatus } }),
+    trainingEditStart: P({ training: trainingStatus }), trainingEditStop: P({ training: trainingStatus }),
     updateSettings: (p) => Promise.resolve({ settings: Object.assign(settings, p), overlays, status: {} }),
     startServer: P({}), stopServer: P({}), copy: P(true), openInBrowser: P(true),
     sponsorsList: P([]), sponsorsAdd: P([]), sponsorsRemove: P([]),
@@ -775,6 +828,18 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // JSON — so the harness cannot drift from what the tab actually receives.
     reviewSessions: P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
+    // The practice debrief (docs/PRACTICE-REVIEW-PLAN.md): a synthetic review
+    // of the Spa practice above, built by practiceFixture() below.
+    // ?pending=1 has one waiting on arrival (the tab opens on it by itself);
+    // ?pending=push sends one 1.5 s after load (?pushms= to change), which
+    // offers it as a banner unless that session is already open.
+    reviewPractice: (id) => Promise.resolve({ ok: true, review: (PRACTICE_FIXTURE)[id] || null }),
+    reviewPending: () => Promise.resolve(q.get('pending') === '1' || window.__prPushed ? PENDING_FIXTURE : null),
+    reviewPendingAck: () => { window.__prPushed = false; return Promise.resolve({ ok: true }); },
+    onReviewPending: (cb) => {
+      if (q.get('pending') === 'push') setTimeout(() => { window.__prPushed = true; cb(PENDING_FIXTURE); }, Number(q.get('pushms')) || 1500);
+      return () => {};
+    },
     // The race log: real output of the compiled raceLog module over the
     // results files in scripts/fixtures/results (see raceLogFixture below).
     // Silverstone has no car picked, so it opens on "Which car was yours?";
@@ -792,6 +857,13 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // decoration on the same one: the delta trace and the micro-sector splits
     // only exist when a second lap was asked for.
     reviewLap: (req) => Promise.resolve(req && req.vs ? REVIEW.lapVs : REVIEW.lap),
+    // The Practice tab's lap deep dive: the real two-lap comparison above,
+    // with the second lap standing in as the session's target and its corners
+    // scored by the compiled corners module (see practiceLapFixture below).
+    practiceLap: () => Promise.resolve({ ok: true, result: PRACTICE_LAP_FIXTURE }),
+    // Accuracy over time at the debrief's track: five earlier sessions and
+    // this one, a driver getting better (see practiceTrendFixture below).
+    practiceTrend: () => Promise.resolve({ ok: true, sessions: PRACTICE_TREND_FIXTURE }),
     // The race log's replay jump. No game here, so every race has a replay and
     // a click lands straight on 'ready'; ?replay=<phase> shows another state:
     // loading | ready | blocked | error | closed answer the click (closed is
@@ -949,6 +1021,187 @@ function reviewFixture() {
 }
 
 /**
+ * The practice debrief's fixture, in the plan's PracticeReview shape: the Spa
+ * practice above measured against a chased board lap, ten corners, with three
+ * corners that cost time on purpose (C7 braked early, C9 slow at the apex, C2
+ * braked late) and a driver who improves through the session. Seeded, so two
+ * runs of the harness draw the same picture.
+ */
+function fxScore(brakeM, apexKph, deltaSec, lineM) {
+  const curve = (err, scale) => Math.round(100 * Math.exp(-err / scale));
+  const out = {
+    braking: brakeM === null || brakeM === undefined ? null : curve(Math.abs(brakeM), 18),
+    throttle: deltaSec === null || deltaSec === undefined ? null : curve(Math.max(0, deltaSec), 0.22),
+    line: lineM === null || lineM === undefined ? null : curve(lineM, 2.5),
+    speed: apexKph === null || apexKph === undefined ? null : curve(Math.max(0, -apexKph), 7),
+  };
+  const vals = [out.braking, out.throttle, out.line, out.speed].filter((v) => v !== null);
+  out.total = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  return out;
+}
+
+/** A lap's score: its corners' scores averaged, part by part. */
+function fxLapScore(scores) {
+  const out = {};
+  for (const k of ['total', 'braking', 'throttle', 'line', 'speed']) {
+    const vals = scores.map((s) => s && s[k]).filter((v) => v !== null && v !== undefined);
+    out[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  }
+  if (out.total === null) out.total = 0;
+  return out;
+}
+
+function practiceFixture(byId) {
+  const byIdOut = {};
+  let pending = null;
+  let seed = 7;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648 - 0.5;
+  };
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  // Per corner: mean loss (s), braking offset (m, + = later), apex (km/h, + = faster).
+  const SHAPE = [
+    [0.02, 1, 0], [0.11, 7, -3], [0.04, -2, -1], [-0.02, 0, 1], [0.06, -4, -2],
+    [0.01, 0, 0], [0.19, -14, -6], [0.03, -3, 0], [0.13, -5, -5], [-0.01, 1, 1],
+  ];
+  for (const s of Object.values(byId)) {
+    if (s.sessionType !== 'practice') continue;
+    const target = { kind: 'chased', label: 'A. Winters · 1:46.112 · board', lapId: 'board:fx:106112', lapSec: 106.112 };
+    const laps = [];
+    let n = 0;
+    const all = [];
+    for (const st of s.stints) for (const lap of st.laps) all.push(lap);
+    for (const lap of all) {
+      if (lap.isOutLap || lap.isInLap || !(lap.lapMs > 0)) continue;
+      n += 1;
+      const learn = 1 - 0.35 * (n / all.length);
+      const corners = SHAPE.map(([loss, brake, apex], index) => {
+        const c = {
+          index,
+          deltaSec: r4(loss * learn + rnd() * 0.07),
+          brakeDeltaM: r2(brake * learn + rnd() * 4),
+          apexKphDelta: Math.round((apex * learn + rnd() * 2) * 10) / 10,
+        };
+        // Line: the costly corners are the ones driven off the target's line.
+        c.score = fxScore(c.brakeDeltaM, c.apexKphDelta, c.deltaSec, index === 3 ? null : Math.abs(loss) * 9 * learn + 0.4 + Math.abs(rnd()));
+        return c;
+      });
+      laps.push({
+        at: lap.at, lapNo: lap.lapNo || n, lapSec: lap.lapMs / 1000, valid: !!lap.clean, hasTrace: true,
+        deltaSec: r4(lap.lapMs / 1000 - target.lapSec), corners, score: fxLapScore(corners.map((c) => c.score)),
+      });
+    }
+    const valid = laps.filter((l) => l.valid).map((l) => l.lapSec);
+    const best = valid.length ? Math.min(...valid) : null;
+    const inside = valid.filter((v) => best !== null && v <= best * 1.07);
+    const mean = inside.reduce((a, b) => a + b, 0) / Math.max(1, inside.length);
+    const spread = Math.sqrt(inside.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, inside.length));
+    const corners = SHAPE.map((_, index) => {
+      const ds = laps.map((l) => l.corners[index]);
+      const vals = ds.map((c) => c.deltaSec);
+      const avg = (k) => r4(ds.reduce((a, c) => a + c[k], 0) / ds.length);
+      return {
+        index, entryD: 0.05 + index * 0.09, apexD: 0.075 + index * 0.09, exitD: 0.1 + index * 0.09,
+        laps: ds.length, avgLossSec: avg('deltaSec'), bestSec: Math.min(...vals), worstSec: Math.max(...vals),
+        avgBrakeDeltaM: r2(avg('brakeDeltaM')), avgApexKphDelta: Math.round(avg('apexKphDelta') * 10) / 10,
+        avgScore: Math.round(ds.reduce((a, c) => a + c.score.total, 0) / ds.length),
+      };
+    });
+    const theo = target.lapSec + corners.reduce((a, c) => a + c.bestSec, 0) + 0.31;
+    const scoredLaps = laps.filter((l) => l.valid);
+    const top = scoredLaps.reduce((b, l) => (!b || l.score.total > b.score.total ? l : b), null);
+    byIdOut[s.id] = {
+      id: s.id, track: s.track, car: s.car, carClass: s.carClass, trackLengthM: 6980,
+      startedAt: s.startedAt, endedAt: s.endedAt, target, laps,
+      bestLapSec: best, theoreticalBestSec: r4(theo), consistencySec: r4(spread), corners,
+      score: {
+        avg: scoredLaps.length ? Math.round(scoredLaps.reduce((a, l) => a + l.score.total, 0) / scoredLaps.length) : null,
+        best: top ? top.score.total : null,
+        bestLapNo: top ? top.lapNo : null,
+      },
+    };
+    pending = { sessionId: s.id, at: s.endedAt, track: s.track, laps: laps.length, bestLapSec: best };
+  }
+  return { byId: byIdOut, pending };
+}
+
+/**
+ * The Practice tab's lap deep dive, in the plan's PracticeLapResult shape:
+ * the real comparison reviewLapFixture() found, its second lap standing in as
+ * the target, and every corner of that target scored for real — the compiled
+ * findCorners() and cornerResult() over the two traces — so the table and the
+ * framing it drives are tested on a real circuit's corners. Line offset is
+ * the mean lateral distance between the two driven lines, entry to exit.
+ */
+function practiceLapFixture(pair) {
+  if (!pair || !pair.detail || !pair.vs) return null;
+  let C;
+  let lapVs = pair;
+  try {
+    C = require(path.join(__dirname, '..', 'dist', 'telemetry', 'corners.js'));
+    // The target is the QUICKER lap, as a chased lap is: studying the faster
+    // one against the slower would show every corner as a gain.
+    if (pair.detail.lapMs < pair.vs.lapMs) {
+      const LD = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapDetail.js'));
+      const swapped = LD.loadLapCompare(pair.vs.lapId, pair.vs.at, { id: pair.detail.lapId, at: pair.detail.at });
+      if (swapped && swapped.detail && swapped.vs) lapVs = { ...swapped, map: swapped.map || pair.map };
+    }
+  } catch {
+    return null;
+  }
+  const L = lapVs.lengthM || 4000;
+  const me = lapVs.detail.channels;
+  const ref = lapVs.vs.channels;
+  const near = (cols, dd) => {
+    let lo = 0;
+    let hi = cols.d.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (cols.d[m] < dd) lo = m + 1; else hi = m; }
+    return lo;
+  };
+  const lineOffset = (a, b) => {
+    if (!Array.isArray(me.x) || !Array.isArray(ref.x)) return null;
+    let sum = 0;
+    let n = 0;
+    for (let i = near(me, a); i < me.d.length && me.d[i] <= b; i += 1) {
+      const j = near(ref, me.d[i]);
+      sum += Math.hypot(me.x[i] - ref.x[j], me.z[i] - ref.z[j]);
+      n += 1;
+    }
+    return n ? Math.round((sum / n) * 10) / 10 : null;
+  };
+  const corners = C.findCorners(ref, L).map((c, index) => {
+    const r = C.cornerResult(c, ref, me, L);
+    const exitMe = me.speedKph[near(me, c.exitD)];
+    const exitRef = ref.speedKph[near(ref, c.exitD)];
+    let minMe = Infinity;
+    for (let i = near(me, c.entryD); i < me.d.length && me.d[i] <= c.exitD; i += 1) minMe = Math.min(minMe, me.speedKph[i]);
+    const parts = [];
+    if (r.brakeDeltaM !== null && r.brakeDeltaM <= -3) parts.push('brake ' + Math.round(-r.brakeDeltaM) + ' m later');
+    if (r.brakeDeltaM !== null && r.brakeDeltaM >= 3) parts.push('brake ' + Math.round(r.brakeDeltaM) + ' m earlier');
+    if (r.apexKphDelta !== null && r.apexKphDelta <= -1) parts.push('carry ' + Math.round(-r.apexKphDelta) + ' km/h more to the apex');
+    const tip = parts.length ? parts.join(', ').replace(/^./, (m) => m.toUpperCase()) + '.'
+      : (r.deltaSec !== null && r.deltaSec > 0.02 ? 'Entry matches — the time goes on the exit. Pick the throttle up earlier.' : 'Matched the target here.');
+    return {
+      index, entryD: c.entryD, apexD: c.apexD, exitD: c.exitD,
+      deltaSec: r.deltaSec, brakeDeltaM: r.brakeDeltaM, apexKphDelta: r.apexKphDelta,
+      exitKphDelta: Number.isFinite(exitMe) && Number.isFinite(exitRef) ? Math.round((exitMe - exitRef) * 10) / 10 : null,
+      minKph: Number.isFinite(minMe) ? Math.round(minMe) : null, refMinKph: Math.round(c.minKph),
+      lineOffsetM: lineOffset(c.entryD, c.exitD), tip,
+    };
+  });
+  for (const row of corners) row.score = fxScore(row.brakeDeltaM, row.apexKphDelta, row.deltaSec, row.lineOffsetM);
+  for (const row of corners) row.pointsToGain = Math.round(((100 - row.score.total) / Math.max(1, corners.length)) * 10) / 10;
+  return {
+    ...lapVs,
+    target: { kind: 'chased', label: 'A. Winters · ' + (lapVs.vs.lapMs / 1000).toFixed(3) + ' · board', lapId: lapVs.vs.lapId, lapSec: lapVs.vs.lapMs / 1000 },
+    corners,
+    score: fxLapScore(corners.map((r) => r.score)),
+  };
+}
+
+/**
  * A real lap for the detail view: the newest clean lap on this machine that
  * still has its trace, plus the circuit it was driven on.
  *
@@ -1075,12 +1328,41 @@ if (!html.includes(marker)) {
   }
   const { lap, lapVs } = reviewLapFixture();
   const raceLogs = raceLogFixture();
+  const practice = practiceFixture(fixture.byId);
+  const practiceLap = practiceLapFixture(lapVs);
+  // The trend: five invented earlier sessions at the same track, then the
+  // fixture's own practice with its real average — improving, with a dip.
+  const practiceTrend = [];
+  {
+    const own = Object.values(practice.byId)[0];
+    const start = own ? new Date(own.startedAt).getTime() : Date.now();
+    const AVG = [61, 64, 63, 68, 71];
+    const LAP = [110.84, 109.92, 110.03, 108.71, 108.2];
+    for (let i = 0; i < AVG.length; i += 1) {
+      practiceTrend.push({
+        sessionId: 'fx-trend-' + i, at: new Date(start - (AVG.length - i) * 4 * 86400000).toISOString(),
+        laps: 9 + i * 2, avgScore: AVG[i], bestScore: AVG[i] + 7 + (i % 2), bestLapSec: LAP[i],
+      });
+    }
+    if (own) {
+      practiceTrend.push({
+        sessionId: own.id, at: own.startedAt, laps: own.laps.length,
+        avgScore: own.score.avg, bestScore: own.score.best, bestLapSec: own.bestLapSec,
+      });
+    }
+  }
+  console.log('  practice lap: ' + (practiceLap ? practiceLap.corners.length + ' corners scored on ' + practiceLap.detail.track : 'none (no two-lap comparison here)'));
+  console.log(`  practice review: ${Object.keys(practice.byId).length} session(s)`);
   console.log(`  racelog: ${raceLogs.races.length} races, ${Object.keys(raceLogs.picks).length} pickable cars`);
   fs.writeFileSync(
     path.join(DIR, '__shot-stub.js'),
     // A function replacement: JSON can hold a '$', which a string replacement
     // would read as a pattern.
     STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
+        .replace('PRACTICE_FIXTURE', () => JSON.stringify(practice.byId))
+        .replace('PRACTICE_LAP_FIXTURE', () => JSON.stringify(practiceLap))
+        .replace('PRACTICE_TREND_FIXTURE', () => JSON.stringify(practiceTrend))
+        .split('PENDING_FIXTURE').join(JSON.stringify(practice.pending))
         .replace('REVIEW.summaries', `${JSON.stringify(fixture.summaries)}`)
         .replace('REVIEW.byId[id] || null', `(${JSON.stringify(fixture.byId)})[id] || null`)
         .replace('REVIEW.career', `${JSON.stringify(fixture.career)}`)

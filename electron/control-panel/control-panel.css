@@ -846,6 +846,12 @@ html, body {
 .streamers-pane { display: none; }
 .streamers-pane[data-active="true"] { display: block; }
 
+/* Training tab: whether the training layer is up, between the head and its
+   widget cards. Green while it is on screen. */
+.training-status { margin: 0 0 12px; }
+.training-status[data-live="true"] { color: var(--ok); }
+.training-status[hidden] { display: none !important; }
+
 /* Settings sections — same one-pane-at-a-time pattern as the Streamers tab. */
 .settings-seg { margin: 0 0 18px; }
 .settings-pane { display: none; }

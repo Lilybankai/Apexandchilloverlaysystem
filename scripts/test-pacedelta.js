@@ -421,5 +421,32 @@ console.log('\n11) The persisted all-time best');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('\nGhost clock survives a poll where the sim clock did not move');
+{
+  // Live LMU re-serves the previous physics sample on about one poll in four
+  // (2026-10-08, practice). The deltas hold over it; the ghost's clock must
+  // too, or every such frame goes out with no ghost and the training widgets
+  // blink at ~16 Hz.
+  const tr = new LocalPaceDeltaTracker();
+  const speed = TRACK / 95;
+  let elapsed = 1000, dist = 0.9 * TRACK, d = 0.9;
+  for (let k = 0; k < 600; k++) {              // 20 s from 90%: crosses the line
+    elapsed += FRAME; dist += speed * FRAME;
+    d = dist / TRACK - Math.floor(dist / TRACK);
+    tr.update(d, elapsed, 103.9, '', { cuts: 0, penalties: 0, inPit: false });
+  }
+  const before = tr.lapClock();
+  check('clock armed after a line crossing', before !== null);
+  // Re-feed the same clock, as a poll that found no new physics sample does.
+  tr.update(d, elapsed, 103.9, '', { cuts: 0, penalties: 0, inPit: false });
+  const held = tr.lapClock();
+  check('a repeated clock keeps the ghost clock',
+    held !== null && before !== null && held.t === before.t && held.d === before.d,
+    'held=' + JSON.stringify(held));
+  // A genuinely bad sample still drops it.
+  tr.update(-1, elapsed + FRAME, 103.9, '');
+  check('a bad sample still clears it', tr.lapClock() === null);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

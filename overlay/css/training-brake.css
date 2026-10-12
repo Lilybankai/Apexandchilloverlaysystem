@@ -1,0 +1,77 @@
+/* training-brake.css: the Brake Cue (trainingbrake) — its own file so the
+   training widgets can be restyled independently. Linked from training.html
+   and widget.html after training.css.
+
+   Mockup (2026-10-08): a glowing red "BRAKE" pill. It is a light, so it has
+   no card: invisible until the reference's braking point is near. It always
+   holds its box (opacity only), so nothing around it moves when it lights. */
+
+#widget-trainingbrake > .tw__body {
+  padding: 0;
+}
+.tbrake {
+  position: relative;
+  height: 84px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  background: linear-gradient(180deg, #ff4d68 0%, #e3223f 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 170, 185, 0.55),
+    inset 0 1px 0 rgba(255, 220, 226, 0.6),
+    0 0 36px rgba(255, 64, 96, 0.75),
+    0 0 110px rgba(255, 64, 96, 0.4);
+  opacity: 0;
+  transform: scale(0.97);
+  transition: opacity 240ms ease-out, transform 240ms ease-out;
+  pointer-events: none;
+}
+.tbrake[data-on="true"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+.tbrake__word {
+  padding-left: 0.22em; /* the tracking's trailing space, given back */
+  font: 700 44px/1 var(--tw-num);
+  letter-spacing: 0.22em;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(120, 0, 20, 0.35);
+}
+.tbrake__m {
+  position: absolute;
+  right: 20px;
+  bottom: 6px;
+  font: 600 15px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: #fff;
+  opacity: 0.88;
+}
+/* The run-down to the point: a hairline along the foot, draining leftwards. */
+.tbrake__bar {
+  position: absolute;
+  left: 22px;
+  right: 78px;
+  bottom: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+.tbrake__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: #fff;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* Edit mode: always there, dimmed, so it can be placed. */
+body.ig-editing .tbrake {
+  opacity: 0.55;
+  transform: none;
+}

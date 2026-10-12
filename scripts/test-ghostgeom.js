@@ -207,6 +207,251 @@ console.log('6) pedalColour — the convention drivers already read');
   check('on the power is green', G.pedalColour(0, 1) === '#2FBF71');
   check('a brush of brake still reads as braking', G.pedalColour(0.2, 0.9) === '#D55E00');
   check('trailing throttle is not yet green', G.pedalColour(0, 0.5) === '#E0A423');
+  check('pedalKind agrees with pedalColour', G.pedalKind(0.9, 0) === G.PEDAL_BRAKE && G.pedalKind(0, 0.2) === G.PEDAL_COAST && G.pedalKind(0, 1) === G.PEDAL_THROTTLE);
+}
+
+/** A 100-point circle of circumference 1000 m, counter-clockwise from +X. */
+function circleShape() {
+  const R = 1000 / (2 * Math.PI);
+  const pts = [];
+  for (let i = 0; i < 100; i++) {
+    const a = (i / 100) * 2 * Math.PI;
+    pts.push([R * Math.cos(a), R * Math.sin(a), 0]);
+  }
+  return { shape: { points: pts, binM: 10, lengthM: 1000 }, R };
+}
+
+console.log('');
+console.log('7) roadElevationAt — the eye must not step every bin on a slope');
+{
+  const shape = { points: [[0, 0, 5], [10, 0, 6], [20, 0, 7], [30, 0, 8]], binM: 10, lengthM: 40 };
+  check('on a bin it is the bin', near(G.roadElevationAt(shape, 10), 6));
+  check('between bins it is linear', near(G.roadElevationAt(shape, 25), 7.5), G.roadElevationAt(shape, 25));
+  check('it wraps from the last bin back to the first', near(G.roadElevationAt(shape, 35), 6.5), G.roadElevationAt(shape, 35));
+  check('…backwards across the line too', near(G.roadElevationAt(shape, -5), 6.5), G.roadElevationAt(shape, -5));
+  // The whole point: no step anywhere. Nearest-bin reads jump a full metre here.
+  let worst = 0;
+  for (let m = 0; m < 40; m += 0.05) worst = Math.max(worst, Math.abs(G.roadElevationAt(shape, m + 0.05) - G.roadElevationAt(shape, m)));
+  check('no step bigger than the slope allows (5 cm of road = ≤ 3 mm of rise)', worst < 0.0151, worst.toFixed(4) + ' m');
+  check('no shape reads zero', G.roadElevationAt(null, 3) === 0);
+
+  // The wire rounds binM to the centimetre; the lap length is the truth.
+  const pts = [];
+  for (let i = 0; i < 681; i++) pts.push([i, 0, 0]);
+  const rounded = { points: pts, binM: 6, lengthM: 4083.5 };
+  check('mapLength is the lap, not bins × rounded binM', near(G.mapLength(rounded), 4083.5, 1e-9), G.mapLength(rounded));
+  check('…and falls back to bins × binM with no lengthM', near(G.mapLength({ points: pts, binM: 6 }), 4086), G.mapLength({ points: pts, binM: 6 }));
+}
+
+console.log('');
+console.log('8) roadAt — a smooth centreline with a tangent');
+{
+  const { shape, R } = circleShape();
+  const out = { x: 0, z: 0, y: 0, tx: 0, tz: 0 };
+  const r = G.roadAt(shape, 120, out);
+  check('it writes into the caller\'s object', r === out);
+  const a12 = (12 / 100) * 2 * Math.PI;
+  check('on a bin it passes through the map point', near(r.x, R * Math.cos(a12), 1e-9) && near(r.z, R * Math.sin(a12), 1e-9));
+  let worstR = 0;
+  let worstDot = 0;
+  let worstLen = 0;
+  for (let m = 0; m < 1000; m += 1.3) {
+    const s = G.roadAt(shape, m);
+    worstR = Math.max(worstR, Math.abs(Math.hypot(s.x, s.z) - R));
+    worstDot = Math.max(worstDot, Math.abs((s.x * s.tx + s.z * s.tz) / R));
+    worstLen = Math.max(worstLen, Math.abs(Math.hypot(s.tx, s.tz) - 1));
+  }
+  // A 10 m polyline round this circle cuts in by up to 6.2 cm between points.
+  check('between bins it stays on the curve (spline, not chords)', worstR < 0.01, (worstR * 100).toFixed(2) + ' cm');
+  check('the tangent runs along the road', worstDot < 0.01, worstDot.toExponential(1));
+  check('the tangent is a unit vector', worstLen < 1e-9);
+  const behind = G.roadAt(shape, -10);
+  const wrapped = G.roadAt(shape, 990);
+  check('a negative distance wraps to the end of the lap', near(behind.x, wrapped.x, 1e-9) && near(behind.z, wrapped.z, 1e-9));
+}
+
+console.log('');
+console.log('9) roadDistanceOf — where along the road a world point is');
+{
+  const { shape, R } = circleShape();
+  const at = (m, off) => {
+    const a = (m / 1000) * 2 * Math.PI;
+    return [(R + off) * Math.cos(a), (R + off) * Math.sin(a)];
+  };
+  let [x, z] = at(333.3, 0);
+  let m = G.roadDistanceOf(shape, x, z, 330, 60, 40);
+  check('a point on the road reads its own distance', near(m, 333.3, 0.1), m && m.toFixed(2));
+  [x, z] = at(333.3, 4);
+  m = G.roadDistanceOf(shape, x, z, 330, 60, 40);
+  check('…and a point 4 m to the side reads the same distance', near(m, 333.3, 0.1), m && m.toFixed(2));
+  [x, z] = at(998, 0);
+  m = G.roadDistanceOf(shape, x, z, 3, 60, 40);
+  check('a hint just past the line finds a point just before it', near(m, 998, 0.1), m && m.toFixed(2));
+  [x, z] = at(2, 0);
+  m = G.roadDistanceOf(shape, x, z, 995, 60, 40);
+  check('…and the other way round', near(m, 2, 0.1), m && m.toFixed(2));
+  [x, z] = at(500, 0);
+  check('no hint scans the whole lap', near(G.roadDistanceOf(shape, x, z, NaN, 0, 40), 500, 0.1));
+  [x, z] = at(500, 60);
+  check('further off the road than maxOff is null, not a guess', G.roadDistanceOf(shape, x, z, 500, 60, 40) === null);
+  check('no shape is null', G.roadDistanceOf(null, 0, 0, 0, 60, 40) === null);
+
+  // A hairpin: up one straight, round a 10 m turn, back down a straight 20 m
+  // away. A point between them is equally near both, and only the hint can
+  // say which one the car is on. The windowed search must keep to it.
+  const pts = [];
+  for (let s = 0; s < 500; s += 5) pts.push([0, s, 0]);
+  for (let k = 0; k < 6; k++) {
+    const a = Math.PI - (k / 6) * Math.PI;
+    pts.push([10 + 10 * Math.cos(a), 500 + 10 * Math.sin(a), 0]);
+  }
+  for (let s = 500; s > 0; s -= 5) pts.push([20, s, 0]);
+  for (let k = 0; k < 6; k++) {
+    const a = -(k / 6) * Math.PI;
+    pts.push([10 + 10 * Math.cos(a), 10 * Math.sin(a), 0]);
+  }
+  const hp = { points: pts, binM: 5, lengthM: pts.length * 5 };
+  const up = G.roadDistanceOf(hp, 9, 250, 250, 60, 40);
+  const down = G.roadDistanceOf(hp, 11, 250, 780, 60, 40);
+  check('hairpin: hinted on the way up, it stays on the way up', near(up, 250, 1), up && up.toFixed(1));
+  check('hairpin: hinted on the way back, it stays on the way back', down > 700 && down < 860, down && down.toFixed(1));
+}
+
+console.log('');
+console.log('10) prepareLine / preparedAt — the line as painted');
+{
+  // A straight 1000 m line along +Z whose lateral position was stored rounded
+  // to 10 cm, wandering ±8 cm: the staircase the smoothing exists to remove.
+  const n = 800;
+  const line = { d: [], x: [], z: [], brake: [], throttle: [], trackLengthM: 1000, full: false };
+  for (let i = 0; i < n; i++) {
+    const d = i / (n - 1);
+    line.d.push(d);
+    line.z.push(d * 1000);
+    line.x.push(Math.round((5 + 0.08 * Math.sin(i * 1.7)) * 10) / 10);
+    line.brake.push(d > 0.5 && d < 0.6 ? 1 : 0);
+    line.throttle.push(d > 0.5 && d < 0.6 ? 0 : 1);
+  }
+  const pl = G.prepareLine(line, 1, 1.5, 1000);
+  check('it prepares', !!pl && pl.n > 900, pl && pl.n);
+  let worstStep = 0;
+  for (let i = 1; i < pl.n; i++) worstStep = Math.max(worstStep, Math.abs(Math.hypot(pl.x[i] - pl.x[i - 1], pl.z[i] - pl.z[i - 1]) - 1));
+  check('samples are 1 m apart along the line', worstStep < 0.06, worstStep.toFixed(3) + ' m off');
+  let rawWobble = 0;
+  for (let i = 1; i < n; i++) rawWobble = Math.max(rawWobble, Math.abs(line.x[i] - line.x[i - 1]));
+  let wobble = 0;
+  for (let i = 20; i < pl.n - 20; i++) wobble = Math.max(wobble, Math.abs(pl.x[i] - pl.x[i - 1]));
+  check('the 10 cm storage staircase is smoothed out', wobble < rawWobble / 5, (rawWobble * 100).toFixed(1) + ' cm -> ' + (wobble * 100).toFixed(2) + ' cm');
+  let meanX = 0;
+  for (let i = 0; i < pl.n; i++) meanX += pl.x[i] / pl.n;
+  check('…without moving the line', near(meanX, 5, 0.03), meanX.toFixed(3));
+  check('normals are unit and point right of travel (+X for a car heading +Z)', near(pl.nx[300], 1, 1e-3) && near(Math.hypot(pl.nx[300], pl.nz[300]), 1, 1e-6), pl.nx[300] + ',' + pl.nz[300]);
+  check('pedal channels ride along', pl.brake[Math.round(pl.n * 0.55)] === 1 && pl.throttle[Math.round(pl.n * 0.2)] === 1);
+
+  const mid = (pl.d[400] + pl.d[401]) / 2;
+  const q = G.preparedAt(pl, mid);
+  check('preparedAt interpolates between samples', near(q.z, (pl.z[400] + pl.z[401]) / 2, 1e-3) && near(q.i, 400.5, 1e-6), q.i.toFixed(3));
+  check('preparedIndex is the first sample at or past d', G.preparedIndex(pl, pl.d[10]) === 10 && G.preparedIndex(pl, (pl.d[10] + pl.d[11]) / 2) === 11);
+  check('preparedAt clamps before the first sample', G.preparedAt(pl, -1).i === 0);
+
+  check('a line with no length is not prepared', G.prepareLine({ d: line.d, x: line.x, z: line.z }, 1, 1.5) === null);
+  check('a stub line is not prepared', G.prepareLine({ d: [0, 1], x: [0, 0], z: [0, 1], trackLengthM: 10 }, 1, 1.5) === null);
+}
+
+console.log('');
+console.log('11) detectBrakes — the fallback brake boards');
+{
+  // A 1000 m lap sampled every metre. Brake columns are written by hand so each
+  // case has one right answer.
+  const n = 1001;
+  const line = { d: [], x: [], z: [], brake: [], trackLengthM: 1000 };
+  for (let i = 0; i < n; i++) {
+    line.d.push(i / 1000);
+    line.x.push(0);
+    line.z.push(i);
+    line.brake.push(0);
+  }
+  const press = (from, to, v) => {
+    for (let i = from; i <= to; i++) line.brake[i] = v;
+  };
+  press(200, 250, 1); // zone 1
+  line.brake[199] = 0.06; // a ramp: 0.06 -> 1 crosses 0.12 at 199 + 0.06/0.94 m
+  press(270, 290, 0.8); // re-applied 20 m after letting go: same zone
+  press(600, 640, 0.5); // zone 2
+  press(800, 820, 0.1); // a foot resting on the pedal: not a zone
+  press(900, 905, 0.4); // zone 3...
+  press(906, 909, 0.08); // ...dips but never below 0.05: still zone 3
+  press(910, 930, 0.4);
+
+  const b = G.detectBrakes(line, 1000);
+  check('three zones, not five', b.length === 3, b.map((x) => (x.d * 1000).toFixed(1)).join(', '));
+  check('the onset is where the pedal CROSSED 0.12, not the first sample over it', near(b[0].d * 1000, 199 + 0.06 / 0.94, 0.01), (b[0].d * 1000).toFixed(3));
+  check('a re-application within 60 m is the same board', b.every((x) => Math.abs(x.d * 1000 - 270) > 1));
+  check('a resting foot below 0.12 is no board', b.every((x) => Math.abs(x.d * 1000 - 800) > 1));
+  check('a dip that stays above 0.05 does not split a zone', b.filter((x) => x.d * 1000 > 890).length === 1);
+  check('boards carry world x/z from the line', near(b[1].z, 599.24, 0.01) && near(b[1].x, 0, 1e-9), b[1].z.toFixed(3));
+
+  // Same pattern, but the gap after release is 61 m: now it is a new zone.
+  const far = JSON.parse(JSON.stringify(line));
+  for (let i = 270; i <= 290; i++) far.brake[i] = 0;
+  for (let i = 312; i <= 330; i++) far.brake[i] = 0.8;
+  check('…and one 61 m after letting go is a new board', G.detectBrakes(far, 1000).length === 4, G.detectBrakes(far, 1000).length);
+
+  const started = JSON.parse(JSON.stringify(line));
+  for (let i = 0; i <= 30; i++) started.brake[i] = 1;
+  check('a lap that starts on the brakes has no onset there', G.detectBrakes(started, 1000).every((x) => x.d > 0.05));
+  check('no brake channel is no boards', G.detectBrakes({ d: line.d, x: line.x, z: line.z }, 1000).length === 0);
+  check('the thresholds are options', G.detectBrakes(line, 1000, { onAt: 0.09 }).length === 4);
+}
+
+console.log('');
+console.log('12) detectApexes — the fallback apex pins');
+{
+  // Straight, then a 90° left of radius 50 m, then straight: one corner, and
+  // its tightest point is in the middle of the arc.
+  const P = [];
+  for (let s = 0; s < 300; s += 1) P.push([0, s]);
+  const arcLen = (Math.PI / 2) * 50;
+  for (let s = 0; s < arcLen; s += 1) {
+    const a = s / 50;
+    P.push([-50 + 50 * Math.cos(a), 300 + 50 * Math.sin(a)]);
+  }
+  for (let s = 0; s < 300; s += 1) P.push([-50 - s, 350]);
+  const total = P.length;
+  const line = { d: P.map((_, i) => i / total), x: P.map((p) => p[0]), z: P.map((p) => p[1]), trackLengthM: total, full: false };
+  const pl = G.prepareLine(line, 1, 1.5);
+  const ap = G.detectApexes(pl);
+  check('one corner, one pin', ap.length === 1, ap.length);
+  const midArc = (300 + arcLen / 2) / total;
+  check('…at the middle of the arc', ap.length === 1 && Math.abs(ap[0].apexD - midArc) * total < 6, ap.length && ((ap[0].apexD - midArc) * total).toFixed(1) + ' m');
+  const straight = G.prepareLine({ d: [0, 0.25, 0.5, 0.75, 1], x: [0, 0, 0, 0, 0], z: [0, 250, 500, 750, 1000], trackLengthM: 1000 }, 1, 1.5);
+  check('a straight has no apex', G.detectApexes(straight).length === 0);
+}
+
+console.log('');
+console.log('13) the allocation-free camera, and the chase yaw');
+{
+  const cam = G.camera({ cx: 320, cy: 150, f: 900, back: 30, pitch: 0.2, height: 6.2, roadY: 1 });
+  const view = G.setView({}, 37, 100, -50);
+  const out = { x: 0, y: 0, z: 0 };
+  let worst = 0;
+  for (const [x, z, e] of [[110, -20, 1], [80, 30, 2.5], [130, 10, 0]]) {
+    const l = G.worldToLocal(37, 100, -50, x, z);
+    const ref = G.project(cam, l.lat, e, l.lon);
+    const ok = G.projectWorld(cam, view, x, z, e, out);
+    worst = Math.max(worst, ok && ref ? Math.hypot(out.x - ref.x, out.y - ref.y) : Infinity);
+  }
+  check('projectWorld is worldToLocal + project, exactly', worst < 1e-9, worst.toExponential(1));
+  check('…and reports the near plane as false', G.projectWorld(cam, view, 100, -50 - 100 * Math.cos(37 * Math.PI / 180), 1, out) === false);
+
+  const f = 900;
+  const level = G.camera({ cx: 0, cy: 150, f, back: 0, pitch: G.horizonPitch(f, 105), height: 6, roadY: 0 });
+  const far = G.project(level, 0, 6, 1e7); // at eye height, at infinity
+  check('horizonPitch puts the horizon where it was asked', near(far.y, 150 - 105, 0.01), far.y.toFixed(3));
+
+  check('chaseYaw blends the short way round', Math.abs(G.headingDelta(G.chaseYaw(179, -179, 0.5), 180)) < 1e-9, G.chaseYaw(179, -179, 0.5));
+  check('…all car at share 0', near(G.chaseYaw(30, 60, 0), 30) && near(G.chaseYaw(30, 60, 1), 60));
+  check('headingDelta is in [−180, 180)', G.headingDelta(-170, 170) === 20 && G.headingDelta(170, -170) === -20);
 }
 
 console.log('');

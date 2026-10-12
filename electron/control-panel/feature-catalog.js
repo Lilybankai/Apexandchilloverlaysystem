@@ -58,6 +58,7 @@
     { id: 'training', label: 'Training (Ghost HUD)', gated: 'beta' },
     { id: 'team', label: 'Team' },
     { id: 'review', label: 'Review (Analyse)' },
+    { id: 'practice', label: 'Practice review' },
     { id: 'racelog', label: 'Race log' },
     { id: 'overlays', label: 'Overlays' },
     { id: 'vr', label: 'VR headset', gated: 'beta' },
@@ -84,6 +85,10 @@
     { slug: 'action:review.session', tab: 'review', label: 'Opened a session' },
     { slug: 'action:review.lap', tab: 'review', label: 'Opened a lap' },
     { slug: 'action:review.compare', tab: 'review', label: 'Compared against another lap' },
+
+    // The Practice tab: a debrief read, and a lap studied against the target.
+    { slug: 'action:practice.debrief', tab: 'practice', label: 'Opened a practice debrief' },
+    { slug: 'action:practice.lap', tab: 'practice', label: 'Studied a practice lap' },
 
     // The Race log tab. The slugs keep their review. names from the months the
     // log was a view inside Review — a slug is never renamed (see the top of

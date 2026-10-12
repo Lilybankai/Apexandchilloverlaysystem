@@ -22,14 +22,22 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 const {
   cleanTrace,
+  ghostDistAt,
   ghostFromTrace,
   ghostGap,
   ghostHasLine,
+  ghostJson,
   getPublishedGhost,
   setPublishedGhost,
 } = require('../dist/telemetry/ghostLap');
+const { brakePoints } = require('../dist/telemetry/brakePoints');
+const { findCorners } = require('../dist/telemetry/corners');
+const { sectorMarks } = require('../dist/telemetry/lapDetail');
 const { UNKNOWN_VALUE } = require('../dist/telemetry/types');
 
 let passed = 0;
@@ -74,6 +82,9 @@ function traceFile(over) {
       ...(o.z ? { z: o.z } : {}),
       ...(o.brake ? { brake: o.brake } : {}),
       ...(o.throttle ? { throttle: o.throttle } : {}),
+      ...(o.steer ? { steer: o.steer } : {}),
+      ...(o.gear ? { gear: o.gear } : {}),
+      ...(o.speedKph ? { speedKph: o.speedKph } : {}),
     },
   };
 }
@@ -340,6 +351,130 @@ console.log("9) The slot /ghost.json serves from");
   check('publishing makes it readable', getPublishedGhost() === g);
   setPublishedGhost(null);
   check('and it can be withdrawn', getPublishedGhost() === null);
+}
+
+console.log('');
+console.log('10) Past the line — the ghost wraps instead of vanishing');
+{
+  // The reference ends its lap at 100 s. A driver 1.5 s down is still short of
+  // the line when that runs out, and used to lose the ghost for the last
+  // 1.5 s of every lap.
+  const g = flatGhost();
+  const late = ghostGap(g, 100.5, 0.99);
+  check('1.5 s down near the line: still active', late.active === true);
+  check('…the ghost is 15 m up the road, over the line', near(late.gapM, 15, 0.01), late.gapM);
+  check('…and 1.5 s ahead in time', near(late.gapSec, 1.5, 1e-3), late.gapSec);
+  check('the wrapped distance is past 1', near(ghostDistAt(g, 100.5), 1.005, 1e-9), ghostDistAt(g, 100.5));
+
+  // A trace whose last sample lands before the line: the gap between that
+  // sample and the lap's own end is the run to the line, not a hole.
+  const { d, t } = flatLap();
+  const cut = d.findIndex((v) => v >= 0.995);
+  const short = ghostFromTrace(traceFile({ d: d.slice(0, cut + 1), t: t.slice(0, cut + 1) }), 'x');
+  check('a trace ending 5 m short is still full', short.full === true);
+  check('between its last sample and the line, the ghost runs on', near(ghostDistAt(short, 99.8), 0.998, 1e-6), ghostDistAt(short, 99.8));
+  check('…and that reads as a live gap', ghostGap(short, 99.8, 0.99).active === true);
+
+  // Seconds and metres still agree across the wrap at the reference's 10 m/s.
+  const w = ghostGap(g, 103, 0.985);
+  check('wrapped: metres and seconds agree at 10 m/s', w.active && near(w.gapM / 10, w.gapSec, 0.01), `${w.gapM} m / ${w.gapSec} s`);
+
+  // A fragment's end is not the line: carrying it on would invent a car.
+  const half = ghostFromTrace(traceFile({ d: d.slice(0, 600), t: t.slice(0, 600) }), 'x');
+  check('a fragment does NOT wrap', ghostDistAt(half, 70) === -1 && ghostGap(half, 70, 0.55).active === false);
+  // More than a whole lap behind is no gap at all.
+  check('a lap and more down: no answer', ghostDistAt(g, 250) === -1);
+  check('…and the gap is idle', ghostGap(g, 120, 0.5).active === false);
+  // Inside the lap nothing changed.
+  check('inside the lap the wrap is plain interpDist', near(ghostDistAt(g, 42), 0.42, 1e-9));
+}
+
+console.log('');
+console.log("11) atD — the driver's smooth road position rides on the state");
+{
+  const g = flatGhost();
+  const live = ghostGap(g, 50, 0.4512345678);
+  check('active states carry atD', live.atD === 0.451235, live.atD);
+  const idle = ghostGap(g, 200, 0.5);
+  check('idle states carry it too (the road still needs the car)', idle.active === false && idle.atD === 0.5);
+  check('an unknown position carries none', !('atD' in ghostGap(g, 50, NaN)));
+  check('an out-of-range position carries none', !('atD' in ghostGap(g, 50, 1.2)));
+}
+
+console.log('');
+console.log('12) The other inputs ride along, filtered in step');
+{
+  const { d, t } = flatLap();
+  const x = d.map((_, i) => i);
+  const z = d.map(() => 0);
+  const steer = d.map((_, i) => i / 1000);
+  const gear = d.map((_, i) => 2 + (i % 5));
+  const speedKph = d.map((_, i) => 100 + i);
+  const bad = d.slice();
+  bad[7] = bad[6]; // dropped by cleanTrace
+  const g = ghostFromTrace(traceFile({ d: bad, t, x, z, steer, gear, speedKph }), 'x');
+  check('steer, gear and speed are kept', !!(g.steer && g.gear && g.speedKph) && g.steer.length === g.trace.length);
+  check('…dropped at the same index as the line', g.speedKph[6] === 106 && g.speedKph[7] === 108 && g.x[7] === 8);
+  const bare = ghostFromTrace(traceFile({ d, t }), 'x');
+  check('absent when the trace has none', !bare.steer && !bare.gear && !bare.speedKph && !bare.corners && !bare.brakes);
+}
+
+console.log('');
+console.log('13) Braking points and corners, computed once with the ghost');
+{
+  const f = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'trace-road-atlanta-gt3.json'), 'utf8'));
+  const g = ghostFromTrace(f, '1:21.275');
+  check('a real lap builds', g !== null && ghostHasLine(g));
+  const cd = g.trace.map((s) => s.d);
+  const expectBrakes = brakePoints({ d: cd, brake: g.brake, x: g.x, z: g.z }, g.trackLengthM);
+  check('brakes are the detector run on the cleaned columns', g.brakes.length === expectBrakes.length && g.brakes.length === 6, g.brakes.length);
+  check('…placed on the line', g.brakes.every((b) => Number.isFinite(b.x) && Number.isFinite(b.z)));
+  check("…at the detector's distances", g.brakes.every((b, i) => Math.abs(b.d - expectBrakes[i].d) < 1e-6));
+  const expectCorners = findCorners({ d: cd, speedKph: g.speedKph, brake: g.brake, throttle: g.throttle, x: g.x, z: g.z }, g.trackLengthM);
+  check('corners are the segmentation run on the cleaned columns', g.corners.length === expectCorners.length && g.corners.length === 10, g.corners.length);
+  check("the stored file's columns are untouched", f.trace.d.length === f.trace.count);
+}
+
+console.log('');
+console.log('14) /ghost.json — the contract');
+{
+  const f = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'trace-road-atlanta-gt3.json'), 'utf8'));
+  const g = ghostFromTrace(f, '1:21.275');
+  const j = ghostJson(g);
+  const keys = Object.keys(j).sort().join(',');
+  check('the exact key set', keys === 'brake,brakes,corners,d,full,gear,label,lapId,lapSec,sectorD,speedKph,steer,t,throttle,trackLengthM,x,z', keys);
+  check('every column is index-aligned with d', ['t', 'x', 'z', 'brake', 'throttle', 'steer', 'gear', 'speedKph'].every((k) => j[k].length === j.d.length));
+  check('brakes are {d, x, z}', j.brakes.every((b) => Object.keys(b).sort().join(',') === 'd,x,z'));
+  const ck = Object.keys(j.corners[0]).sort().join(',');
+  check('corners are {entryD, apexD, exitD, apexX, apexZ, minKph} and nothing else', ck === 'apexD,apexX,apexZ,entryD,exitD,minKph', ck);
+  check('corners in order, entry < apex < exit', j.corners.every((c, i) => c.entryD < c.apexD && c.apexD < c.exitD && (i === 0 || c.entryD >= j.corners[i - 1].exitD)));
+  // The sector lines must land where the Review tab puts them: the same
+  // derivation, run on the cleaned curve rather than the raw columns.
+  const marks = sectorMarks(f.trace, f.lapMs, f.s1Ms, f.s2Ms);
+  check('sectorD is [S1, S2] where the Review tab draws the lines',
+    Array.isArray(j.sectorD) && j.sectorD.length === 2 &&
+      Math.abs(j.sectorD[0] - marks.s1) < 1e-3 && Math.abs(j.sectorD[1] - marks.s2) < 1e-3,
+    `${j.sectorD} vs ${marks.s1},${marks.s2}`);
+  const unsplit = ghostJson(ghostFromTrace(Object.assign({}, f, { s1Ms: undefined, s2Ms: undefined }), 'x'));
+  check('a lap with no sector times has no sectorD, not a guess', !('sectorD' in unsplit));
+  check('the body survives a JSON round trip unchanged', JSON.stringify(JSON.parse(JSON.stringify(j))) === JSON.stringify(j));
+  check('the body is a sensible size', JSON.stringify(j).length < 150_000, `${(JSON.stringify(j).length / 1024).toFixed(1)} KB`);
+
+  const { d, t } = flatLap();
+  // A lap with no driven line is still a reference for Trace and the Lap
+  // strip: served without x/z, never refused (it used to answer 204).
+  const unlined = ghostJson(ghostFromTrace(Object.assign({}, f, { trace: Object.assign({}, f.trace, { x: undefined, z: undefined }) }), 'x'));
+  const unlinedKeys = unlined ? Object.keys(unlined).sort().join(',') : '';
+  check('no line: a body all the same, without x and z',
+    unlinedKeys === 'brake,brakes,corners,d,full,gear,label,lapId,lapSec,sectorD,speedKph,steer,t,throttle,trackLengthM', unlinedKeys);
+  check('…its columns still index-aligned with d', unlined && ['t', 'brake', 'throttle', 'steer', 'gear', 'speedKph'].every((k) => unlined[k].length === unlined.d.length));
+  check('…and its brakes have no position', unlined && unlined.brakes.length > 0 && unlined.brakes.every((b) => b.x === null && b.z === null));
+  const bare = ghostJson(ghostFromTrace(traceFile({ d, t }), 'x'));
+  check('a bare d/t lap: just the curve', bare && Object.keys(bare).sort().join(',') === 'd,full,label,lapId,lapSec,t,trackLengthM');
+  check('no ghost is no body (the route answers 204)', ghostJson(null) === null);
+  const lineOnly = ghostJson(ghostFromTrace(traceFile({ d, t, x: d.map(() => 1), z: d.map(() => 2) }), 'x'));
+  check('optional arrays are absent, not empty, when the trace lacks them',
+    ['brake', 'throttle', 'steer', 'gear', 'speedKph', 'brakes', 'corners', 'sectorD'].every((k) => !(k in lineOnly)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

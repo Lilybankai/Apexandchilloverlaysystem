@@ -1,0 +1,86 @@
+/* training-reference.css — Training ▸ Chase picker (training-reference.js).
+ * Everything is under .tref so it can sit in any card without leaking. */
+
+.tref { display: flex; flex-direction: column; gap: 10px; }
+
+.tref__status {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border-left: 3px solid var(--line-2);
+  color: var(--text);
+  font-size: 13px;
+}
+.tref__status[data-tone="ok"] { border-left-color: var(--ok); }
+.tref__status[data-tone="warn"] { border-left-color: var(--warn); }
+.tref__status[data-tone="busy"] { border-left-color: var(--cyan); }
+
+.tref__combo { margin: 0; color: var(--text-2); font-size: 12px; }
+
+.tref__opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+
+.tref__opt,
+.tref__row {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.tref__opt:hover:not(:disabled),
+.tref__row:hover:not(:disabled) { border-color: var(--line-2); background: var(--panel-3); }
+.tref__opt[aria-pressed="true"],
+.tref__row[aria-pressed="true"] { border-color: var(--cyan); box-shadow: inset 0 0 0 1px var(--cyan); }
+.tref__opt:disabled,
+.tref__row:disabled { cursor: default; opacity: 0.6; }
+
+.tref__opt { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+.tref__opt-title { font-weight: 600; }
+.tref__opt-hint { color: var(--text-2); font-size: 12px; }
+
+.tref__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.tref__row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.4fr) 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.tref__rank { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tref__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tref__time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tref__car { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tref__tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+}
+.tref__tag[data-tone="cyan"] { color: var(--cyan); border-color: var(--cyan); }
+
+.tref__empty,
+.tref__note { margin: 0; color: var(--text-2); font-size: 12px; }
+.tref__note[data-tone="warn"] { color: var(--warn); }
+
+@media (max-width: 560px) {
+  .tref__row { grid-template-columns: 24px minmax(0, 1fr) 76px; }
+  .tref__car { display: none; }
+}

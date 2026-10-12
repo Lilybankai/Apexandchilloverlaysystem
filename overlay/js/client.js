@@ -1328,6 +1328,24 @@
   function reportPainted() {
     if (health) health.painted++;
   }
+  /**
+   * Fold work a widget does OUTSIDE dispatch into the `worst` figure.
+   *
+   * `worstMs`/`worstWidget` time each widget's update() inside dispatch. A
+   * widget that paints on its own animation loop (Ghost HUD, so its picture
+   * moves at the display rate instead of stepping at the feed rate) does nearly
+   * all its work outside that window, and a slow paint there would otherwise be
+   * blamed on whichever cheap widget happened to be worst — in the very
+   * `LAYER STALL … worst=` line written to find the culprit. Deliberately NOT
+   * counted as `painted`: that count means "the dispatcher's rAF ran", and a
+   * widget's own loop ticking must never make a starved dispatcher look fed.
+   * Opt-in (only a caller is affected) and a no-op without the app bridge.
+   */
+  function noteWidgetWork(name, ms) {
+    if (!health || !(ms > health.worstMs)) return;
+    health.worstMs = ms;
+    health.worstWidget = name;
+  }
   if (health) {
     try {
       new PerformanceObserver(function (list) {
@@ -1648,6 +1666,8 @@
     classColor: classColor,
     classAbbrev: classAbbrev,
     classLabel: classLabel,
+    // For a widget that renders on its own rAF loop — see the function.
+    noteWidgetWork: noteWidgetWork,
   };
 
   // Boot scheduling.

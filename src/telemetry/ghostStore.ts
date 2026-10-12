@@ -11,29 +11,42 @@
  * nothing, so it can be tested headlessly in milliseconds. This one is the
  * half that touches the disk.
  *
+ * ## Every read here is asynchronous, and that is the point
+ * The telemetry server runs inside Electron's main process, on the thread that
+ * composites every overlay, and a synchronous read there is how this app has
+ * frozen before (`stall-130s-beat`: one sync spawn under the MFD froze every
+ * overlay for up to two seconds). The first Ghost HUD read the whole lap
+ * database and up to five traces synchronously inside the frame loop on every
+ * combo change — including mid-race, when the surface turned damp — and with
+ * retention set to "keep everything" that cost only grows. So nothing here
+ * uses a sync `fs` call, and `scripts/test-ghostlap.js` pins that by making
+ * them throw.
+ *
+ * ## The index, and why it is incremental
+ * The lap database is append-only JSONL, one file per UTC day. {@link GhostIndex}
+ * remembers how many bytes of each day it has already parsed, so a refresh
+ * stats the folder and reads only what has been appended since — normally
+ * nothing, or the one lap just driven. The full read happens once per process,
+ * the first time a ghost is wanted, and off the frame loop.
+ *
  * ## What a combo is
  * The same key the lap database already ranks bests by — `lapLog.bestKey`'s
- * `sim | trackKey | carClass`, plus the surface condition. Note it is car
- * CLASS, not car: `LapRecord.car` is the raw livery string from the sim
- * (`"DKR Engineering 2026 #3:LM"`), so filtering on it exactly would make a
- * driver's own reference lap vanish the day they change team colours. The car
- * string rides along on each candidate so a picker can still show it.
- *
- * Within a combo, candidates are grouped by {@link LapRecord.setupFp} — the
- * setup the lap was actually driven on. That is what the fixed-versus-open
- * question really wants: whether the session MANDATED a setup is recorded
- * nowhere on a lap (only on the event schedule feed), but what the car was
- * running is, on every lap since record v4.
+ * `sim | trackKey | carClass`, plus the surface condition. `carClass` is the
+ * NORMALISED class (`carClass.normalizeClass`, "HYPERCAR" not LMU's "Hyper"),
+ * because that is what every lap record stores; a raw class here finds nothing.
+ * Note it is car CLASS, not car: `LapRecord.car` is the raw livery string from
+ * the sim (`"DKR Engineering 2026 #3:LM"`), so filtering on it exactly would
+ * make a driver's own reference lap vanish the day they change team colours.
+ * The car string rides along on each candidate so a picker can still show it.
  */
 
-import * as fs from 'node:fs';
+import { promises as fsp } from 'node:fs';
 import * as path from 'node:path';
 
 import { ghostFromTrace, ghostHasLine, type GhostLap } from './ghostLap';
 import { lapDir, type LapRecord, type TrackCondition } from './lapLog';
-import { readTrace, traceDir, traceFilePath } from './lapTrace';
+import { traceDir, traceFilePath, type TraceFile } from './lapTrace';
 import { formatLapTime } from './raceLog';
-import { readAllLaps } from './stintReview';
 
 /** One lap that could be chased. Summary only — the trace is not read yet. */
 export interface GhostCandidate {
@@ -58,7 +71,7 @@ export interface GhostCandidate {
   setupFp?: string;
   /** Whether the lap was driven inside the white lines. */
   clean: boolean;
-  /** Ready-made overlay label, e.g. `"your best · 1:13.730 · dry"`. */
+  /** Ready-made overlay label, e.g. `"1:13.730 · damp"`. */
   label: string;
 }
 
@@ -66,6 +79,7 @@ export interface GhostCandidate {
 export interface GhostQuery {
   sim: string;
   trackKey: string;
+  /** Normalised class — see the file header. */
   carClass: string;
   /** Only laps set on this surface. Omit to accept any. */
   condition?: TrackCondition;
@@ -87,42 +101,138 @@ export interface GhostDirs {
   traces?: string;
 }
 
-/**
- * Every lap in the store that could be chased for this combo, fastest first.
- *
- * Reads only the lap database (one small JSONL per day) and checks that each
- * candidate's trace file exists. It deliberately does not parse the traces:
- * there are hundreds of them totalling tens of megabytes, and a picker needs
- * a list of times, not the driving data behind each one.
- */
-export function ghostCandidates(q: GhostQuery, dirs: GhostDirs = {}): GhostCandidate[] {
-  const laps = dirs.laps ?? lapDir();
-  const traces = dirs.traces ?? traceDir();
-  const cleanOnly = q.cleanOnly !== false;
+/** The lap database's file names: one JSONL per UTC day. */
+const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.jsonl$/;
 
-  let all: LapRecord[];
-  try {
-    all = readAllLaps(laps);
-  } catch {
-    return [];
+/**
+ * Every chaseable lap on disk, grouped by combo, kept current by reading only
+ * what has been appended since the last look.
+ *
+ * Laps whose trace file turns out not to exist are remembered and skipped from
+ * then on ({@link markMissing}): the trace is written in the same synchronous
+ * breath as its record (`lmuRestProvider.recordLap`), so a record whose trace
+ * is absent when the record is visible will never get one, and re-probing it
+ * on every retry would be I/O spent on a known answer.
+ */
+export class GhostIndex {
+  private readonly lapsDir: string;
+  /** Bytes of each day file already parsed, always up to a line boundary. */
+  private readonly parsed = new Map<string, number>();
+  /** Candidates by `sim|trackKey|carClass`, in file order. */
+  private readonly byCombo = new Map<string, GhostCandidate[]>();
+  private readonly seen = new Set<string>();
+  private readonly missing = new Set<string>();
+  /** The scan queued behind the running one, shared by everyone who asks. */
+  private queued: Promise<void> | null = null;
+  private tail: Promise<void> = Promise.resolve();
+
+  public constructor(lapsDir: string = lapDir()) {
+    this.lapsDir = lapsDir;
   }
 
-  const out: GhostCandidate[] = [];
-  for (const rec of all) {
-    if (!rec || !rec.id) continue; // pre-v3: no id, so no trace to point at
-    if (rec.sim !== q.sim) continue;
-    if (rec.trackKey !== q.trackKey) continue;
-    if (rec.carClass !== q.carClass) continue;
-    if (cleanOnly && !rec.clean) continue;
+  /**
+   * Bring the index up to date with the disk. Never rejects.
+   *
+   * Calls made while a scan is running share ONE follow-up scan rather than
+   * joining the running one: that scan may already have read the day file
+   * before a lap was appended to it, and the caller asking is usually the one
+   * that knows a lap was just written.
+   */
+  public refresh(): Promise<void> {
+    if (this.queued) return this.queued;
+    const run = this.tail.then(() => {
+      this.queued = null;
+      return this.scan();
+    });
+    this.queued = run;
+    this.tail = run;
+    return run;
+  }
+
+  /** Chaseable laps for a query, fastest first. Memory only — no I/O. */
+  public candidates(q: GhostQuery): GhostCandidate[] {
+    const all = this.byCombo.get(comboKey(q.sim, q.trackKey, q.carClass)) ?? [];
+    const cleanOnly = q.cleanOnly !== false;
+    const out = all.filter(
+      (c) =>
+        !this.missing.has(c.lapId) &&
+        (!cleanOnly || c.clean) &&
+        (!q.condition || c.condition === q.condition) &&
+        (!q.setupFp || c.setupFp === q.setupFp),
+    );
+    // Fastest first. A lap the sim gave no time for cannot be ranked against
+    // one it did, so those go last rather than sorting as if they were instant.
+    return out.sort((a, b) => rankOf(a) - rankOf(b));
+  }
+
+  /** Forget a candidate whose trace file does not exist. */
+  public markMissing(lapId: string): void {
+    this.missing.add(lapId);
+  }
+
+  private async scan(): Promise<void> {
+    let names: string[];
+    try {
+      names = await fsp.readdir(this.lapsDir);
+    } catch {
+      return; // nothing has been driven yet
+    }
+    for (const name of names.filter((n) => DAY_FILE.test(n)).sort()) {
+      try {
+        await this.scanDay(name);
+      } catch {
+        /* one unreadable day must not cost the rest; it is retried next scan */
+      }
+    }
+  }
+
+  private async scanDay(name: string): Promise<void> {
+    const file = path.join(this.lapsDir, name);
+    const { size } = await fsp.stat(file);
+    let from = this.parsed.get(name) ?? 0;
+    // Nothing in the app rewrites a day file, but a file that shrank was
+    // replaced by something, and reading on from the old offset would start
+    // mid-line. Start again; ids already seen are skipped.
+    if (size < from) from = 0;
+    if (size === from) return;
+
+    const buf = Buffer.alloc(size - from);
+    const fh = await fsp.open(file, 'r');
+    let bytesRead: number;
+    try {
+      ({ bytesRead } = await fh.read(buf, 0, buf.length, from));
+    } finally {
+      await fh.close();
+    }
+    // Only whole lines. The last one can be half-written when this races a lap
+    // crossing the line; it is read again, complete, next time.
+    const end = bytesRead > 0 ? buf.lastIndexOf(0x0a, bytesRead - 1) : -1;
+    if (end < 0) return;
+    this.parsed.set(name, from + end + 1);
+    for (const line of buf.toString('utf8', 0, end).split('\n')) {
+      if (!line.trim()) continue;
+      let rec: LapRecord;
+      try {
+        rec = JSON.parse(line) as LapRecord;
+      } catch {
+        continue; // hand-edited, or torn by a crash mid-append
+      }
+      this.add(rec);
+    }
+  }
+
+  private add(rec: LapRecord): void {
+    // Pre-v3 laps have no id, so no trace to point at.
+    if (!rec || !rec.id || typeof rec.lapMs !== 'number' || this.seen.has(rec.id)) return;
+    this.seen.add(rec.id);
     // Pre-v7 laps carry no condition and read as dry — the same judgement the
     // league boards make, for the same reason: it is right for almost every
     // lap ever recorded.
     const condition: TrackCondition = rec.condition || 'dry';
-    if (q.condition && condition !== q.condition) continue;
-    if (q.setupFp && rec.setupFp !== q.setupFp) continue;
-    if (!hasTraceFile(rec.id, rec.at, traces)) continue;
-
-    out.push({
+    const key = comboKey(rec.sim, rec.trackKey, rec.carClass);
+    let list = this.byCombo.get(key);
+    if (!list) this.byCombo.set(key, (list = []));
+    list.push({
       lapId: rec.id,
       at: rec.at,
       lapMs: Number.isFinite(rec.lapMs) && rec.lapMs > 0 ? rec.lapMs : 0,
@@ -134,53 +244,44 @@ export function ghostCandidates(q: GhostQuery, dirs: GhostDirs = {}): GhostCandi
       label: candidateLabel(rec, condition),
     });
   }
-
-  // Fastest first. A lap the sim gave no time for cannot be ranked against one
-  // it did, so those go last rather than sorting as if they were instant.
-  out.sort((a, b) => rankOf(a) - rankOf(b));
-  return out;
-}
-
-/**
- * The fastest chaseable lap for a combo, or `null` when there is none.
- *
- * This is the "auto-record, keep fastest" behaviour, and it needs no recording
- * and no pruning: every lap is already on disk, so the fastest one is a sort.
- */
-export function bestGhostCandidate(q: GhostQuery, dirs: GhostDirs = {}): GhostCandidate | null {
-  const list = ghostCandidates(q, dirs);
-  for (const c of list) if (c.lapMs > 0) return c;
-  return list[0] ?? null;
 }
 
 /**
  * Read one candidate's trace and build the ghost. `null` when the file has
  * gone, will not parse, or cannot support a reference — see
- * {@link ghostFromTrace}.
+ * {@link ghostFromTrace}. A file that does not exist at all is reported to
+ * `index` so it is not probed again.
  */
-export function loadGhost(candidate: GhostCandidate, dirs: GhostDirs = {}): GhostLap | null {
-  const traces = dirs.traces ?? traceDir();
-  let file;
+export async function loadGhost(
+  candidate: GhostCandidate,
+  dirs: GhostDirs = {},
+  index?: GhostIndex,
+): Promise<GhostLap | null> {
+  let file: TraceFile;
   try {
-    file = readTrace(candidate.lapId, candidate.at, traces);
-  } catch {
+    const p = traceFilePath(candidate.lapId, candidate.at, dirs.traces ?? traceDir());
+    file = JSON.parse(await fsp.readFile(p, 'utf8')) as TraceFile;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') index?.markMissing(candidate.lapId);
     return null;
   }
-  if (!file) return null;
+  if (!file || file.lapId !== candidate.lapId || !file.trace || !Array.isArray(file.trace.d)) {
+    return null;
+  }
   return ghostFromTrace(file, candidate.label);
 }
 
 /**
-  * How many candidates to open looking for one with a driven line.
-  *
-  * Reading a trace is a file read and a JSON parse of ~40 KB, so this is not
-  * free, but in practice the first candidate has a line: every lap recorded
-  * since the line shipped carries one, and the fastest lap is usually recent.
-  */
+ * How many traces to open looking for one with a driven line.
+ *
+ * Reading a trace is a file read and a JSON parse of ~50 KB, so this is not
+ * free, but in practice the first candidate has a line: every lap recorded
+ * since the line shipped carries one, and the fastest lap is usually recent.
+ */
 const MAX_LINE_PROBE = 5;
 
 /**
- * The fastest chaseable lap for a combo, loaded and ready.
+ * The fastest chaseable lap for a combo, loaded and ready, or `null`.
  *
  * Prefers a lap that carries a driven LINE, because that is what Ghost HUD
  * draws on the road; a lap without one can still be counted against, but it
@@ -192,13 +293,30 @@ const MAX_LINE_PROBE = 5;
  * whose only quick lap predates the line should still get a delta, and the
  * widget is told which it got via {@link ghostHasLine} rather than discovering
  * it half way through a draw.
+ *
+ * @param current - The ghost already loaded, if any. When it comes up as a
+ *   candidate it is reused rather than read and parsed again, so re-checking
+ *   after every new lap costs a trace read only when the lap might win.
  */
-export function loadBestGhost(q: GhostQuery, dirs: GhostDirs = {}): GhostLap | null {
-  const list = ghostCandidates(q, dirs);
+export async function loadBestGhost(
+  index: GhostIndex,
+  q: GhostQuery,
+  dirs: GhostDirs = {},
+  current: GhostLap | null = null,
+): Promise<GhostLap | null> {
+  await index.refresh();
+  const list = index.candidates(q);
   let fallback: GhostLap | null = null;
-  for (let i = 0; i < list.length && i < MAX_LINE_PROBE; i += 1) {
-    const lap = loadGhost(list[i]!, dirs);
+  let opened = 0;
+  // Candidates with no trace file do not count against the probe: the old
+  // synchronous picker filtered those out before counting, and a run of
+  // untraced laps at the top (spectated, or written before traces shipped)
+  // must not hide a perfectly good lap sixth in line.
+  for (const c of list) {
+    if (opened >= MAX_LINE_PROBE) break;
+    const lap = current && c.lapId === current.lapId ? current : await loadGhost(c, dirs, index);
     if (!lap) continue;
+    opened += 1;
     if (ghostHasLine(lap)) return lap;
     if (!fallback) fallback = lap;
   }
@@ -207,27 +325,17 @@ export function loadBestGhost(q: GhostQuery, dirs: GhostDirs = {}): GhostLap | n
 
 /* ------------------------------- internals -------------------------------- */
 
+function comboKey(sim: string, trackKey: string, carClass: string): string {
+  return `${sim}|${trackKey}|${carClass}`;
+}
+
 /** Sort weight: lap time in ms, with untimed laps pushed to the end. */
 function rankOf(c: GhostCandidate): number {
   return c.lapMs > 0 ? c.lapMs : Number.MAX_SAFE_INTEGER;
 }
 
-function hasTraceFile(lapId: string, at: string, dir: string): boolean {
-  let p: string;
-  try {
-    p = traceFilePath(lapId, at, dir);
-  } catch {
-    return false;
-  }
-  try {
-    return fs.statSync(p).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
- * `"1:13.730 · dry"`, with the surface only when it is not dry — almost every
+ * `"1:13.730 · damp"`, with the surface only when it is not dry — almost every
  * lap is dry, so saying so on all of them is noise. The lap time comes from
  * `raceLog.formatLapTime` rather than a local copy: two surfaces that format
  * the same lap differently is a bug waiting to be reported.

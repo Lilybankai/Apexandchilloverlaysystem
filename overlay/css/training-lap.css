@@ -1,0 +1,161 @@
+/* training-lap.css: the Lap Strip (trainingsectors) — its own file so the
+   training widgets can be restyled independently. Linked from training.html
+   and widget.html after training.css, whose card, labels, .tw-big and tones
+   it builds on.
+
+   One row — who is being chased, S1 / S2 / S3, the lap gap big — over a thin
+   line of the whole lap with a dot per corner and the car riding along it. */
+
+#widget-trainingsectors > .tw__body {
+  padding: 18px 24px 12px;
+}
+
+.tlap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tlap__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 168px) repeat(3, minmax(0, 1fr)) minmax(110px, 150px);
+  align-items: stretch;
+  height: 74px;
+}
+
+/* --- Who is being chased. */
+.tlap__who {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding-right: 12px;
+}
+.tlap__driver {
+  font: 600 21px/1 var(--tw-num);
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tlap__ref {
+  font: 500 15px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-height: 15px;
+}
+
+/* --- A sector. */
+.tlap__sec {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 18px;
+  border-left: 1px solid var(--tw-hair);
+  transition: background-color 200ms ease;
+}
+.tlap__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tlap__name {
+  font: 600 13px/1 var(--tw-ui);
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+.tlap__delta {
+  font: 600 17px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tlap__time {
+  font: 500 24px/1 var(--tw-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.tlap__bar {
+  display: none;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.tlap__bar > div {
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.35), var(--ac-cyan));
+}
+
+/* The sector being driven: lit cyan, clock and bar running. */
+.tlap__sec[data-state="live"] {
+  border-left-color: transparent;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.08), rgba(34, 211, 238, 0));
+}
+.tlap__sec[data-state="live"] + .tlap__sec,
+.tlap__sec[data-state="live"] + .tlap__lap {
+  border-left-color: transparent;
+}
+.tlap__sec[data-state="live"] .tlap__name,
+.tlap__sec[data-state="live"] .tlap__time {
+  color: var(--ac-cyan);
+}
+.tlap__sec[data-state="live"] .tlap__bar {
+  display: block;
+}
+/* Not reached yet this lap: last lap's figures, stepped back. */
+.tlap__sec[data-state="prev"] .tlap__top,
+.tlap__sec[data-state="prev"] .tlap__time {
+  opacity: 0.42;
+}
+.tlap__sec[data-state="pending"] .tlap__time {
+  color: var(--text-muted);
+}
+
+/* --- The lap gap. */
+.tlap__lap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  border-left: 1px solid var(--tw-hair);
+}
+
+/* --- The lap line. */
+.tlap__line {
+  display: block;
+  width: 100%;
+  height: 22px;
+}
+.tlap[data-ready="false"] .tlap__line {
+  opacity: 0.4;
+}
+
+/* No ghost: one quiet line over the card's own footprint, so the widget keeps
+   its size and nothing jumps when a ghost arrives. */
+.tlap__note {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+}
+.tlap[data-empty="true"] .tlap__note {
+  display: flex;
+}
+.tlap[data-empty="true"] > :not(.tlap__note) {
+  visibility: hidden;
+}
