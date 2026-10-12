@@ -7,6 +7,14 @@
  * channel that tells them apart is `/navigation/state` `settingMode`, which
  * reads `SETTING_REPLAY_PLAYBACK` for the whole time a replay is on screen.
  *
+ * CORRECTION (probed live 2026-10-12): those REST rows — and the shared-memory
+ * Scoring buffer — are FROZEN at the loaded session's start for the whole
+ * replay (event time 0, lap 0, grid order, other drivers' names). The replay's
+ * moving data comes from LMU's broadcast websockets instead, opened only while
+ * this mode is on — see `telemetry/replayFeed.ts`. Everything below still
+ * holds; the frozen REST rows are what a frame falls back to when that feed is
+ * not answering.
+ *
  * Replay mode is entered ONLY on that positive answer. Everything here is
  * pure, so the rules are pinned by `scripts/test-replay-mode.js`:
  *
