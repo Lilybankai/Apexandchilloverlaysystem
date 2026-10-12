@@ -42,8 +42,11 @@ function scrubLog(text, home) {
   const user = home ? path.win32.basename(String(home).replace(/[\\/]+$/, '')) : '';
   if (user && user.length >= 2) {
     // Both slash styles, any case: Electron logs `C:\Users\carl\…`, a few
-    // Node errors print `c:/users/carl/…`.
-    const re = new RegExp(`([\\\\/]Users[\\\\/])${escapeRegExp(user)}(?=[\\\\/'"\\s]|$)`, 'gi');
+    // Node errors print `c:/users/carl/…`. And RUNS of separators: JSON logged
+    // as text (PowerShell's signature check in updater.log) has
+    // `C:\\Users\\carl\\…`, which a one-separator pattern missed — the first
+    // live report (THE-37) still carried the name 12 times that way.
+    const re = new RegExp(`([\\\\/]+Users[\\\\/]+)${escapeRegExp(user)}(?=[\\\\/'"\\s]|$)`, 'gi');
     out = out.replace(re, '$1<user>');
   }
   return out.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '<email>');

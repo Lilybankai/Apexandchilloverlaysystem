@@ -5,6 +5,16 @@
      app until it is renamed.
 -->
 
+## 1.3.8-beta.4 — 2026-10-12
+
+### Fixed
+
+- **Bug reports could still carry your Windows user name.** "Attach my logs"
+  takes your user name out of the logs before they leave your PC, but it
+  missed one form of it: the update log records Windows' own signature checks
+  with the folder path written with doubled backslashes, and those lines went
+  through unchanged. They're caught now.
+
 ## 1.3.8-beta.3 — 2026-10-12
 
 ### Changed

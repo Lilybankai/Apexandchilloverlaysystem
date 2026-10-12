@@ -61,6 +61,18 @@ const HOME = 'C:\\Users\\carla';
   const out = scrubLog('a.b (.*) C:\\Users\\a.b\\x', 'C:\\Users\\a.b\\');
   check('regex chars in user name are literal', out === 'a.b (.*) C:\\Users\\<user>\\x', out);
 }
+{
+  // updater.log carries PowerShell's JSON verbatim, backslashes escaped (THE-37).
+  const line =
+    '  "StatusMessage": "The file C:\\\\Users\\\\carla\\\\AppData\\\\Local\\\\x.exe is not digitally signed.",';
+  const out = scrubLog(line, HOME);
+  check('escaped (doubled) backslash path scrubbed', !/carla/i.test(out), out);
+  check('escaped path kept otherwise', out.includes('C:\\\\Users\\\\<user>\\\\AppData'), out);
+  check(
+    'escaped longer user name left alone',
+    scrubLog('C:\\\\Users\\\\carlana\\\\x', HOME) === 'C:\\\\Users\\\\carlana\\\\x',
+  );
+}
 check('no home → only emails touched', scrubLog('C:\\Users\\carla\\x', '') === 'C:\\Users\\carla\\x');
 
 /* ---- tailText ------------------------------------------------------------ */
