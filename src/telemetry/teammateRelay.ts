@@ -205,6 +205,8 @@ export function applyTeammateRelay(
   relay: TeammateRelay | null,
   nowMs: number,
 ): TelemetryFrame {
+  // A replay's car is a recording; a teammate's live tyres are not its tyres.
+  if (frame.session && frame.session.replay === true) return frame;
   const hit = matchRelaySource(frame, relay, nowMs);
   if (!hit) return frame;
   const snap = hit.source.snapshot;

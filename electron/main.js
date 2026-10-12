@@ -1363,6 +1363,20 @@ function maybePushTeamSnapshot(frame) {
  */
 let feedOnTrack = false;
 
+/**
+ * Whether the live feed says the sim is PLAYING A REPLAY (frame.session.replay,
+ * THE-35). Kept apart from feedOnTrack on purpose: nobody is at the wheel of a
+ * replay, so everything that keys on "driving" stays off — only the layer's
+ * visibility reads this, and shows the overlays over the replay.
+ */
+let feedReplay = false;
+
+function setFeedReplay(replay) {
+  if (replay === feedReplay) return;
+  feedReplay = replay;
+  applyIngameVisibility();
+}
+
 /** Record a feed verdict and reflect a change on the in-game layer at once. */
 function setFeedOnTrack(onTrack) {
   if (onTrack === feedOnTrack) return;
@@ -1459,6 +1473,7 @@ function dialStatusFeed() {
       // DELIBERATE demo mode is exempted inside ingameShouldBeVisible, not
       // here, so the flag keeps meaning one thing).
       setFeedOnTrack(!demo && !!(frame && (!frame.session || frame.session.onTrack !== false)));
+      setFeedReplay(!demo && !!(frame && frame.session && frame.session.replay === true));
       // Push only on a genuine transition. Frames arrive at the broadcast rate
       // (up to 120/s) and the feed flag changes perhaps twice a session, so an
       // unconditional push here would be far worse than the 1 Hz churn this
@@ -1501,7 +1516,10 @@ function dialStatusFeed() {
     feedWatchTimer = setInterval(() => {
       if (!status.running) return;
       const stale = lastFrameAt === 0 || Date.now() - lastFrameAt > NO_DATA_MS;
-      if (stale) setFeedOnTrack(false);
+      if (stale) {
+        setFeedOnTrack(false);
+        setFeedReplay(false);
+      }
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -1528,6 +1546,8 @@ function dialStatusFeed() {
  */
 function watchingAnotherCar(frame) {
   if (!frame || frame.connected === false || frame.source !== 'lmu') return false;
+  // A replay's car is a recording — no teammate's live relay belongs on it.
+  if (frame.session && frame.session.replay === true) return false;
   if (!Array.isArray(frame.standings)) return false;
   const focus = frame.standings.find((row) => row && row.isPlayer);
   return !!focus && focus.isOwn !== true;
@@ -1543,6 +1563,7 @@ function disconnectStatusFeed() {
     statusFeedRedialTimer = null;
   }
   setFeedOnTrack(false);
+  setFeedReplay(false);
   // Blank the pit wall promptly rather than letting it age out: a stopped
   // server is "no data", not "data from 8 seconds ago".
   lastFeedFrame = null;
@@ -2766,7 +2787,9 @@ function ingameShouldBeVisible(settings) {
   const s = settings || loadSettings();
   if (!s.ingameAutoHide) return true;
   if (s.forceSimulator || s.provider === 'simulator') return true;
-  return feedOnTrack;
+  // A replay on screen (THE-35): nobody is driving, but the overlays are
+  // what the viewer is watching it with.
+  return feedOnTrack || feedReplay;
 }
 
 /** Reflect ingameShouldBeVisible on the layer window, if there is one. */

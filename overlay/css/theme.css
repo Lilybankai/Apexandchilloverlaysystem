@@ -223,6 +223,17 @@ html[data-autohidden="true"] body {
   opacity: 0;
 }
 
+/* Replay mode (THE-35): a widget with nothing true to say about the replay
+   camera's car is taken off screen (client.js updateReplayGaps). Visibility,
+   so the layout holds and the widget is current the moment the replay ends;
+   edit mode shows it anyway so a layout can still be arranged. */
+[data-replay-off="true"] {
+  visibility: hidden !important;
+}
+body.ig-editing [data-replay-off="true"] {
+  visibility: visible !important;
+}
+
 /* =========================================================================
  * PANEL PRIMITIVE
  * Every widget is a .panel whose background is solid by default, so it fully

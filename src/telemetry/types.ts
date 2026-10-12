@@ -250,6 +250,17 @@ export interface SessionState {
    * source does not publish it.
    */
   elapsedSec?: number;
+  /**
+   * `true` while the sim is PLAYING A REPLAY (LMU `/navigation/state`
+   * `settingMode` = `SETTING_REPLAY_PLAYBACK`), never present otherwise.
+   *
+   * Every block then describes the replay camera's car, nobody on this PC is
+   * driving, and {@link onTrack} is `false` — so any consumer that is not
+   * replay-aware (the engineer, the team relay, the lap log) treats the frame
+   * as it treats the sim's menus. Only the display surfaces opt back in. See
+   * telemetry/replayMode.ts.
+   */
+  replay?: true;
 }
 
 /* -------------------------------------------------------------------------- */

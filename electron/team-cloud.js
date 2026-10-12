@@ -77,6 +77,8 @@ function eligibleToPublish(frame, snapshot) {
   // A frame carrying a TEAMMATE's relayed tyres is theirs, not ours: this PC
   // is spectating. Re-publishing it would echo their data back as our own.
   if (frame.player && frame.player.relayed) return false;
+  // A replay is a recording being watched, never the car being driven here.
+  if (frame.session && frame.session.replay === true) return false;
   if (frame.session && frame.session.onTrack === false) return false;
   if (!snapshot || !snapshot.car) return false;
   const t = snapshot.car.tyres;

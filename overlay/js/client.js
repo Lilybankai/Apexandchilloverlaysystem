@@ -1181,17 +1181,76 @@
     }
   }
 
+  /*
+   * Replay mode (THE-35): the frame describes the replay camera's car, and
+   * some widgets have nothing true to say about it. Tyres, damage, the MFD and
+   * fuel plan, radar, track limits, motion, reference pace and the ghost all
+   * come from THIS PC's own car (garage screens, shared memory of the driven
+   * car) — so in a replay they are hidden rather than left showing dashes or,
+   * worse, the garage car's numbers. The pedal traces hide too while the
+   * provider has no live input reading for the focused car (gear unknown),
+   * instead of drawing flat lines that look like a car coasting.
+   *
+   * visibility, not display: the layout is untouched and the widget keeps
+   * taking frames, so it is current the moment the replay ends. Edit mode
+   * shows them anyway (theme.css), so a layout can still be arranged.
+   */
+  var REPLAY_HIDDEN = {
+    tyres: true,
+    damage: true,
+    mfd: true,
+    fuelplan: true,
+    radar: true,
+    limits: true,
+    motion: true,
+    refpace: true,
+    ghosthud: true,
+  };
+  var REPLAY_NEEDS_INPUTS = { pedals: true, pedalsv: true };
+  var replayGapsKey = "";
+
+  function replayHides(name, frame) {
+    if (REPLAY_HIDDEN[name]) return true;
+    if (REPLAY_NEEDS_INPUTS[name]) {
+      var p = frame.player;
+      return !p || !has(p.gear);
+    }
+    return false;
+  }
+
+  function updateReplayGaps(frame) {
+    var replay = !!(frame.session && frame.session.replay === true);
+    var key = "";
+    if (replay) {
+      for (var i = 0; i < registry.length; i++) {
+        if (registry[i].root && replayHides(registry[i].name, frame)) key += registry[i].name + ",";
+      }
+    }
+    if (key === replayGapsKey) return;
+    replayGapsKey = key;
+    for (var j = 0; j < registry.length; j++) {
+      var w = registry[j];
+      if (!w.root) continue;
+      if (replay && replayHides(w.name, frame)) w.root.setAttribute("data-replay-off", "true");
+      else w.root.removeAttribute("data-replay-off");
+    }
+  }
+
   function dispatch(frame) {
     var now = nowMs();
 
     glowEnabledCache =
       document.documentElement.getAttribute("data-glow-enabled") !== "false";
     setDemo(frame.connected === false);
+    // A replay counts as "show": nobody is at the wheel, but streaming or
+    // reviewing a replay is exactly what the overlays are wanted over (THE-35).
     setAtWheel(
-      frame.connected !== false && (!frame.session || frame.session.onTrack !== false),
+      frame.connected !== false &&
+        (!frame.session || frame.session.onTrack !== false || frame.session.replay === true),
     );
     updateSessionMeta(frame);
     updateRelayTags(frame);
+    updateReplayGaps(frame);
 
     for (var i = 0; i < registry.length; i++) {
       var w = registry[i];
@@ -1641,6 +1700,9 @@
     // the class figure can be told honestly is testable headlessly rather than
     // by putting a multiclass field on screen and squinting at one corner of it.
     positionMeta: positionMeta,
+    // Which widgets a replay takes off screen (THE-35), as data, for
+    // scripts/test-replay-mode.js.
+    replayHides: replayHides,
     // Also on the module surface, not just on the update ctx: standings and
     // radar reach for the colour at module-eval time (they are deferred scripts
     // that run after this one), and a widget drawing to a canvas has no ctx in
