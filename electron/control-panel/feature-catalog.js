@@ -58,7 +58,7 @@
     { id: 'training', label: 'Training (Ghost HUD)', gated: 'beta' },
     { id: 'team', label: 'Team' },
     { id: 'review', label: 'Review (Analyse)' },
-    { id: 'practice', label: 'Practice review' },
+    { id: 'practice', label: 'Practice review', gated: 'beta' },
     { id: 'racelog', label: 'Race log' },
     { id: 'overlays', label: 'Overlays' },
     { id: 'vr', label: 'VR headset', gated: 'beta' },

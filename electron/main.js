@@ -3416,9 +3416,20 @@ function finishPracticeSession(ended) {
   practiceTarget = null;
 }
 
+/**
+ * The Practice tab is beta-only (Carl, 2026-10-13: it stayed out of the 1.3.8
+ * stable release). Off the beta channel a finished practice session writes no
+ * review and posts no notice, so nothing points a stable driver at a tab the
+ * panel hides.
+ */
+function practiceOnThisChannel(settings) {
+  return overlayOnThisChannel(settings, { gated: 'beta' });
+}
+
 const practiceWatch = createPracticeWatch({
   onGhost: (g) => snapshotPracticeTarget(g.sourceLapId),
   onEnded: (ended) => {
+    if (!practiceOnThisChannel(loadSettings())) return;
     const t = setTimeout(() => finishPracticeSession(ended), PRACTICE_END_SETTLE_MS);
     if (typeof t.unref === 'function') t.unref();
   },
@@ -4750,6 +4761,9 @@ function registerIpc() {
    */
   let pendingPracticeLoaded = false;
   ipcMain.handle('review:pending', () => {
+    // A review left from a beta spell must not drag a stable driver to the
+    // hidden Practice tab.
+    if (!practiceOnThisChannel(loadSettings())) return null;
     if (!pendingPracticeLoaded) {
       pendingPracticeLoaded = true;
       if (!pendingPracticeReview) loadPendingPracticeReview();
