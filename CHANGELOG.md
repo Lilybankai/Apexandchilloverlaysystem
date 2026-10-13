@@ -5,25 +5,16 @@
      app until it is renamed.
 -->
 
-## 1.3.8-beta.4 — 2026-10-12
+## 1.3.8 — 2026-10-13
 
-### Fixed
+Overlays that work in replays, a team relay that only shows the right driver,
+a race clock that survives a rejoin, and bug reports that bring their own logs.
 
-- **Bug reports could still carry your Windows user name.** "Attach my logs"
-  takes your user name out of the logs before they leave your PC, but it
-  missed one form of it: the update log records Windows' own signature checks
-  with the folder path written with doubled backslashes, and those lines went
-  through unchanged. They're caught now.
+### Added
 
-## 1.3.8-beta.3 — 2026-10-12
-
-### Changed
-
-- **Replays now show the race as it happens.** In 1.3.8-beta.2 the overlays
-  came up over a replay but sat still: LMU's usual data stops at the start of
-  the session while a replay plays, so standings showed the grid and nothing
-  moved. The overlays now read the same live replay feed LMU's own broadcast
-  overlays use, so during a replay you get:
+- **The overlays work in replays.** Open a replay — from the race log's Replay
+  button or LMU's own menu — and the overlays come up over it, following
+  whichever car the replay camera is on, and show the race as it happens:
   - **Standings** with the recording's drivers in their real order, laps down,
     class positions and the PIT flag, with intervals and last laps filling in
     as cars are seen crossing each part of the track;
@@ -33,34 +24,18 @@
     brake, clutch and steering.
 
   Cut the camera to another car and everything follows it. Delta needs one
-  full lap of that car watched first. Tyres, damage and fuel stay hidden in a
-  replay, because LMU doesn't send them for a recording. Nothing you watch is
-  logged, uploaded or called on the radio, as before.
-
-- **Relay source has moved to the Team tab.** The choice of whose telemetry
-  the team relay puts on your overlays (Auto, one teammate, or Off) now sits in
-  the Team tab's header, next to My car / Team, instead of in Settings. It
-  shows only when you're in a team.
-
-## 1.3.8-beta.2 — 2026-10-12
-
-### Added
-
-- **The overlays work in replays.** Open a replay — from the race log's Replay
-  button or LMU's own menu — and the overlays come up over it and follow
-  whichever car the replay camera is on. Standings, relative, flags, weather
-  and the track map work as they do live; delta, fuel and the speedo show what
-  LMU publishes for the car you are watching. Tyres, damage, the MFD and the
+  full lap of that car watched first. Tyres, damage, fuel, the MFD and the
   other widgets that only exist for the car in your own garage hide during a
-  replay rather than show your car's numbers. Nothing you watch counts as
-  driving: no laps are logged or uploaded, the engineer stays quiet, and the
-  training overlays and Practice Review ignore it.
+  replay, because LMU doesn't send them for a recording. Nothing you watch
+  counts as driving: no laps are logged or uploaded and the engineer stays
+  quiet.
 
-- **Choose whose telemetry the team relay shows.** Settings ▸ Application ▸
-  **Relay source**: Auto (the teammate driving your car), one teammate by
-  name, or Off. A teammate you pick still has to be in your session; if they
-  are not, it says so ("Scott isn't in your session") instead of showing
-  their numbers. The relay tag on the overlays names whose data it is.
+- **Choose whose telemetry the team relay shows.** The Team tab's header, next
+  to My car / Team, has a **Relay source** choice: Auto (the teammate driving
+  your car), one teammate by name, or Off. It shows only when you're in a
+  team. A teammate you pick still has to be in your session; if they are not,
+  it says so ("Scott isn't in your session") instead of showing their numbers.
+  The relay tag on the overlays names whose data it is.
 
 - **Bug reports can bring your logs with them.** Pick "Bug report" on the
   Suggestions tab and an "Attach my logs" switch appears, on by default. It
@@ -84,74 +59,6 @@
   car. The relay now only takes telemetry from the teammate LMU says is
   driving your car, in your session, and never your own; and a PC only
   relays the car it is actually driving.
-
-## 1.3.8-beta.1 — 2026-10-08
-
-The training overlays and the Practice tab, back for everyone on the beta, with
-the Engineer tab's voices, harder Savage radio and crash calls from 1.3.6 and
-1.3.7 included.
-
-### Added
-
-- **Practice Review: a debrief every time you leave practice.** Leave a
-  practice or test-day session with a timed lap and "Practice review ready"
-  comes up on screen. The new **Practice** tab then opens on it. Every lap is
-  measured against the lap you were chasing in Training, or your own best if
-  you weren't chasing one. You get:
-  - your best lap, your theoretical best (your best corners added up) and how
-    consistent you were;
-  - **Where the time went**: the three corners that cost you most, what you
-    did there ("braking 22 m early", "9 km/h down at the apex") and what to try;
-  - a table of every lap against the target, and a corner-by-lap grid that
-    shows where each lap lost and gained.
-
-  The Practice tab lists every practice session, not just the latest, so you
-  can go back to any of them.
-
-- **Study any lap, corner by corner.** Click a lap in the Practice tab for its
-  full telemetry against the target: the map, speed, throttle and brake, gear,
-  steering and the time gap. Underneath is a table of every corner with the
-  time it cost, your braking point, your apex and exit speed, and how far you
-  were off the target's line. Click a corner and the map and every chart zoom
-  to it.
-
-- **An accuracy score for every lap.** 0–100 per corner and per lap, from four
-  things compared with the lap you chased: your braking, your throttle, your
-  line and your speed through the corner. It was tuned on real laps so that a
-  higher score means a faster lap, not just a tidier one. The Practice tab
-  shows the score for each lap, the corners where you have the most points to
-  find, and how your score has moved session by session at that track.
-
-- **Two new training widgets.** **Coach** shows your pedals, speed, gear and
-  steering against the reference right now, with the last few seconds of
-  inputs. **Brake Cue** is a red BRAKE light that comes on as you reach the
-  reference's braking point, with the metres left. Switch them on in the
-  Training tab.
-
-### Changed
-
-- **The training overlays have a new look.** No more title bars on every
-  widget: each one is a clean dark card with one big number, red for time lost
-  and green for time gained, and the lap you're chasing drawn as a dotted line
-  against your solid one.
-  - **Trace is now Telemetry**: throttle, brake, speed and the gap by distance,
-    with the reference carrying on past your car so you see the next braking
-    zone coming.
-  - **Corner Card is now Corner Analysis**: the corner and its time big, your
-    speed through it against the reference, and a tip.
-  - **Lap Strip** shows your sector times as well as the gaps.
-  - **Ghost HUD** loses its box: the racing line glows, braking points and
-    apexes are marked on the road, and the ghost and you are arrows.
-
-  Telemetry and Corner Analysis are bigger than before, so if you set your own
-  layout you may want to move them (Edit training layout, or Reset).
-
-### Fixed
-
-- **The training overlays flickered constantly in LMU.** About one frame in
-  four arrived without the ghost, and every training widget blanked and
-  redrew for it. LMU often sends the same moment twice; those repeats now keep
-  the ghost.
 
 ## 1.3.7 — 2026-10-08
 

@@ -6463,6 +6463,21 @@
     }
   }
 
+  /**
+   * The Practice tab is beta-channel only, on Fuel's signal: Carl held it out
+   * of the 1.3.8 stable release. Main applies the same rule to the review
+   * notice and the pending review (practiceOnThisChannel), so a stable driver
+   * is never sent to a tab they cannot see.
+   */
+  function applyPracticeTabVisibility() {
+    const tab = tabButtons.find((t) => t.dataset.tab === 'practice');
+    if (tab) tab.hidden = !followingBeta;
+    if (!followingBeta) {
+      const view = views.find((v) => v.dataset.view === 'practice');
+      if (view && view.getAttribute('data-active') === 'true') showView('dashboard');
+    }
+  }
+
   /* ---- Race / Training mode ---------------------------------------------
    *
    * The segmented control in the top bar shipped DISABLED and `data-mode` was
@@ -8215,6 +8230,7 @@
     applyUpdatesCardVisibility();
     applyFuelTabVisibility();
     applyVrTabVisibility();
+    applyPracticeTabVisibility();
     applyTrainingVisibility();
     // The channel is known now, so main's mode can be taken at its word.
     adoptTrainingMode(null);
