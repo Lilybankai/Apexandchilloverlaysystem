@@ -125,11 +125,14 @@ version heading:
 - **Admin: a Usage pane that says what the app is actually used for.** …
 ```
 
-The release then behaves exactly like any other — same gate, same notes on
-GitHub, same auto-update — except that `changelog:pending` skips it, so nobody
-is interrupted. An upgrade that spans a marked release **and** an ordinary one
-still shows the ordinary one; only the marked entries drop out. The full history
-opened from the footer version still lists everything.
+The release then behaves exactly like any other (same gate, same auto-update)
+except that drivers never read the entry anywhere. `changelog:pending` skips it,
+so there is no What's New popup; `changelog:history` skips it, so the footer's
+full history does not list it; and `release-notes.js` gives the GitHub release
+(which is public, and is what the update banner reads) the one line
+"Maintenance update — no changes for drivers." instead of the notes. An upgrade
+that spans a marked release **and** an ordinary one still shows the ordinary
+one. The full entry lives on in `CHANGELOG.md`, which is the record.
 
 Write the entry properly even so. It is what you will be reading in a year when
 you want to know when something changed, and "internal" is about the audience,
