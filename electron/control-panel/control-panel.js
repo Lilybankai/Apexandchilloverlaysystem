@@ -4844,6 +4844,106 @@
     return li;
   }
 
+  /**
+   * Cancelled trials and subscriptions (migration 0041), still-cancelling
+   * first. The server decides trial-vs-subscription from Stripe's dates; the
+   * filter here is purely a view over the rows already loaded, so switching it
+   * costs no round trip.
+   */
+  let adminCancellations = [];
+
+  function renderAdminCancellations(rows) {
+    adminCancellations = Array.isArray(rows) ? rows : [];
+    const card = $('#adm-cancel-card');
+    const list = $('#adm-cancel-list');
+    const count = $('#adm-cancel-count');
+    const empty = $('#adm-cancel-empty');
+    const foot = $('#adm-cancel-foot');
+    const filter = $('#adm-cancel-filter');
+    if (!card || !list) return;
+
+    card.hidden = !adminCancellations.length;
+    list.textContent = '';
+    if (!adminCancellations.length) return;
+
+    const trials = adminCancellations.filter((r) => r.kind === 'trial').length;
+    const subs = adminCancellations.length - trials;
+    const ending = adminCancellations.filter((r) => r.state === 'ending').length;
+    if (count) {
+      count.textContent = [
+        `${trials} trial${trials === 1 ? '' : 's'}`,
+        `${subs} subscription${subs === 1 ? '' : 's'}`,
+        ending ? `${ending} still cancelling` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    }
+
+    const want = filter ? filter.value : '';
+    const shown = adminCancellations.filter((r) =>
+      !want ? true : want === 'ending' ? r.state === 'ending' : r.kind === want,
+    );
+    for (const row of shown) list.append(buildCancellationItem(row));
+    if (empty) empty.hidden = shown.length > 0;
+    if (foot) {
+      foot.textContent =
+        'A trial counts as cancelled when it stopped before the first payment. Someone who cancelled and later resubscribed drops off this list. Refunds and win-backs are done in Stripe.';
+    }
+  }
+
+  function buildCancellationItem(row) {
+    const li = document.createElement('li');
+    li.className = 'pastdue-item';
+
+    const left = document.createElement('div');
+    const who = document.createElement('p');
+    who.className = 'pastdue-item__who';
+    who.textContent = row.email ? `${row.driver || 'Driver'} — ${row.email}` : row.driver || 'Driver';
+
+    const ending = row.state === 'ending';
+    const trial = row.kind === 'trial';
+    const meta = document.createElement('p');
+    meta.className = 'pastdue-item__meta';
+    const ends = longDate(row.ends_at);
+    // How long they actually paid for: from the end of the trial (or the
+    // start, for a subscription that never had one) to the day it stopped.
+    // Not for a still-cancelling row: "access ends" already says it, and a
+    // tenure counted to a future date would read as money already taken.
+    let paid = '';
+    if (!trial && !ending) {
+      const from = Date.parse(row.trial_end || row.started_at || '');
+      const to = Date.parse(row.ends_at || '');
+      if (Number.isFinite(from) && Number.isFinite(to) && to > from) {
+        const days = Math.round((to - from) / 86400000);
+        paid =
+          days < 14
+            ? `paid ${Math.max(1, days)} day${days === 1 ? '' : 's'}`
+            : days < 60
+              ? `paid ${Math.round(days / 7)} weeks`
+              : `paid ${Math.round(days / 30)} months`;
+      }
+    }
+    const seen = Date.parse(row.last_seen_at || '');
+    meta.textContent = [
+      row.started_at ? `Started ${longDate(row.started_at)}` : '',
+      ends ? (ending ? `access ends ${ends}` : `ended ${ends}`) : '',
+      paid,
+      Number.isFinite(seen) ? `last in the app ${formatAgo(seen)}` : 'never opened the app',
+      row.free_access_reason ? `now on free access (${row.free_access_reason})` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    left.append(who, meta);
+
+    const tag = document.createElement('span');
+    tag.className = 'pastdue-item__left';
+    tag.setAttribute('data-state', ending ? 'soon' : 'ok');
+    tag.textContent = `${trial ? 'TRIAL' : 'SUBSCRIPTION'} · ${ending ? 'CANCELLING' : 'CANCELLED'}`;
+
+    li.append(left, tag);
+    return li;
+  }
+
   /** The roster's current query, read straight off its two controls. */
   function adminUsersQuery() {
     const search = $('#adm-users-search');
@@ -4866,6 +4966,7 @@
         free,
         billing,
         pastDue,
+        cancellations,
         corpus,
         analytics,
         referrals,
@@ -4877,6 +4978,10 @@
           window.apex.admin.freeAccess(),
           window.apex.admin.billing(),
           window.apex.admin.pastDue(),
+          // Absent on an older preload; the card then stays hidden.
+          typeof window.apex.admin.cancellations === 'function'
+            ? window.apex.admin.cancellations()
+            : Promise.resolve(null),
           // Absent on an older preload; the card then simply reads "—".
           typeof window.apex.admin.strategyCorpus === 'function'
             ? window.apex.admin.strategyCorpus()
@@ -4907,6 +5012,7 @@
       renderFreeAccess(free && free.ok ? free.data : null);
       renderAdminBilling(billing && billing.ok ? billing.data : null);
       renderAdminPastDue(pastDue && pastDue.ok ? pastDue.rows : []);
+      renderAdminCancellations(cancellations && cancellations.ok ? cancellations.rows : []);
       renderAdminCorpus(corpus && corpus.ok ? corpus.data : null);
       renderAdminUsage(analytics && analytics.ok ? analytics.data : null);
       renderAdminReferrals(referrals && referrals.ok ? referrals.data : null);
@@ -6393,6 +6499,12 @@
 
     const sort = $('#adm-users-sort');
     if (sort) sort.addEventListener('change', () => void refreshAdminUsers());
+
+    // A view over the rows already loaded — no round trip.
+    const cancelFilter = $('#adm-cancel-filter');
+    if (cancelFilter) {
+      cancelFilter.addEventListener('change', () => renderAdminCancellations(adminCancellations));
+    }
 
     // Typing a search hits the league, so wait for the typist to stop first —
     // an eight-letter name should be one query, not eight.

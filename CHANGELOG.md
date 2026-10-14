@@ -5,6 +5,20 @@
      app until it is renamed.
 -->
 
+## 1.3.9 — 2026-10-14
+<!-- internal -->
+
+### Added
+
+- **Admin: a Cancelled list in Members.** Everyone who cancelled a trial or a
+  subscription, by name and email, with when they started, when it ended, how
+  long they paid for, and when they last opened the app. People who have
+  pressed cancel but still have access come first, marked in amber with the
+  date it runs out, since they are the only ones a message could still change.
+  Filter to trials, subscriptions, or those still cancelling. A trial counts
+  as cancelled when it stopped before the first payment was taken. Needs
+  migration 0041 (`admin_billing_cancellations`), which is applied.
+
 ## 1.3.8 — 2026-10-13
 
 Overlays that work in replays, a team relay that only shows the right driver,
