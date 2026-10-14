@@ -6594,9 +6594,15 @@ function setupChangelogIpc() {
   // the footer. Capped: the file goes back to 0.4.0 and nobody scrolls that
   // far, but the cap is generous enough that a driver who skipped a month
   // still sees everything they missed.
+  //
+  // Internal entries are left out here too (Carl, 2026-10-14): admin-only
+  // notes are not for drivers to read anywhere in the app. They stay in
+  // CHANGELOG.md as the record.
   ipcMain.handle('changelog:history', () => ({
     current: app.getVersion(),
-    entries: entries().slice(0, 40),
+    entries: entries()
+      .filter((e) => !e.internal)
+      .slice(0, 40),
   }));
 
   /**
@@ -6621,15 +6627,15 @@ function setupChangelogIpc() {
       return { show: false, current, from: seen, entries: [] };
     }
 
-    // Entries marked `<!-- internal -->` are dropped here, and only here: an
-    // admin-only or backend-only release is still a real release with a real
-    // section in CHANGELOG.md and real notes on its GitHub page — it just has
-    // nothing to say to a driver, and a What's New popup about a tab they
-    // cannot open is a notification with nothing in it for them.
+    // Entries marked `<!-- internal -->` are dropped here (and from the footer
+    // history above): an admin-only or backend-only release is still a real
+    // release with a real section in CHANGELOG.md — it just has nothing to say
+    // to a driver, and a What's New popup about a tab they cannot open is a
+    // notification with nothing in it for them. Its GitHub release page carries
+    // a one-line placeholder instead of the notes (scripts/release-notes.js).
     //
-    // Filtered AFTER entriesSince rather than inside it, because "what did I
-    // miss" is also asked by the full history in the footer, which shows
-    // everything. See INTERNAL_MARK in electron/changelog.js.
+    // Filtered AFTER entriesSince rather than inside it, so the parser stays a
+    // plain reader of the file. See INTERNAL_MARK in electron/changelog.js.
     const missed = changelog.entriesSince(entries(), seen, current).filter((e) => !e.internal);
     // An update whose notes we cannot read (older CHANGELOG, hand-edited file),
     // or one that was internal-only, shows nothing rather than an empty box;

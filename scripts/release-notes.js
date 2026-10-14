@@ -66,7 +66,12 @@ const body = lines
   .join('\n')
   .trim();
 
-const notes = `${body}\n`;
+// An internal release (`<!-- internal -->` under its heading) is admin-only
+// work: the release page is public and the update banner reads these notes, so
+// drivers get a one-line placeholder rather than the admin notes. The full
+// entry stays in CHANGELOG.md as the record.
+const internal = /^<!--\s*internal\s*-->/i.test(body);
+const notes = internal ? 'Maintenance update — no changes for drivers.\n' : `${body}\n`;
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, notes, 'utf8');
