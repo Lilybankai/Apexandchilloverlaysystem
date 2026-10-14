@@ -198,6 +198,28 @@ console.log('\nlayer diagnosis: the log says which kind of freeze it was');
     'after a reset the first report is not read as late',
     d.report(999999, good, ON).length === 0,
   );
+
+  // 2026-10-14: "LAYER STALL 6105949ms blocked" — the layer hidden for 1.7
+  // hours between sessions, its page silent, and the first report after the
+  // show timed the whole spell.
+  const h = createLayerDiagnosis();
+  h.report(1000, good, ON);
+  h.resume(); // main: the window's 'show' event
+  check(
+    'a show restarts the timing, so a silent hidden spell is not a stall',
+    h.report(6106949, good, ON).length === 0,
+  );
+  const s = createLayerDiagnosis();
+  s.report(1000, good, ON);
+  s.report(2000, good, { ...ON, visible: false });
+  check(
+    'a report from a hidden window does not start the next measurement',
+    s.report(23685, good, ON).length === 0,
+  );
+  check(
+    '…and a real stall after the show is still caught',
+    /STALL 1400ms blocked/.test(s.report(26085, good, ON).join(' ')),
+  );
 }
 
 console.log('\nlayer-watch: the training layer has a watch of its own');

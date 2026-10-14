@@ -1527,8 +1527,12 @@ function setFeedOnTrack(onTrack) {
   feedOnTrack = onTrack;
   applyIngameVisibility();
   applyTrainingLayerVisibility();
-  // Leaving the track is the moment a deferred "better ears" fetch may run.
-  if (!onTrack) maybeFetchBetterEars();
+  // Leaving the track is the moment a deferred "better ears" fetch may run,
+  // and a lap upload held back while driving (lapUpload's `busy`).
+  if (!onTrack) {
+    maybeFetchBetterEars();
+    lapUpload.offTrack();
+  }
 }
 
 /**
@@ -2865,6 +2869,10 @@ function syncRaceLayerWindow(settings) {
   // recovery destroys one layer and builds the next in the same breath, and a
   // late 'closed' from the old one must not null out its replacement.
   const win = overlayWin;
+  // A gap across a hidden spell is not a stall (layerDiagnosis.resume).
+  overlayWin.on('show', () => {
+    if (overlayWin === win) layerDiagnosis.resume();
+  });
   overlayWin.on('closed', () => {
     if (overlayWin !== win && overlayWin !== null) return;
     overlayWin = null;
@@ -2985,6 +2993,14 @@ function noteGpuOnce() {
 function layerFeedLive(now) {
   return status.running && lastFrameAt !== 0 && now - lastFrameAt < NO_DATA_MS;
 }
+
+/**
+ * How long after the GPU process goes before the layers are rebuilt: long
+ * enough for a display-driver reset to finish (Explorer was still hung on the
+ * compositor 11 s after the 2026-10-14 reset), and inside the layer watch's
+ * QUIET_MS grace so it does not reload the old window first.
+ */
+const GPU_REBUILD_SETTLE_MS = 8000;
 
 function startLayerWatch() {
   if (layerWatchTimer) return;
@@ -7303,6 +7319,7 @@ app.whenReady().then(async () => {
         auth: authService,
         appVersion: app.getVersion(),
         onChange: pushLapSync,
+        busy: () => feedOnTrack,
       });
       // Catch up on anything driven while signed out or offline.
       void lapUpload.sync({ reason: 'startup' });
@@ -7465,11 +7482,25 @@ app.whenReady().then(async () => {
   // A GPU process restart is survivable for an ordinary window and not
   // reliably for a transparent one over a fullscreen game: it can come back
   // showing its last frame forever. Rebuild the layer rather than trust it.
+  //
+  // But not in the same breath. The GPU process goes when the display driver
+  // resets (a Windows TDR), and the desktop compositor is still recovering
+  // then: on 2026-10-14 the rebuild ran 1 s after "GPU process gone", while
+  // Explorer was still hung on dwm.exe, and main sat 5.2 s inside the new
+  // window's constructor. A reset also comes in pairs, so a second exit
+  // restarts the wait and the layer is rebuilt once.
+  let gpuRebuildTimer = null;
   app.on('child-process-gone', (_evt, details) => {
     if (!details || details.type !== 'GPU') return;
     stallWatch.note(`GPU process gone reason=${details.reason} exit=${details.exitCode}`);
-    if (overlayWin && !overlayWin.isDestroyed()) recreateOverlayWindow('GPU process restarted');
-    trainingLayer.recreate('GPU process restarted'); // its own window only, if there is one
+    // The frozen-layer watch must not reload the old window meanwhile.
+    layerWatch.excuse(Date.now());
+    if (gpuRebuildTimer) clearTimeout(gpuRebuildTimer);
+    gpuRebuildTimer = setTimeout(() => {
+      gpuRebuildTimer = null;
+      if (overlayWin && !overlayWin.isDestroyed()) recreateOverlayWindow('GPU process restarted');
+      trainingLayer.recreate('GPU process restarted'); // its own window only, if there is one
+    }, GPU_REBUILD_SETTLE_MS);
   });
 
   if (process.env.APEX_SHOT) {

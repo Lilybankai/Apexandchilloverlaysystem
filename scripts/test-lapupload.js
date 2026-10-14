@@ -272,5 +272,56 @@ console.log('\nthe reference pace on the Discord embed (0034)\n');
   );
 }
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed === 0 ? 0 : 1);
+/*
+ * A timer run reads every lap file on main's thread — 250–450 ms under green
+ * on 2026-10-14. While the driver is at the wheel the tick is held, and paid
+ * once on leaving the track; an idle tick runs at once as before.
+ */
+async function heldWhileDriving() {
+  console.log('\nthe timer waits while the driver is on track\n');
+  const lapUpload = require('../electron/lapUpload');
+  const root = tmpdir();
+  const laps = path.join(root, 'laps');
+  const stops = path.join(root, 'stops');
+  fs.mkdirSync(laps);
+  fs.mkdirSync(stops);
+  let driving = true;
+  let runs = 0;
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  lapUpload.init({
+    userDataDir: root,
+    auth: { getAccessToken: async () => null },
+    dirs: { laps, stops },
+    noTimer: true,
+    busy: () => driving,
+    onChange: (s) => {
+      if (s.status === 'syncing') runs++;
+    },
+  });
+
+  lapUpload.timerTick();
+  await settle();
+  check('a tick while driving does not run', runs === 0, `runs=${runs}`);
+  lapUpload.timerTick();
+  await settle();
+  check('…nor does a second one', runs === 0, `runs=${runs}`);
+  driving = false;
+  lapUpload.offTrack();
+  await settle();
+  check('leaving the track pays the held run, once', runs === 1, `runs=${runs}`);
+  lapUpload.offTrack();
+  await settle();
+  check('…and leaving again owes nothing', runs === 1, `runs=${runs}`);
+  lapUpload.timerTick();
+  await settle();
+  check('a tick off track runs straight away', runs === 2, `runs=${runs}`);
+  lapUpload.stop();
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+heldWhileDriving()
+  .catch((err) => check('the held-run test threw', false, err && err.stack))
+  .then(() => {
+    console.log(`\n${passed} passed, ${failed} failed\n`);
+    process.exit(failed === 0 ? 0 : 1);
+  });

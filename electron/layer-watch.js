@@ -189,7 +189,10 @@ function createLayerDiagnosis({ label = 'LAYER' } = {}) {
       // write, not a renderer stall.
       const sentAt = typeof r.at === 'number' ? r.at : now;
       const late = lastReportAt ? sentAt - lastReportAt - REPORT_MS : 0;
-      lastReportAt = sentAt;
+      // A gap is only timed between two reports from a SHOWN window: a hidden
+      // page is throttled or silent, and the gap across the hidden spell is
+      // not a blocked thread (see resume()).
+      lastReportAt = facts.visible ? sentAt : 0;
       if (late >= BLOCKED_FLOOR_MS && facts.visible) {
         const worst = r.worstWidget ? ` worst=${r.worstWidget}/${r.worstMs}ms` : '';
         lines.push(`${label} STALL ${late}ms blocked${worst} long=${r.longMs}ms`);
@@ -206,6 +209,16 @@ function createLayerDiagnosis({ label = 'LAYER' } = {}) {
         lines.push(`${label} ${kind} (${counts})`);
       }
       return lines;
+    },
+
+    /**
+     * The window has just been shown. A hidden page may send nothing at all,
+     * so the first report after a show would otherwise time the whole hidden
+     * spell as a stall — 2026-10-14 logged a 1.7-hour "LAYER STALL 6105949ms
+     * blocked" that way. Timing starts again from the next report.
+     */
+    resume() {
+      lastReportAt = 0;
     },
 
     /** The window went away or was rebuilt: its episode goes with it. */

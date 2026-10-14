@@ -183,6 +183,10 @@ function createTrainingLayer(deps) {
     });
     w.webContents.on('unresponsive', () => deps.log('TRAINING renderer unresponsive'));
     w.webContents.on('responsive', () => deps.log('TRAINING renderer responsive again'));
+    // A gap across a hidden spell is not a stall (diagnosis.resume).
+    w.on('show', () => {
+      if (win === w) diagnosis.resume();
+    });
     // Only this window may clear the slot — a rebuild replaces it in one breath.
     w.on('closed', () => {
       if (win !== w && win !== null) return;
