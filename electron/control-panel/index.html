@@ -3258,6 +3258,29 @@
           <p class="admin-foot" id="adm-users-note" hidden></p>
         </section>
 
+        <!-- Cancellations (v1.3.9, migration 0041). Everyone who stopped a
+             trial or a subscription, named — the Billing churn chart counts
+             them, this says who. Still-cancelling rows (pressed cancel, access
+             not yet run out) sit at the top: they are the only ones a message
+             could still change. Hidden until there is at least one. -->
+        <section class="card" id="adm-cancel-card" hidden>
+          <div class="card__head">
+            <h2 class="card__title"><svg class="icon"><use href="#i-x" /></svg>Cancelled</h2>
+            <div class="admin-tools">
+              <span class="admin-count" id="adm-cancel-count"></span>
+              <select class="field__input field__input--inline" id="adm-cancel-filter">
+                <option value="">Trials and subscriptions</option>
+                <option value="trial">Trials only</option>
+                <option value="subscription">Subscriptions only</option>
+                <option value="ending">Still cancelling</option>
+              </select>
+            </div>
+          </div>
+          <ul class="admin-inbox" id="adm-cancel-list"></ul>
+          <p class="weekempty" id="adm-cancel-empty" hidden>Nobody in this group.</p>
+          <p class="admin-foot" id="adm-cancel-foot"></p>
+        </section>
+
         <!-- League codes (v0.69.0). A code is cut here, handed to a racer, and
              redeemed on the subscribe screen — the way to give free access to
              someone who does not have an account yet. Access for people who DO

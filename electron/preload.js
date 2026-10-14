@@ -717,6 +717,11 @@ contextBridge.exposeInMainWorld('apex', {
      * agrees with the entitlement by construction.
      */
     pastDue: () => ipcRenderer.invoke('admin:pastDue'),
+    /**
+     * Cancelled trials + subscriptions: `{ ok, rows[], signedOut?, error? }`.
+     * Each row is `kind` 'trial' | 'subscription' and `state` 'ended' | 'ending'.
+     */
+    cancellations: () => ipcRenderer.invoke('admin:cancellations'),
     /** Free access: codes issued + comped accounts → `{ ok, data, error? }`. */
     freeAccess: () => ipcRenderer.invoke('admin:freeAccess'),
     /** Cut league codes: `{ count, note }` → `{ ok, codes[], error? }`. */

@@ -1038,6 +1038,8 @@ html, body {
 .pastdue-item__left[data-state="soon"] { color: #ff9d6b; }
 .pastdue-item__left[data-state="urgent"],
 .pastdue-item__left[data-state="gone"] { color: var(--bad); }
+/* Cancelled card: the count sits beside the filter, on its baseline. */
+#adm-cancel-card .admin-tools { align-items: center; }
 
 /* The roster carries a fourth column — the access control — so it overrides the
    shared three-column track. Everything else using .admin-table (the codes

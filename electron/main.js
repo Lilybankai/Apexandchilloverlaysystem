@@ -5665,6 +5665,25 @@ function registerIpc() {
     return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
   });
 
+  /**
+   * Cancelled trials and subscriptions, still-cancelling first (migration
+   * 0041). Whether a row was a trial or a paid subscription is decided by the
+   * server from Stripe's own dates, so the Members card and the Billing churn
+   * chart are reading the same facts.
+   */
+  ipcMain.handle('admin:cancellations', async () => {
+    const res = await authService.rpc('admin_billing_cancellations', { p_limit: 200 });
+    if (!res.ok) {
+      return {
+        ok: false,
+        signedOut: !!res.signedOut,
+        error: res.signedOut ? 'Sign in as an admin.' : res.error || 'Unavailable.',
+        rows: [],
+      };
+    }
+    return { ok: true, rows: Array.isArray(res.body) ? res.body : [] };
+  });
+
   /* ---- Admin: free access (league comps + voucher codes, v0.69.0) ---- */
 
   /** Codes issued + accounts currently comped, for the Free access card. */

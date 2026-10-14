@@ -641,6 +641,26 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
           lockout_at: '2026-08-15T09:00:00.000Z', days_left: -8, amount_due_pence: 499,
           locked_out: true },
       ] : [] }),
+      // ?cancelled=1 fills the Members pane's Cancelled card: one still
+      // cancelling, a paid subscription that ended, two trials that stopped.
+      cancellations: P({ ok: true, rows: q.get('cancelled') ? [
+        { user_id: 'c1', driver: 'Mark Slater', email: 'mark@example.com', kind: 'subscription',
+          state: 'ending', started_at: '2026-09-05T15:01:16.000Z', trial_end: '2026-09-12T15:01:16.000Z',
+          ends_at: '2026-11-12T15:01:16.000Z', monthly_pence: 499, free_access_reason: null,
+          last_seen_at: '2026-10-13T19:00:00.000Z' },
+        { user_id: 'c2', driver: 'Sam Rivers', email: 'sam@example.com', kind: 'trial',
+          state: 'ended', started_at: '2026-09-27T14:05:02.000Z', trial_end: '2026-10-04T14:05:02.000Z',
+          ends_at: '2026-10-04T14:05:02.000Z', monthly_pence: 499, free_access_reason: null,
+          last_seen_at: '2026-10-03T20:00:00.000Z' },
+        { user_id: 'c3', driver: 'Craig Morrow', email: 'craig@example.com', kind: 'subscription',
+          state: 'ended', started_at: '2026-09-06T16:33:18.000Z', trial_end: '2026-09-13T16:33:18.000Z',
+          ends_at: '2026-09-27T17:35:33.000Z', monthly_pence: 499, free_access_reason: 'league',
+          last_seen_at: '2026-10-12T18:00:00.000Z' },
+        { user_id: 'c4', driver: 'Driver', email: 'new@example.com', kind: 'trial',
+          state: 'ended', started_at: '2026-09-08T20:12:55.000Z', trial_end: '2026-09-15T20:12:55.000Z',
+          ends_at: '2026-09-15T20:12:55.000Z', monthly_pence: 499, free_access_reason: null,
+          last_seen_at: null },
+      ] : [] }),
       users: P({ ok: true, rows: [] }), setFeedbackStatus: P({ ok: true }), freeAccess: P({ ok: false }),
       /*
        * Partner applications (migration 0029). One waiting and one already
