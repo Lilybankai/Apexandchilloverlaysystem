@@ -214,7 +214,10 @@ console.log('\ngetSchedule — injected fetch, no key leak, cache');
     .then(() => liveFetch())
     .then(() => {
       console.log(`\n${passed} passed, ${failed} failed\n`);
-      process.exit(failed ? 1 : 0);
+      // Not process.exit(): the live fetch's sockets are still closing, and
+      // exiting under them trips libuv's UV_HANDLE_CLOSING assertion on
+      // Windows (exit 127 after every check passed). Let them drain.
+      process.exitCode = failed ? 1 : 0;
     })
     .catch((err) => {
       failed++;
