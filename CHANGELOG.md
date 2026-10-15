@@ -5,6 +5,29 @@
      app until it is renamed.
 -->
 
+## 1.3.11-beta.1 — 2026-10-15
+
+### Fixed
+
+- **A small hitch every five minutes while racing.** The app sends your laps
+  to the leaderboards every five minutes, and reading your lap files to do it
+  could hold the app up for up to half a second, so the overlays skipped a
+  beat each time, mid-race included. Uploads now wait while you're on track
+  and go as soon as you're back in the garage or the menus.
+
+- **The overlays come back more smoothly after a graphics driver crash.**
+  When Windows resets the graphics driver, the app rebuilds its overlay
+  window. It did that while the screen was still recovering, which froze the
+  app for about five seconds more. It now waits a few seconds for the driver
+  to settle and rebuilds the overlays once, even when Windows resets the
+  driver twice.
+
+- **The stall log no longer reports fake freezes.** When the overlays had
+  been hidden — between sessions, say — the first check after they came back
+  logged the whole hidden time as a freeze, one of them 1.7 hours long. Only
+  time the overlays are actually on screen is measured now, so a bug report's
+  attached log shows only real stalls.
+
 ## 1.3.10 — 2026-10-14
 <!-- internal -->
 

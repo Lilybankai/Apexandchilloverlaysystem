@@ -77,6 +77,18 @@ let dirs = null;
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
+ * Whether the driver is at the wheel right now (main's feed verdict). A run
+ * reads every lap file, the sync cache and the corpus on main's thread, and on
+ * a busy disk that is a few hundred ms: 2026-10-14 logged 250–450 ms main
+ * stalls under green, once per timer tick, each one a hitch on every overlay.
+ * Nothing downstream needs the laps mid-session (see above), so a tick that
+ * lands while driving is held until the driver leaves the track.
+ */
+let busy = () => false;
+/** A timer run was skipped for driving and is owed on leaving the track. */
+let deferred = false;
+
+/**
  * Most rows to send in one run, per kind.
  *
  * A driver returning after months offline could have hundreds of pending days.
@@ -558,6 +570,8 @@ function stateForUi() {
  * @param opts.appVersion   stamped onto each submitted lap
  * @param opts.onChange     called with the state after every run
  * @param opts.dirs         `{ laps, stops }` — override the log folders (tests only)
+ * @param opts.busy         () => true while the driver is at the wheel; timer
+ *                          runs wait for `offTrack()` instead
  * @param opts.noTimer      skip the interval (tests only; `sync()` still works)
  */
 function init(opts) {
@@ -566,12 +580,30 @@ function init(opts) {
   appVersion = opts.appVersion || '';
   dirs = opts.dirs && opts.dirs.laps && opts.dirs.stops ? { ...opts.dirs } : null;
   if (typeof opts.onChange === 'function') onChange = opts.onChange;
+  busy = typeof opts.busy === 'function' ? opts.busy : () => false;
+  deferred = false;
 
   stop();
   if (opts.noTimer) return;
-  timer = setInterval(() => void sync({ reason: 'timer' }), SYNC_INTERVAL_MS);
+  timer = setInterval(timerTick, SYNC_INTERVAL_MS);
   // Timers must not hold the app open at quit.
   if (timer.unref) timer.unref();
+}
+
+/** One interval tick: a run now, or one owed for when the driving stops. */
+function timerTick() {
+  if (busy()) {
+    deferred = true;
+    return;
+  }
+  void sync({ reason: 'timer' });
+}
+
+/** Main calls this when the driver leaves the track: pay any held run. */
+function offTrack() {
+  if (!deferred) return;
+  deferred = false;
+  void sync({ reason: 'off-track' });
 }
 
 function stop() {
@@ -585,9 +617,11 @@ module.exports = {
   init,
   stop,
   sync,
+  offTrack,
   stateForUi,
   // Exported for the offline test.
   paceFor,
+  timerTick,
   SYNC_INTERVAL_MS,
   MAX_PER_RUN,
   MAX_CORPUS_PER_RUN,

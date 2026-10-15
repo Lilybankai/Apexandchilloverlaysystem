@@ -416,7 +416,7 @@ const bigEnough = (file, bytes) => {
   const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'index.html'), 'utf8');
   const panelSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'engineer-panel.js'), 'utf8');
   check('main.js kicks the fetch from syncEngineer', /maybeFetchBetterEars\(s\)/.test(mainSrc));
-  check('main.js kicks it again when the driver leaves the track', /if \(!onTrack\) maybeFetchBetterEars\(\)/.test(mainSrc));
+  check('main.js kicks it again when the driver leaves the track', /if \(!onTrack\) \{?\s*maybeFetchBetterEars\(\)/.test(mainSrc));
   check('main.js passes the on-track state through', /ensureBetterEars\(\{ onTrack: feedOnTrack \}\)/.test(mainSrc));
   check('the Download button is gone from the panel', !htmlSrc.includes('eng-stt-small-download'));
   check('and from the panel script', !panelSrc.includes('engineerDownloadSttSmall'));
