@@ -5,6 +5,25 @@
      app until it is renamed.
 -->
 
+## 1.3.11-beta.2 — 2026-10-15
+
+### Fixed
+
+- **The Team page had no track map while a teammate was driving.** The
+  driver's app only loaded the circuit for the team relay while its own Team
+  page was open, and drivers rarely have it open mid-stint. So the pit wall
+  got no map at all, or the map from the demo or the last track that driver
+  had the page open on. The driver's app now always sends the map of the
+  circuit it is on, and sends it again every few minutes in case it was lost.
+  The Team page never draws a map from another track, and if the driver's
+  map hasn't arrived yet it uses your own, when you're in the same session.
+  Both you and the driver need this version for the fix.
+
+- **VE showed 0% for every car on the Team page timing sheet.** LMU gives
+  each car's virtual energy as a fraction, and the timing sheet printed it as
+  if it were already a percentage, so a car on 53% showed as 1% and most cars
+  showed 0%. It now shows the same numbers as the standings overlay.
+
 ## 1.3.11-beta.1 — 2026-10-15
 
 ### Fixed

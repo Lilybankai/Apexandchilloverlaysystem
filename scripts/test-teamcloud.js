@@ -19,7 +19,11 @@ const {
   pickActiveSource,
   thinHistory,
   normalizeCode,
+  shapeId,
+  shapeDue,
+  shapeForRow,
   HISTORY_MAX_BYTES,
+  SHAPE_RESEND_MS,
 } = require(path.join(__dirname, '..', 'electron', 'team-cloud.js'));
 
 let failed = 0;
@@ -108,6 +112,34 @@ function check(name, cond, detail) {
     (c) => c.laps[c.laps.length - 1].lap === 380));
   check('original object untouched', big.cars[0].laps.length === 380);
   check('null history → null', thinHistory(null) === null);
+}
+
+// ── Circuit shape: identity, re-send, and which one a reader draws ────────
+{
+  const sarthe = { key: 'circuit-de-la-sarthe-13620', revision: 1, points: [[0, 0]] };
+  const demo = { key: 'demo-circuit', revision: 1, points: [[1, 1]] };
+  const fuji = { key: 'fuji-speedway-4540', revision: 1, points: [[2, 2]] };
+
+  check('shape id names the circuit, not just the revision', shapeId(sarthe) !== shapeId(demo));
+  check('no shape, no id', shapeId(null) === null && shapeId({ revision: 1 }) === null);
+
+  // Publisher: the demo circuit went out as revision 1; Le Mans is revision 1 too.
+  const t0 = 1_000_000;
+  check('a shape never sent is due', shapeDue(sarthe, null, 0, t0));
+  check('a new circuit at the same revision is due (demo → Le Mans)', shapeDue(sarthe, shapeId(demo), t0, t0 + 1000));
+  check('the same shape is not re-sent every second', !shapeDue(sarthe, shapeId(sarthe), t0, t0 + 1000));
+  check('…but is re-sent after SHAPE_RESEND_MS (the row may have been swept)',
+    shapeDue(sarthe, shapeId(sarthe), t0, t0 + SHAPE_RESEND_MS));
+  check('no shape is never due', !shapeDue(null, null, 0, t0));
+
+  // Reader: draw the circuit the active car is on, never another track's.
+  const row = (key) => ({ user_id: 'u1', payload: { trackMap: key ? { key, revision: 1 } : null } });
+  const seen = new Map([[demo.key, demo], [fuji.key, fuji]]);
+  check('a shape from another track is not drawn (demo/Fuji at Le Mans)', shapeForRow(row(sarthe.key), seen, fuji) === null);
+  seen.set(sarthe.key, sarthe);
+  check('the matching circuit is drawn', shapeForRow(row(sarthe.key), seen, fuji) === sarthe);
+  check('a row that cannot say its circuit keeps the newest shape', shapeForRow(row(null), seen, fuji) === fuji);
+  check('no active row keeps the newest shape', shapeForRow(null, seen, fuji) === fuji);
 }
 
 // ── normalizeCode ──────────────────────────────────────────────────────────
