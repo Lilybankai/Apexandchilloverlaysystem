@@ -1415,11 +1415,14 @@ function fetchTeamMapShape(revision) {
   req.on('timeout', () => req.destroy(new Error('timeout')));
 }
 
-/** Build the snapshot plus the heavy extras the renderer caches by revision. */
-function teamSnapshotWithExtras(frame, now, everything) {
-  const snap = buildTeamSnapshot(frame, now);
-  if (!snap) return snap;
-  const tm = frame.trackMap;
+/**
+ * Keep teamMapShape on the circuit `tm` is learning, and return it only when it
+ * IS that circuit. Called by the Team tab's push AND the relay's collect: the
+ * relay used to rely on the tab's push to fetch the shape, so a driver who
+ * never opened their own Team tab (nearly every driver, mid-stint) relayed no
+ * map at all — or the demo circuit, or last week's track (2026-10-15).
+ */
+function teamShapeFor(tm) {
   // Keyed on the CIRCUIT as well as the revision. The revision alone is a
   // per-provider-instance counter that restarts at 1, so across a server
   // restart — or the demo feed giving way to the live one — two different
@@ -1433,6 +1436,14 @@ function teamSnapshotWithExtras(frame, now, everything) {
   ) {
     fetchTeamMapShape(tm.revision);
   }
+  return tm && teamMapShape && teamMapShape.key === tm.key ? teamMapShape : null;
+}
+
+/** Build the snapshot plus the heavy extras the renderer caches by revision. */
+function teamSnapshotWithExtras(frame, now, everything) {
+  const snap = buildTeamSnapshot(frame, now);
+  if (!snap) return snap;
+  teamShapeFor(frame.trackMap);
   snap.historyRevision = teamHistory.revision;
   if (everything || teamHistory.revision !== lastSentHistoryRev) {
     snap.history = teamHistory.state();
@@ -1466,7 +1477,7 @@ function collectForRelay() {
     return {
       frame: lastFeedFrame,
       snapshot,
-      mapShape: teamMapShape,
+      mapShape: teamShapeFor(lastFeedFrame.trackMap),
       history: teamHistory.state(),
     };
   } finally {

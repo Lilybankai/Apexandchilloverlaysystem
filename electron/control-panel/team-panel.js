@@ -92,7 +92,19 @@
   const teamView = () => prefs.source === 'team';
   const viewSnap = () => (teamView() ? (relay && relay.active ? relay.active.snapshot : null) : snap);
   const viewHistory = () => (teamView() ? (relay ? relay.history : null) : history);
-  const viewShape = () => (teamView() ? (relay ? relay.mapShape : null) : mapShape);
+  // Team view: the relayed shape, but only for the circuit the driven car is
+  // on — a shape from another track (or the demo circuit) draws a map that is
+  // simply wrong. With none relayed yet, this PC's own shape stands in when it
+  // is the same circuit (a teammate spectating the race has one).
+  const viewShape = () => {
+    if (!teamView()) return mapShape;
+    const shape = relay ? relay.mapShape : null;
+    const snapTm = relay && relay.active && relay.active.snapshot && relay.active.snapshot.trackMap;
+    const key = snapTm && snapTm.key;
+    if (!key) return shape;
+    if (shape && shape.key === key) return shape;
+    return mapShape && mapShape.key === key ? mapShape : null;
+  };
 
   // ── Element refs (ids contracted in scripts/test-panel-parity.js) ───────
   const els = {
@@ -395,7 +407,7 @@
           <td data-col="gap">${gap}</td>
           <td class="team-t__dim" data-col="int">${intervals[i]}</td>
           ${me ? `<td class="team-t__vsme" data-col="vsme">${fmtVsMe(r, me)}</td>` : ''}
-          ${anyVe ? `<td data-col="ve">${known(r.virtualEnergy) ? `${Math.round(r.virtualEnergy)}%` : dash}</td>` : ''}
+          ${anyVe ? `<td data-col="ve">${known(r.virtualEnergy) ? `${Math.round(r.virtualEnergy * 100)}%` : dash}</td>` : ''}
           <td data-col="tyre">${r.tyreCompound ? esc(String(r.tyreCompound)).slice(0, 6) : dash}</td>
         </tr>`;
       }).join('');

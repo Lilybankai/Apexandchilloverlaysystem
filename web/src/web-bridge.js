@@ -749,9 +749,21 @@
     }
     if (!signedIn()) return fail('Signed out — sign in again to see the team.');
     if (!team.activeTeamId) return fail('No active team selected.');
+    // Same rule as the desktop's team-cloud.js: hold the active car's circuit
+    // already, ask only for new revisions of it; missing it, ask for every
+    // row's shape again every 15 s — the server compares revisions only, and
+    // every circuit is revision 1.
+    team.relayShapes = team.relayShapes || new Map();
+    const want = team.relayTrackKey ? team.relayShapes.get(team.relayTrackKey) : team.relayShape;
+    let askRev = want ? want.revision : null;
+    if (!want && team.relayShapes.size) {
+      const now = Date.now();
+      if (now - (team.lastShapeAskAt || 0) >= 15000) team.lastShapeAskAt = now;
+      else askRev = [...team.relayShapes.values()].pop().revision;
+    }
     const res = await rpc('team_relay_read', {
       p_team_id: team.activeTeamId,
-      p_shape_rev: team.relayShape ? team.relayShape.revision : null,
+      p_shape_rev: askRev,
       p_history_rev: team.relayHistory ? team.relayHistory.revision : null,
     });
     if (!res.ok || !res.body || res.body.ok === false) {
@@ -759,10 +771,17 @@
     }
     const sources = Array.isArray(res.body.sources) ? res.body.sources : [];
     const active = pickActiveSource(sources);
+    let latest = team.relayShape;
     for (const s of sources) {
-      if (s.map_shape) team.relayShape = s.map_shape;
+      if (s.map_shape) {
+        latest = s.map_shape;
+        if (s.map_shape.key) team.relayShapes.set(String(s.map_shape.key), s.map_shape);
+      }
       if (s.history) team.relayHistory = s.history;
     }
+    const tm = active && active.payload && active.payload.trackMap;
+    team.relayTrackKey = tm && tm.key ? String(tm.key) : null;
+    team.relayShape = team.relayTrackKey ? team.relayShapes.get(team.relayTrackKey) || null : latest;
     emit('team:relay', (team.lastRelay = {
       at: Date.now(),
       sources: sources.map((s) => ({ userId: s.user_id, name: s.name, ageSec: s.age_sec })),

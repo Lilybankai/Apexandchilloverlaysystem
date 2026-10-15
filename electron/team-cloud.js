@@ -58,6 +58,21 @@ const READ_MS = 1000;
 const OVERLAY_MAX_AGE_SEC = 6;
 /** Re-send the race history at most this often — it is the one heavy block. */
 const HISTORY_EVERY_MS = 60 * 1000;
+/**
+ * Re-send the circuit shape this often even when it has not changed. The
+ * server sweeps rows an hour old, and a row put back after that starts with no
+ * shape — a driver whose app had already sent it once never sent it again, so
+ * the pit wall sat without a map for the rest of the race. ~10 KB every five
+ * minutes buys that back.
+ */
+const SHAPE_RESEND_MS = 5 * 60 * 1000;
+/**
+ * How often a reader holding the wrong circuit (or none) asks for every row's
+ * shape again. The server only compares revisions, and every circuit is
+ * revision 1, so without this a reader holding one track's map was never sent
+ * the next track's.
+ */
+const SHAPE_ASK_MS = 15 * 1000;
 /** The server refuses history over 256 KB; stay clear of the line. */
 const HISTORY_MAX_BYTES = 240 * 1024;
 /** After this many consecutive publish failures, sit out a few beats. */
@@ -165,6 +180,42 @@ function thinHistory(history, maxBytes = HISTORY_MAX_BYTES) {
   return null;
 }
 
+/**
+ * A circuit shape's identity: its circuit AND its revision. The revision alone
+ * is a per-session counter that restarts at 1, so two circuits (or the demo
+ * circuit and the real one) wear the same number — the same trap main.js's
+ * own shape gate was fixed for (Portimão, 2026-08-28). null for no shape.
+ */
+function shapeId(shape) {
+  return shape && shape.key ? `${shape.key}|${shape.revision}` : null;
+}
+
+/** Should this publish carry the circuit shape? New circuit or revision, or the periodic re-send. */
+function shapeDue(shape, sentId, sentAt, now) {
+  const id = shapeId(shape);
+  if (!id) return false;
+  return id !== sentId || now - sentAt >= SHAPE_RESEND_MS;
+}
+
+/** The circuit a relay row says its car is on (payload.trackMap.key), or null. */
+function rowTrackKey(row) {
+  const tm = row && row.payload && row.payload.trackMap;
+  return tm && tm.key ? String(tm.key) : null;
+}
+
+/**
+ * The shape to draw for the active row: one whose circuit matches the
+ * circuit that row's car is on — never another track's (a demo circuit at
+ * Le Mans, 2026-10-15). `shapes` is every shape the reader has seen, by
+ * circuit key. A row too old to say its circuit falls back to the newest
+ * shape seen, as before.
+ */
+function shapeForRow(row, shapes, latest) {
+  const key = rowTrackKey(row);
+  if (!key) return latest || null;
+  return (shapes && shapes.get(key)) || null;
+}
+
 /** Uppercase, trim, restore the APX- prefix people drop. '' when hopeless. */
 function normalizeCode(raw) {
   let code = String(raw || '').trim().toUpperCase();
@@ -222,12 +273,18 @@ let publishing = false;
 let reading = false;
 let failStreak = 0;
 let backoffLeft = 0;
-let lastShapeRevSent = null;
+let lastShapeIdSent = null;
+let lastShapeSentAt = 0;
 let lastHistorySentAt = 0;
 let lastHistoryRevSent = null;
 /** Reader-side caches of the heavy blocks, keyed by the revision inside. */
 let relayShape = null;
 let relayHistory = null;
+/** Every circuit shape the reader has been sent, by circuit key. */
+let relayShapes = new Map();
+/** The circuit the active row's car was on at the last read. */
+let relayTrackKey = null;
+let lastShapeAskAt = 0;
 
 function signedIn() {
   try {
@@ -440,8 +497,12 @@ function setActiveTeam(id) {
   // pulls that team's shape and history fresh.
   relayShape = null;
   relayHistory = null;
+  relayShapes = new Map();
+  relayTrackKey = null;
+  lastShapeAskAt = 0;
   lastActiveUserId = null;
-  lastShapeRevSent = null;
+  lastShapeIdSent = null;
+  lastShapeSentAt = 0;
   lastHistoryRevSent = null;
   lastHistorySentAt = 0;
   pushTeams();
@@ -482,9 +543,9 @@ async function publishTick() {
     p_history: null,
   };
   const shape = bundle.mapShape;
-  if (shape && shape.revision !== lastShapeRevSent) args.p_map_shape = shape;
-  const history = bundle.history;
   const now = Date.now();
+  if (shapeDue(shape, lastShapeIdSent, lastShapeSentAt, now)) args.p_map_shape = shape;
+  const history = bundle.history;
   if (
     history &&
     history.revision !== lastHistoryRevSent &&
@@ -509,7 +570,10 @@ async function publishTick() {
     if (res.ok && res.body && res.body.ok !== false) {
       failStreak = 0;
       state.lastPublishAt = Date.now();
-      if (args.p_map_shape) lastShapeRevSent = shape.revision;
+      if (args.p_map_shape) {
+        lastShapeIdSent = shapeId(shape);
+        lastShapeSentAt = now;
+      }
       if (args.p_history) {
         lastHistorySentAt = now;
         lastHistoryRevSent = history.revision;
@@ -641,9 +705,20 @@ async function readTick() {
   }
   reading = true;
   try {
+    // Hold the right circuit already? Only changed revisions of it, then.
+    // Missing it? Every row's shape again, at most every SHAPE_ASK_MS — the
+    // server compares revisions only, so naming any revision we hold would
+    // hide a new circuit that is also revision 1.
+    const want = relayTrackKey ? relayShapes.get(relayTrackKey) : relayShape;
+    let askRev = want ? want.revision : null;
+    if (!want && relayShapes.size) {
+      const now = Date.now();
+      if (now - lastShapeAskAt >= SHAPE_ASK_MS) lastShapeAskAt = now;
+      else askRev = [...relayShapes.values()].pop().revision;
+    }
     const res = await auth.rpc('team_relay_read', {
       p_team_id: state.activeTeamId,
-      p_shape_rev: relayShape ? relayShape.revision : null,
+      p_shape_rev: askRev,
       p_history_rev: relayHistory ? relayHistory.revision : null,
     });
     if (!res.ok || !res.body || res.body.ok === false) {
@@ -654,10 +729,16 @@ async function readTick() {
     const active = pickActiveSource(sources, lastActiveUserId);
     lastActiveUserId = active ? active.user_id : null;
     // The heavy blocks arrive on whichever row carries them; cache by content.
+    let latest = relayShape;
     for (const s of sources) {
-      if (s.map_shape) relayShape = s.map_shape;
+      if (s.map_shape) {
+        latest = s.map_shape;
+        if (s.map_shape.key) relayShapes.set(String(s.map_shape.key), s.map_shape);
+      }
       if (s.history) relayHistory = s.history;
     }
+    relayTrackKey = rowTrackKey(active);
+    relayShape = shapeForRow(active, relayShapes, latest);
     if (overlayReadWanted()) {
       const self = selfUserId();
       const src = currentRelaySource();
@@ -785,8 +866,12 @@ module.exports = {
   resolveRelaySource,
   thinHistory,
   normalizeCode,
+  shapeId,
+  shapeDue,
+  shapeForRow,
   PUBLISH_MS,
   READ_MS,
   HISTORY_MAX_BYTES,
+  SHAPE_RESEND_MS,
   RELAY_VERSION,
 };
