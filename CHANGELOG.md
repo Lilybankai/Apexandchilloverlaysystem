@@ -5,7 +5,7 @@
      app until it is renamed.
 -->
 
-## 1.3.11-beta.1 — 2026-10-14
+## 1.3.11-beta.1 — 2026-10-15
 
 ### Fixed
 
