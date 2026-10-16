@@ -137,7 +137,7 @@
   const dirtyLocal = new Map(); // key -> timeout id; rows the user is mid-editing
   const writeTimers = new Map(); // key -> debounce timeout id
   const macroClicks = new Map(); // macro id -> clicks (-RANGE..RANGE)
-  const macroSliders = new Map(); // macro id -> { input, clicks } elements
+  const macroSliders = new Map(); // macro id -> { range, clicks, sync } (sync: the ± buttons)
   let staged = new Map(); // key -> target value (the preview overlay)
   let loadedStage = null; // {name, values: Map, skipped, warnings[]} — a staged library tune
   let shownVehId = ''; // whose artwork the Car card currently shows
@@ -463,6 +463,84 @@
     cell.setAttribute('data-pending', String(Boolean(pending)));
   }
 
+  // Spoken names for the corner cells' ± buttons ("Increase Camber, front left").
+  const CORNER_NAMES = { FL: 'front left', FR: 'front right', RL: 'rear left', RR: 'rear right' };
+
+  const STEP_HOLD_DELAY_MS = 400; // press and hold: first repeat after this…
+  const STEP_HOLD_EVERY_MS = 125; // …then ~8 steps a second
+
+  /**
+   * − range + : a slider with a one-step button either side, because dragging
+   * to exactly one step is fiddly (the VR tab's .vr-nudge is the precedent).
+   * A press moves the range ONE index step, clamped to its own min/max, and
+   * hands over to `onStep` — the very function the range's drag path calls, so
+   * a press and a one-step drag are indistinguishable downstream. Holding the
+   * button repeats, modestly, until it is released, left or loses focus.
+   *
+   * Returns { el, sync } — `sync()` re-reads the range and disables whichever
+   * button sits at a bound; callers run it whenever they set `range.value`.
+   */
+  function stepper(range, label, onStep) {
+    const wrap = document.createElement('span');
+    wrap.className = 'su-step';
+    let holdTimer = null;
+
+    const stop = () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null;
+    };
+
+    const make = (dir) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'su-step__btn';
+      btn.textContent = dir < 0 ? '−' : '+';
+      btn.setAttribute('aria-label', `${dir < 0 ? 'Decrease' : 'Increase'} ${label}`);
+      const step = () => {
+        const cur = Number(range.value);
+        const next = Math.min(Number(range.max), Math.max(Number(range.min), cur + dir));
+        if (next === cur) return false;
+        range.value = String(next);
+        sync();
+        onStep();
+        return true;
+      };
+      const repeat = () => {
+        // A tab switch rebuilds the rows under a held button; stop rather
+        // than keep writing through a slider nobody can see.
+        holdTimer = btn.isConnected !== false && step() ? setTimeout(repeat, STEP_HOLD_EVERY_MS) : null;
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        stop();
+        if (step()) holdTimer = setTimeout(repeat, STEP_HOLD_DELAY_MS);
+      });
+      for (const type of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) btn.addEventListener(type, stop);
+      // The pointer path has already stepped; only a keyboard click (Enter or
+      // Space, which arrives with detail 0) still needs to.
+      btn.addEventListener('click', (e) => {
+        if (e.detail === 0) step();
+      });
+      return btn;
+    };
+
+    const dec = make(-1);
+    const inc = make(1);
+    function sync() {
+      const v = Number(range.value);
+      dec.disabled = v <= Number(range.min);
+      inc.disabled = v >= Number(range.max);
+    }
+    // A drag can land on a bound too.
+    range.addEventListener('input', sync);
+
+    wrap.appendChild(dec);
+    wrap.appendChild(range);
+    wrap.appendChild(inc);
+    sync();
+    return { el: wrap, sync };
+  }
+
   function scalarRow(setting) {
     const row = document.createElement('div');
     row.className = 'su-row';
@@ -481,6 +559,7 @@
     row.setAttribute('data-locked', String(fixed));
 
     let range = null;
+    let steps = null;
     if (fixed) {
       // Nothing to drag — the value cell alone tells the story.
       const spacer = document.createElement('span');
@@ -494,7 +573,8 @@
       range.step = '1';
       range.value = String(setting.value);
       wireRange(range, setting.key);
-      row.appendChild(range);
+      steps = stepper(range, labelFor(setting.key), () => rangeMoved(range, setting.key));
+      row.appendChild(steps.el);
     }
 
     const value = document.createElement('span');
@@ -505,7 +585,8 @@
     rowsByKey.set(setting.key, {
       paint(next, stagedTo) {
         if (!next) return;
-        if (range && document.activeElement !== range) range.value = String(next.value);
+        if (range && rangeRepaintable(range, setting.key)) range.value = String(next.value);
+        if (steps) steps.sync();
         paintValueCell(value, next, stagedTo, dirtyLocal.has(setting.key));
         row.setAttribute('data-staged', String(stagedTo !== null && stagedTo !== undefined));
       },
@@ -540,9 +621,11 @@
     row.appendChild(grid);
 
     // FL FR / RL RR reading order.
+    const cells = [];
     for (const { corner, setting } of item.corners) {
       const cell = document.createElement('div');
       cell.className = 'su-corner';
+      cells.push(cell);
       const tag = document.createElement('span');
       tag.className = 'su-corner__tag';
       tag.textContent = corner;
@@ -550,6 +633,7 @@
 
       const fixed = setting.min >= setting.max || !setting.isFree;
       let range = null;
+      let steps = null;
       if (fixed) {
         cell.appendChild(document.createElement('span'));
       } else {
@@ -561,7 +645,10 @@
         range.step = '1';
         range.value = String(setting.value);
         wireRange(range, setting.key);
-        cell.appendChild(range);
+        steps = stepper(range, `${labelFor(item.family)}, ${CORNER_NAMES[corner]}`, () =>
+          rangeMoved(range, setting.key),
+        );
+        cell.appendChild(steps.el);
       }
 
       const value = document.createElement('span');
@@ -572,9 +659,14 @@
       rowsByKey.set(setting.key, {
         paint(next, stagedTo) {
           if (!next) return;
-          if (range && document.activeElement !== range) range.value = String(next.value);
+          if (range && rangeRepaintable(range, setting.key)) range.value = String(next.value);
+          if (steps) steps.sync();
           paintValueCell(value, next, stagedTo, dirtyLocal.has(setting.key));
-          row.setAttribute('data-staged', String(stagedTo !== null && stagedTo !== undefined));
+          // Each cell carries its own staged mark; the row lights while ANY
+          // of its corners is staged (one cell's paint must not clear
+          // another's — the last corner painted used to decide for all four).
+          cell.setAttribute('data-staged', String(stagedTo !== null && stagedTo !== undefined));
+          row.setAttribute('data-staged', String(cells.some((c) => c.getAttribute('data-staged') === 'true')));
         },
       });
       grid.appendChild(cell);
@@ -585,19 +677,38 @@
   /* ---- writes --------------------------------------------------------------- */
 
   function wireRange(range, key) {
-    range.addEventListener('input', () => {
-      markDirtyLocal(key);
-      const row = rowsByKey.get(key);
-      if (row) row.paint({ ...settingsMap.get(key), value: Number(range.value), stringValue: `step ${range.value}` }, null);
-      if (writeTimers.has(key)) clearTimeout(writeTimers.get(key));
-      writeTimers.set(
-        key,
-        setTimeout(() => {
-          writeTimers.delete(key);
-          void writeKey(key, Number(range.value));
-        }, WRITE_DEBOUNCE_MS),
-      );
-    });
+    range.addEventListener('input', () => rangeMoved(range, key));
+  }
+
+  /**
+   * One move of a setting's slider, however it happened — a drag (the range's
+   * own 'input') or a ± press. Marks the row mid-edit, paints the new step
+   * optimistically and (re)arms the per-key trailing debounce, which writes
+   * wherever the slider has got to — so a burst of presses lands as one POST.
+   */
+  function rangeMoved(range, key) {
+    markDirtyLocal(key);
+    const row = rowsByKey.get(key);
+    if (row) row.paint({ ...settingsMap.get(key), value: Number(range.value), stringValue: `step ${range.value}` }, null);
+    if (writeTimers.has(key)) clearTimeout(writeTimers.get(key));
+    writeTimers.set(
+      key,
+      setTimeout(() => {
+        writeTimers.delete(key);
+        void writeKey(key, Number(range.value));
+      }, WRITE_DEBOUNCE_MS),
+    );
+  }
+
+  /**
+   * May a repaint move this slider's thumb? Not while it is being dragged
+   * (focused), and not while a newer edit is still waiting on the debounce —
+   * a write landing between two ± presses would otherwise snap the thumb back
+   * and the pending write would then send that older value. A ± press itself
+   * sets `range.value` before painting, so the button never needs this.
+   */
+  function rangeRepaintable(range, key) {
+    return document.activeElement !== range && !writeTimers.has(key);
   }
 
   function markDirtyLocal(key) {
@@ -700,16 +811,19 @@
       range.max = String(MACROAPI.RANGE);
       range.step = '1';
       range.value = '0';
-      range.addEventListener('input', () => {
+      // A drag and a ± press are the same move: clicks, its label, restage.
+      const moved = () => {
         const v = Number(range.value);
         macroClicks.set(macro.id, v);
         clicks.textContent = v > 0 ? `+${v}` : String(v);
         clicks.setAttribute('data-active', String(v !== 0));
         restage();
-      });
-      wrap.appendChild(range);
+      };
+      range.addEventListener('input', moved);
+      const steps = stepper(range, macro.label, moved);
+      wrap.appendChild(steps.el);
 
-      macroSliders.set(macro.id, { range, clicks });
+      macroSliders.set(macro.id, { range, clicks, sync: steps.sync });
       elMacroList.appendChild(wrap);
     }
   }
@@ -807,10 +921,11 @@
 
   function resetMacros() {
     macroClicks.clear();
-    for (const { range, clicks } of macroSliders.values()) {
+    for (const { range, clicks, sync } of macroSliders.values()) {
       range.value = '0';
       clicks.textContent = '0';
       clicks.setAttribute('data-active', 'false');
+      if (sync) sync();
     }
   }
 

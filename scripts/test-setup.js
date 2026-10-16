@@ -162,6 +162,37 @@ for (const { name, data } of fixtures) {
     zero.every((r) => r.changes.length === 0),
   );
 
+  // + and − are mirror images. Bounds are widened and every adjustable key is
+  // parked mid-range so clamping cannot hide an asymmetry: what is left is the
+  // rounding, which must go half AWAY from zero (Math.round alone sends .5 to
+  // +∞, so +1 on a 0.5-weight key moved it and −1 did not).
+  const MID = 500;
+  const wide = new Map();
+  for (const [key, s] of settingsMap) {
+    const adjustable = s.available !== false && s.isFree !== false && s.min < s.max;
+    wide.set(key, adjustable ? { ...s, min: 0, max: MID * 2, value: MID } : { ...s });
+  }
+  const asymmetric = [];
+  for (const cls of ['GT3', 'HYPERCAR']) {
+    for (const macro of macroApi.MACROS) {
+      for (let n = 1; n <= macroApi.RANGE; n++) {
+        const up = macroApi.resolveMacro(macro, n, wide, cls);
+        const down = macroApi.resolveMacro(macro, -n, wide, cls);
+        const downBy = new Map(down.changes.map((c) => [c.key, c.to - c.from]));
+        const mirrored =
+          up.changes.length === down.changes.length &&
+          up.changes.every((c) => downBy.get(c.key) === -(c.to - c.from)) &&
+          up.skipped.length === down.skipped.length;
+        if (!mirrored) asymmetric.push(`${cls}:${macro.id}@${n}`);
+      }
+    }
+  }
+  check(
+    'every macro at ±n clicks stages exact mirror images',
+    asymmetric.length === 0,
+    asymmetric.slice(0, 6).join(', ') || `${macroApi.MACROS.length} macros × ±1..${macroApi.RANGE}`,
+  );
+
   /* ---- 5. info coverage --------------------------------------------------------- */
 
   // Every ADJUSTABLE key should have authored info text — the ⓘ falls back to

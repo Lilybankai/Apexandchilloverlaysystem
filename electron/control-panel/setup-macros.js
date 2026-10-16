@@ -4,7 +4,9 @@
  * Each macro turns one intent ("more front turn-in") into weighted nudges on
  * several real setup keys. A macro slider runs -5..+5 clicks; each affected key
  * moves `round(clicks × dir × weight)` steps from its CURRENT value, clamped to
- * the sim's own bounds. Everything is resolved against the live key set — keys
+ * the sim's own bounds. The rounding is half AWAY from zero (sign × round|x|),
+ * so +n and −n clicks are exact mirror images; Math.round alone sends .5
+ * toward +∞, which made +1 on a 0.5-weight key move it and −1 not. Everything is resolved against the live key set — keys
  * this car does not have, or the ruleset locks, are skipped and reported, which
  * is the whole per-class story: an LMP2 simply has no ABS row to nudge.
  *
@@ -198,7 +200,8 @@
     const changes = [];
     const skipped = [];
     for (const e of effects) {
-      const delta = Math.round(clicks * e.dir * e.weight);
+      const raw = clicks * e.dir * e.weight;
+      const delta = Math.sign(raw) * Math.round(Math.abs(raw)); // half away from zero: ± mirror
       if (delta === 0) continue;
       const targets = expandMatch(e.match, keys);
       if (targets.length === 0) {

@@ -248,6 +248,20 @@
   background: var(--panel-2);
 }
 
+/* The editor column at its narrowest (a window just over 1100px with the app
+   rail expanded is ~490px) would otherwise hand the label its full 220px and
+   leave the − range + group a stub of a slider. Tighter label and value
+   columns there; long labels already ellipsise. */
+.su-rows {
+  container-type: inline-size;
+}
+@container (max-width: 560px) {
+  .su-row {
+    grid-template-columns: minmax(130px, 170px) minmax(0, 1fr) minmax(64px, auto);
+    gap: 8px;
+  }
+}
+
 /* Locked (ruleset-fixed) and single-option rows: readable, clearly inert. */
 .su-row[data-locked='true'] .su-row__label,
 .su-row[data-locked='true'] .su-row__value {
@@ -306,6 +320,56 @@
   max-width: none; /* the panel default caps ranges at 240px; the editor column is the cap here */
 }
 
+/* − range + : one index step per press, for the move too small to hit by
+   dragging. Modelled on the VR tab's .vr-nudge; a touch smaller here, and
+   smaller again in the corner grid. */
+.su-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.su-step input.field__range {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.su-step__btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: 500 14px/1 var(--font-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+.su-step__btn:hover:not(:disabled) {
+  border-color: rgba(38, 187, 244, 0.55);
+}
+.su-step__btn:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.su-step__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.su-corner .su-step {
+  gap: 4px;
+}
+.su-corner .su-step__btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
 .su-row__value {
   font: 500 12px/1.2 var(--font-mono);
   color: var(--text);
@@ -350,14 +414,20 @@
 .su-corners {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 14px;
+  gap: 4px 12px;
 }
 
+/* The value column and gaps run tight so the − range + group keeps a usable
+   slider in a ~233px cell (window just over 1100px, app rail expanded). The
+   value column still grows past its minimum for a staged ghost or dirty dot. */
 .su-corner {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) minmax(72px, auto);
-  gap: 8px;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(60px, auto);
+  gap: 6px;
   align-items: center;
+}
+.su-corner[data-staged='true'] .su-corner__tag {
+  color: var(--purple);
 }
 
 .su-corner__tag {
@@ -458,6 +528,9 @@
   color: var(--purple);
 }
 
+.su-macro .su-step {
+  grid-column: 1 / -1;
+}
 .su-macro input.field__range {
   grid-column: 1 / -1;
   width: 100%;
