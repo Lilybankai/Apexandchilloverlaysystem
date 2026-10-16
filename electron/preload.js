@@ -259,10 +259,22 @@ contextBridge.exposeInMainWorld('apex', {
     state: () => ipcRenderer.invoke('setup:state'),
     /** Write one setting (clamped server-side): `{ ok, applied?, appliedText?, setting? }`. */
     write: (key, value) => ipcRenderer.invoke('setup:write', { key, value }),
-    /** Apply a staged macro: `{ ok, results[], state }` — skips locked keys, reports each. */
-    writeBatch: (writes) => ipcRenderer.invoke('setup:writeBatch', { writes }),
+    /** Apply a staged macro: `{ ok, results[], state }` — skips locked keys, reports each.
+     *  `meta` `{ source: 'engineer'|'library'|'restore', label? }` names it in History. */
+    writeBatch: (writes, meta) => ipcRenderer.invoke('setup:writeBatch', { writes, meta }),
     /** The current car's own-livery render, custom paints included: `{ ok, vehId?, dataUrl? }`. */
     carImage: () => ipcRenderer.invoke('setup:carImage'),
+
+    /* ---- setup History (every earlier version, per car + track) ---- */
+    history: {
+      /** Light list for one car + track (default: the one in the garage):
+       *  `{ ok, currentId, live, key, keys[], entries[] newest first, pending }`. */
+      list: (key) => ipcRenderer.invoke('setuphistory:list', { key: key || '' }),
+      /** One version with its full snapshot: `{ ok, entry: { values, strings, changes, … } }`. */
+      entry: (key, id) => ipcRenderer.invoke('setuphistory:entry', { key, id }),
+      /** Forget one car + track's history: `{ ok }`. */
+      clear: (key) => ipcRenderer.invoke('setuphistory:clear', { key }),
+    },
 
     /* ---- the setup library (save/load/share .svm files) ---- */
     /** All saved setups, each with `bestLap: {lapMs, setAt}|null` for its track+class. */

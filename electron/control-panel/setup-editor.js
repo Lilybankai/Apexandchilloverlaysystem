@@ -32,6 +32,7 @@
   const INFOAPI = window.APEX_SETUP_INFO;
   const MACROAPI = window.APEX_SETUP_MACROS;
   const GUIDEAPI = window.APEX_SETUP_GUIDE; // the first-run walkthrough
+  const HISTAPI = window.APEX_SETUP_HISTORY; // setup-history-core.js
 
   /* ---- static frame ------------------------------------------------------ */
 
@@ -58,6 +59,7 @@
   const elPopTitle = $('#setup-info-title');
   const elPopBody = $('#setup-info-body');
   const elPopClose = $('#setup-info-close');
+  const elHistoryOpen = $('#setup-history-open'); // History's way in while offline
 
   // Library card + its two dialogs.
   const elLibImport = $('#setup-lib-import');
@@ -160,6 +162,19 @@
   let pubTags = new Set(); // chips currently toggled on
   let rateTarget = null; // community row being rated
 
+  // History sub-tab state — declared up here for the same reason: shown()
+  // touches it. Everything else about History lives in its own section below.
+  const HISTORY_TAB = 'HISTORY'; // a pseudo-tab after the six garage pages
+  let histView = null; // last setuphistory:list payload
+  let histKey = ''; // car + track being browsed ('' = the one in the garage)
+  let histFetchAt = 0;
+  let histFetching = false;
+  let histSig = ''; // what was last painted, so an unchanged poll repaints nothing
+  let histNote = ''; // the last Restore's outcome, shown above the list
+  let histNoteForStage = false; // …and it describes the stage, so it goes when the stage does
+  const histOpen = new Map(); // entry id -> 'changes' | 'compare' (expanded rows)
+  const histFull = new Map(); // `${key}|${id}` -> full entry, fetched on demand
+
   /* ====================================================================== */
   /*  Lifecycle                                                             */
   /* ====================================================================== */
@@ -168,6 +183,7 @@
     if (active) return;
     if (document.visibilityState !== 'visible') return; // visibilitychange will call back
     active = true;
+    histFetchAt = 0; // History, if open, re-reads on the first poll back
     schedulePoll(0);
     void refreshLibrary(); // one read per show, never on a timer
     void refreshCommunity(); // ditto — one cloud read per show
@@ -257,6 +273,8 @@
       renderLibraryList(); // Load buttons pick up the new state
       renderCommunityList(); // follow-mode falls back to manual filters
     }
+    paintHistoryFrame(); // History stays browsable with the sim shut
+    historyTick();
   }
 
   function applyState(state) {
@@ -330,6 +348,7 @@
       failedWrites = 0;
       showWriteError('');
     }
+    historyTick();
   }
 
   /* ---- sub-tabs ----------------------------------------------------------- */
@@ -348,6 +367,7 @@
       });
       elTabs.appendChild(btn);
     }
+    elTabs.appendChild(historyTabButton());
     if (!currentTab) currentTab = GROUPS.TABS[0];
   }
 
@@ -394,6 +414,10 @@
     elRows.textContent = '';
     // Only the visible tab's rows exist — the registry follows.
     rowsByKey.clear();
+    if (tab === HISTORY_TAB) {
+      renderHistory(); // readable with or without the sim
+      return;
+    }
     if (!lastState || !lastState.connected) return;
 
     const { sections, sectionOrder } = planTab(tab);
@@ -936,10 +960,11 @@
     elStagedCount.textContent = `Applying ${writes.length}…`;
     let res = null;
     try {
-      res = await window.apex.setup.writeBatch(writes);
+      res = await window.apex.setup.writeBatch(writes, historyApplyMeta());
     } catch {
       res = null;
     }
+    historyChanged(); // the Apply is a new version in History
     resetMacros();
     loadedStage = null;
     staged = new Map();
@@ -2294,6 +2319,546 @@
   elRatePop.addEventListener('click', (e) => {
     if (e.target === elRatePop) elRatePop.hidden = true;
   });
+
+  /* ====================================================================== */
+  /*  History                                                               */
+  /* ====================================================================== */
+  /* Every earlier version of this car's setup at this track, recorded in main
+   * (electron/setupHistory.js): editor writes, Applies, library tunes, and
+   * changes made in LMU's own garage screen. Restore never writes anything —
+   * it plans the diff from the LIVE car to the chosen version and stages it,
+   * the same overlay a library tune's "Stage in editor" uses, and the driver's
+   * Apply sends it. The list is read when the tab opens and then rides the
+   * editor's existing poll (throttled) — no timer of its own, so the
+   * zero-cost-when-closed rule holds. */
+
+  const HISTORY_REFRESH_MS = 4000;
+  // Quoted '#i-…' literals on purpose: test-panel-parity checks each against
+  // the icon sprite, so a typo fails a test instead of drawing a blank.
+  const HIST_ICONS = {
+    session: '#i-flag',
+    editor: '#i-sliders-horizontal',
+    engineer: '#i-sparkles',
+    library: '#i-folder',
+    game: '#i-monitor',
+    restore: '#i-rotate-ccw',
+  };
+
+  const historyBridge = () => window.apex && window.apex.setup && window.apex.setup.history;
+
+  function svgIcon(href, extraClass) {
+    const s = document.createElement('span');
+    s.innerHTML = `<svg class="icon${extraClass ? ' ' + extraClass : ''}"><use href="${href}" /></svg>`;
+    return s.firstChild;
+  }
+
+  function historyTabButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'su-tabs__history';
+    btn.setAttribute('data-tab', 'history');
+    btn.setAttribute('data-active', String(currentTab === HISTORY_TAB));
+    btn.title = 'Every earlier version of this setup — go back to any of them';
+    btn.appendChild(svgIcon('#i-clock'));
+    btn.appendChild(document.createTextNode('History'));
+    btn.addEventListener('click', openHistory);
+    return btn;
+  }
+
+  /** Switch to History — from its tab button, or the offline card's button. */
+  function openHistory() {
+    if (!elTabs.children.length) buildTabs();
+    currentTab = HISTORY_TAB;
+    for (const b of elTabs.children) {
+      b.setAttribute('data-active', String(b.getAttribute('data-tab') === 'history'));
+    }
+    histFetchAt = 0;
+    renderTab(HISTORY_TAB);
+    paintHistoryFrame();
+    void refreshHistory();
+  }
+
+  if (elHistoryOpen) elHistoryOpen.addEventListener('click', openHistory);
+
+  /**
+   * With the sim shut, the editor frame normally hides behind the offline
+   * card. Browsing History keeps the frame up instead, with the garage pages
+   * disabled (there is nothing to show on them).
+   */
+  function paintHistoryFrame() {
+    if (lastState && lastState.connected) return; // applyState owns the frame
+    const browsing = currentTab === HISTORY_TAB;
+    elOffline.hidden = browsing;
+    elBody.hidden = !browsing;
+    for (const b of elTabs.children) {
+      b.disabled = browsing && b.getAttribute('data-tab') !== 'history';
+    }
+  }
+
+  /** Called from every poll result: a throttled re-read while History is up. */
+  function historyTick() {
+    if (currentTab !== HISTORY_TAB || !active) return;
+    if (Date.now() - histFetchAt < HISTORY_REFRESH_MS) return;
+    void refreshHistory();
+  }
+
+  /** Something just made a version (an Apply): show it without waiting. */
+  function historyChanged() {
+    histFetchAt = 0;
+    histNote = '';
+    if (currentTab === HISTORY_TAB) void refreshHistory();
+  }
+
+  async function refreshHistory() {
+    const bridge = historyBridge();
+    if (!bridge) {
+      histView = { ok: false, error: 'The app needs a restart to pick up setup history.' };
+      repaintHistory(true);
+      return;
+    }
+    if (histFetching) return;
+    histFetching = true;
+    histFetchAt = Date.now();
+    let res = null;
+    try {
+      res = await bridge.list(histKey);
+    } catch {
+      res = null;
+    }
+    histFetching = false;
+    histView =
+      res && res.ok
+        ? res
+        : { ok: false, error: (res && res.error) || 'History is unavailable right now.' };
+    // The browsed history was cleared (or never existed): follow the garage.
+    if (histView.ok && histKey && (!histView.key || histView.key.id !== histKey)) histKey = '';
+    repaintHistory(false);
+  }
+
+  /** Repaint only when something visible changed — expanded rows survive. */
+  function repaintHistory(force) {
+    if (currentTab !== HISTORY_TAB) return;
+    const v = histView || {};
+    const sig = JSON.stringify([
+      v.ok,
+      v.error,
+      v.key && v.key.id,
+      (v.keys || []).length,
+      (v.entries || []).map((e) => e.id + (e.isCurrent ? '*' : '')),
+      v.pending,
+      historyRestoreBlock(),
+      historyNote(),
+      [...histOpen],
+    ]);
+    if (!force && sig === histSig) return;
+    histSig = sig;
+    renderTab(HISTORY_TAB);
+  }
+
+  /**
+   * Why Restore cannot run right now, or '' when it can. A version only makes
+   * sense on the car + track it was recorded for.
+   */
+  function historyRestoreBlock() {
+    if (!histView || !histView.ok || !histView.key) return 'Nothing to restore yet.';
+    if (!lastState || !lastState.connected) {
+      return 'Restore needs LMU running with this car in the garage — you can still browse.';
+    }
+    const liveId = lastState.historyKey || (histView.live ? histView.currentId : '');
+    if (liveId !== histView.key.id) {
+      return 'This is another car or track — restore works on the car in the garage.';
+    }
+    return '';
+  }
+
+  /** The Restore note, while it is still true (Apply or Revert ends a staged restore). */
+  function historyNote() {
+    if (histNoteForStage && !(loadedStage && loadedStage.restoreLabel)) return '';
+    return histNote;
+  }
+
+  function fmtTime(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /** "Camber FL" — the panel's own name for the key, corner kept. */
+  function histLabel(key) {
+    const corner = /-W_(FL|FR|RL|RR)$/.exec(key);
+    return corner ? `${labelFor(key)} ${corner[1]}` : labelFor(key);
+  }
+
+  const shownText = (str, index) => (str !== undefined && str !== null && str !== '' ? str : String(index));
+
+  function historyEmpty(text) {
+    const p = document.createElement('p');
+    p.className = 'su-lib__empty';
+    p.textContent = text;
+    return p;
+  }
+
+  function renderHistory() {
+    const wrap = document.createElement('div');
+    wrap.className = 'su-hist';
+    elRows.appendChild(wrap);
+    if (!histView) {
+      wrap.appendChild(historyEmpty('Loading history…'));
+      if (!histFetching) void refreshHistory();
+      return;
+    }
+    if (!histView.ok) {
+      wrap.appendChild(historyEmpty(histView.error));
+      return;
+    }
+    if (histView.key) wrap.appendChild(historyBar());
+
+    const block = historyRestoreBlock();
+    const status = document.createElement('p');
+    status.className = 'su-hist__status';
+    const lines = [];
+    const note = historyNote();
+    if (note) lines.push(note);
+    if (histView.pending && histView.pending.count) {
+      const n = histView.pending.count;
+      lines.push(
+        `Recording ${n} change${n === 1 ? '' : 's'} — saved as a version after 10 s without another.`,
+      );
+    }
+    if (block && histView.key && histView.entries.length) lines.push(block);
+    status.textContent = lines.join(' ');
+    status.hidden = lines.length === 0;
+    status.setAttribute('data-note', String(Boolean(note)));
+    wrap.appendChild(status);
+
+    if (!histView.entries || histView.entries.length === 0) {
+      wrap.appendChild(
+        historyEmpty(
+          'No versions yet. Every change to this car’s setup — here, from the race engineer, ' +
+            'or in LMU’s own garage — is kept per car and track, so you can always go back.',
+        ),
+      );
+      return;
+    }
+
+    for (const group of HISTAPI.groupByDay(histView.entries, Date.now())) {
+      const sec = document.createElement('section');
+      sec.className = 'su-section';
+      const h = document.createElement('h3');
+      h.className = 'su-section__title';
+      h.textContent = group.label;
+      sec.appendChild(h);
+      const ul = document.createElement('ul');
+      ul.className = 'su-lib__list su-hist__list';
+      for (const e of group.entries) ul.appendChild(historyRow(e, block));
+      sec.appendChild(ul);
+      wrap.appendChild(sec);
+    }
+  }
+
+  /** Which car + track, a picker when there are others, and Clear. */
+  function historyBar() {
+    const bar = document.createElement('div');
+    bar.className = 'su-hist__bar';
+    const k = histView.key;
+    const where = document.createElement('span');
+    where.className = 'su-hist__where';
+    where.textContent = [k.trackName || k.trackFolder, k.car].filter(Boolean).join(' · ');
+    bar.appendChild(where);
+
+    const keys = histView.keys || [];
+    if (keys.length > 1) {
+      const pick = document.createElement('select');
+      pick.className = 'field__input';
+      pick.title = 'Browse another car or track';
+      for (const o of keys) {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent =
+          `${o.trackName || o.trackFolder} — ${o.car} (${o.count})` +
+          (o.id === histView.currentId ? ' · in the garage' : '');
+        pick.appendChild(opt);
+      }
+      pick.value = k.id;
+      pick.addEventListener('change', () => {
+        histKey = pick.value;
+        histOpen.clear();
+        histNote = '';
+        void refreshHistory();
+      });
+      bar.appendChild(pick);
+    }
+
+    // Two-step clear, the library's Delete pattern: arm, then confirm in 3 s.
+    const btns = document.createElement('span');
+    btns.className = 'su-lib__buttons';
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn btn--ghost btn--sm';
+    clear.textContent = 'Clear history';
+    clear.title = 'Forget every saved version for this car and track';
+    let armTimer = null;
+    clear.addEventListener('click', async () => {
+      if (clear.getAttribute('data-armed') !== 'true') {
+        clear.setAttribute('data-armed', 'true');
+        clear.textContent = `Clear all ${k.count}? Click again`;
+        armTimer = setTimeout(() => {
+          clear.setAttribute('data-armed', 'false');
+          clear.textContent = 'Clear history';
+        }, 3000);
+        return;
+      }
+      clearTimeout(armTimer);
+      clear.disabled = true;
+      try {
+        await historyBridge().clear(k.id);
+      } catch {
+        /* the refresh shows the truth either way */
+      }
+      histOpen.clear();
+      histNote = '';
+      for (const id of [...histFull.keys()]) if (id.startsWith(`${k.id}|`)) histFull.delete(id);
+      histKey = '';
+      histFetchAt = 0;
+      void refreshHistory();
+    });
+    btns.appendChild(clear);
+    bar.appendChild(btns);
+    return bar;
+  }
+
+  function historyRow(entry, block) {
+    const li = document.createElement('li');
+    li.className = 'su-hist__row';
+    li.setAttribute('data-source', entry.source);
+    li.setAttribute('data-current', String(Boolean(entry.isCurrent)));
+
+    const time = document.createElement('span');
+    time.className = 'su-hist__time';
+    time.textContent = fmtTime(entry.at);
+    li.appendChild(time);
+
+    const src = document.createElement('span');
+    src.className = 'su-chip su-hist__src';
+    src.setAttribute('data-source', entry.source);
+    src.appendChild(svgIcon(HIST_ICONS[entry.source] || HIST_ICONS.game));
+    src.appendChild(document.createTextNode(HISTAPI.SOURCES[entry.source] || entry.source));
+    li.appendChild(src);
+
+    const summary = document.createElement('span');
+    summary.className = 'su-hist__summary';
+    const changes = entry.changes || [];
+    const text =
+      entry.source === 'session' && changes.length === 0
+        ? 'The setup as first seen — your starting point'
+        : HISTAPI.summarise(changes, histLabel, 3);
+    summary.textContent = entry.label ? `${entry.label} · ${text}` : text;
+    summary.title = summary.textContent;
+    if (entry.isCurrent) {
+      const now = document.createElement('span');
+      now.className = 'su-chip su-hist__now';
+      now.textContent = 'ON THE CAR';
+      now.title = 'The car is set up exactly like this version right now';
+      summary.prepend(now);
+    }
+    li.appendChild(summary);
+
+    const btns = document.createElement('span');
+    btns.className = 'su-lib__buttons';
+
+    const open = histOpen.get(entry.id) || '';
+    const compare = document.createElement('button');
+    compare.type = 'button';
+    compare.className = 'btn btn--ghost btn--sm';
+    compare.textContent = open === 'compare' ? 'Hide compare' : 'Compare with now';
+    compare.disabled = Boolean(block);
+    compare.title = block || 'What would change if you restored this version — nothing is staged';
+    compare.addEventListener('click', () => {
+      if (histOpen.get(entry.id) === 'compare') histOpen.delete(entry.id);
+      else histOpen.set(entry.id, 'compare');
+      repaintHistory(true);
+    });
+    btns.appendChild(compare);
+
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'btn btn--accent btn--sm';
+    restore.textContent = 'Restore this version';
+    restore.disabled = Boolean(block) || Boolean(entry.isCurrent);
+    restore.title =
+      block ||
+      (entry.isCurrent
+        ? 'The car already matches this version'
+        : 'Stage the changes back to this version — Apply sends them');
+    restore.addEventListener('click', () => void restoreHistoryEntry(entry, restore));
+    btns.appendChild(restore);
+
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'btn btn--ghost btn--sm su-hist__more';
+    more.title = open === 'changes' ? 'Hide the changes' : 'Every change in this version';
+    more.setAttribute('aria-expanded', String(open === 'changes'));
+    more.disabled = changes.length === 0;
+    more.appendChild(svgIcon('#i-chevron-down'));
+    more.addEventListener('click', () => {
+      if (histOpen.get(entry.id) === 'changes') histOpen.delete(entry.id);
+      else histOpen.set(entry.id, 'changes');
+      repaintHistory(true);
+    });
+    btns.appendChild(more);
+    li.appendChild(btns);
+
+    if (open === 'changes') {
+      li.appendChild(
+        historyDiff(
+          changes.map((c) => ({
+            key: c.key,
+            from: shownText(c.fromStr, c.from),
+            to: shownText(c.toStr, c.to),
+          })),
+          'Before → after',
+        ),
+      );
+    } else if (open === 'compare') {
+      const box = historyDiff([], 'Now → this version');
+      li.appendChild(box);
+      void fillCompare(entry, box);
+    }
+    return li;
+  }
+
+  /** The expanded diff: one line per key, in the sim's own wording. */
+  function historyDiff(rows, heading) {
+    const box = document.createElement('div');
+    box.className = 'su-hist__diff';
+    const h = document.createElement('p');
+    h.className = 'su-hist__diffhead';
+    h.textContent = heading;
+    box.appendChild(h);
+    for (const r of rows) box.appendChild(historyDiffLine(r));
+    return box;
+  }
+
+  function historyDiffLine(r) {
+    const line = document.createElement('div');
+    line.className = 'su-hist__line';
+    if (r.note) line.setAttribute('data-skipped', 'true');
+    const name = document.createElement('span');
+    name.className = 'su-hist__key';
+    name.textContent = histLabel(r.key);
+    line.appendChild(name);
+    const val = document.createElement('span');
+    val.className = 'su-hist__val';
+    val.textContent = r.note ? `${r.to} — ${r.note}` : `${r.from} → ${r.to}`;
+    line.appendChild(val);
+    return line;
+  }
+
+  async function fetchHistoryEntry(entry) {
+    const key = histView && histView.key ? histView.key.id : '';
+    const cacheKey = `${key}|${entry.id}`;
+    if (histFull.has(cacheKey)) return histFull.get(cacheKey);
+    let res = null;
+    try {
+      res = await historyBridge().entry(key, entry.id);
+    } catch {
+      res = null;
+    }
+    const full = res && res.ok && res.entry ? res.entry : null;
+    if (full) {
+      if (histFull.size > 40) histFull.delete(histFull.keys().next().value);
+      histFull.set(cacheKey, full);
+    }
+    return full;
+  }
+
+  /** "Compare with now": the restore plan, shown instead of staged. */
+  async function fillCompare(entry, box) {
+    const full = await fetchHistoryEntry(entry);
+    if (!full) {
+      box.appendChild(historyEmpty('That version could not be read.'));
+      return;
+    }
+    const plan = HISTAPI.restorePlan(full.values, settingsMap);
+    const strings = full.strings || {};
+    for (const w of plan.writes) {
+      const now = settingsMap.get(w.key);
+      box.appendChild(
+        historyDiffLine({
+          key: w.key,
+          from: now ? shownText(now.stringValue, now.value) : '—',
+          to: shownText(strings[w.key], w.value),
+        }),
+      );
+    }
+    for (const s of plan.skipped) {
+      box.appendChild(
+        historyDiffLine({ key: s.key, to: shownText(strings[s.key], full.values[s.key]), note: s.reason }),
+      );
+    }
+    if (plan.writes.length === 0 && plan.skipped.length === 0) {
+      box.appendChild(historyEmpty('The car already matches this version.'));
+    }
+  }
+
+  /**
+   * Restore = stage, never write. The plan is computed against the car as it
+   * is NOW, so "restore" means "make it like that again" whatever happened in
+   * between; locked and missing keys are skipped and named, like a macro's.
+   */
+  async function restoreHistoryEntry(entry, btn) {
+    if (historyRestoreBlock()) return;
+    btn.disabled = true;
+    const full = await fetchHistoryEntry(entry);
+    btn.disabled = false;
+    if (!full) {
+      histNote = 'That version could not be read.';
+      histNoteForStage = false;
+      repaintHistory(true);
+      return;
+    }
+    if (!lastState || !lastState.connected) return;
+    const plan = HISTAPI.restorePlan(full.values, settingsMap);
+    const when = fmtTime(full.at);
+    resetMacros();
+    loadedStage = {
+      name: `Restore to ${when}`,
+      values: new Map(plan.writes.map((w) => [w.key, w.value])),
+      skipped: plan.skipped.length,
+      warnings: [],
+      restoreLabel: `Restored to ${when}`, // marks this stage as a restore for Apply
+    };
+    restage();
+    const n = plan.writes.length;
+    const parts = [
+      n
+        ? `${n} change${n === 1 ? '' : 's'} staged to go back to ${when} — Apply to send.`
+        : `The car already matches ${when}.`,
+    ];
+    if (plan.skipped.length) {
+      const names = plan.skipped.slice(0, 3).map((s) => `${histLabel(s.key)} (${s.reason})`);
+      const more = plan.skipped.length - names.length;
+      parts.push(`Skipped ${names.join(', ')}${more > 0 ? `, +${more} more` : ''}.`);
+    }
+    histNote = parts.join(' ');
+    histNoteForStage = true;
+    repaintHistory(true);
+  }
+
+  /**
+   * What an Apply was, for History's label: a restore, a library tune, or the
+   * race engineer's sliders (named with their clicks).
+   */
+  function historyApplyMeta() {
+    const tweaks = MACROAPI.MACROS.filter((m) => (macroClicks.get(m.id) || 0) !== 0).map((m) => {
+      const c = macroClicks.get(m.id);
+      return `${m.label} ${c > 0 ? '+' : '−'}${Math.abs(c)}`;
+    });
+    const plus = tweaks.length ? ' + race engineer' : '';
+    if (loadedStage && loadedStage.restoreLabel) {
+      return { source: 'restore', label: loadedStage.restoreLabel + plus };
+    }
+    if (loadedStage) return { source: 'library', label: `“${loadedStage.name}”${plus}` };
+    return { source: 'engineer', label: tweaks.join(', ') };
+  }
 
   /* ====================================================================== */
   /*  Car card                                                              */

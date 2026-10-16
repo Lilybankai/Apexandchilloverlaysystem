@@ -1482,6 +1482,11 @@
             <div id="setup-offline" class="su-offline">
               <svg class="icon"><use href="#i-sliders-horizontal" /></svg>
               <p>Start Le Mans Ultimate and enter the garage to edit the car&rsquo;s setup.</p>
+              <!-- History is readable with the sim shut; restoring waits for the garage. -->
+              <button id="setup-history-open" class="btn btn--ghost btn--sm" type="button"
+                      title="Every earlier version of your setups, kept per car and track">
+                <svg class="icon"><use href="#i-clock" /></svg>Setup history
+              </button>
             </div>
 
             <div id="setup-body" class="su-body" hidden>
@@ -4603,6 +4608,7 @@
 <script src="setup-groups.js"></script>
 <script src="setup-info.js"></script>
 <script src="setup-macros.js"></script>
+<script src="setup-history-core.js"></script>
 <script src="setup-tags.js"></script>
 <script src="setup-guide.js"></script>
 <script src="streamer-guide.js"></script>
