@@ -5,7 +5,7 @@
      app until it is renamed.
 -->
 
-## Unreleased
+## 1.3.11-beta.3 — 2026-10-16
 
 ### New
 
