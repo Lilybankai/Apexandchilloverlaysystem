@@ -589,6 +589,8 @@ const PANEL_CONTRACT = {
   'setup-class': 'span',
   'setup-sym': 'span',
   'setup-offline': 'div',
+  // History's way in while the sim is shut (the tab bar only exists live).
+  'setup-history-open': 'button',
   'setup-body': 'div',
   'setup-tabs': 'nav',
   'setup-rows': 'div',

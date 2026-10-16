@@ -1253,3 +1253,164 @@
   border-color: color-mix(in srgb, var(--cyan) 65%, transparent);
   filter: none;
 }
+
+/* ---- History (the seventh sub-tab) ---------------------------------------- */
+
+/* Set apart from the six garage pages: it is about the setup, not a part of it. */
+.su-tabs__history {
+  position: relative;
+  margin-left: 7px;
+}
+.su-tabs__history::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--line-2);
+}
+
+.su-hist__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.su-hist__where {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 600 12.5px/1.3 var(--font-ui);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.su-hist__bar select {
+  max-width: 280px;
+}
+
+.su-hist__status {
+  margin: 0 0 12px;
+  font: 400 12px/1.45 var(--font-ui);
+  color: var(--text-3);
+}
+.su-hist__status[data-note='true'] {
+  color: var(--warn);
+}
+
+.su-hist__row {
+  display: grid;
+  grid-template-columns: 44px auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+}
+.su-hist__row:hover {
+  background: var(--panel-2);
+}
+.su-hist__row[data-current='true'] {
+  box-shadow: inset 2px 0 0 var(--cyan);
+}
+
+.su-hist__time {
+  font: 600 12px/1 var(--font-mono);
+  color: var(--text-2);
+}
+
+.su-hist__src {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.su-hist__src .icon {
+  width: 12px;
+  height: 12px;
+}
+.su-hist__src[data-source='game'] {
+  color: var(--purple);
+  border-color: color-mix(in srgb, var(--purple) 40%, transparent);
+}
+.su-hist__src[data-source='restore'],
+.su-hist__src[data-source='engineer'] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.su-hist__src[data-source='library'] {
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 40%, transparent);
+}
+
+/* Two lines, then an ellipsis: the expand control has the rest. */
+.su-hist__summary {
+  min-width: 0;
+  font: 400 12.5px/1.35 var(--font-ui);
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.su-hist__now {
+  margin-right: 6px;
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 45%, transparent);
+}
+
+.su-hist__more .icon {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.15s ease;
+}
+.su-hist__more[aria-expanded='true'] .icon {
+  transform: rotate(180deg);
+}
+
+.su-hist__diff {
+  grid-column: 1 / -1;
+  margin: 2px 0 4px 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.su-hist__diffhead {
+  margin: 0 0 6px;
+  font: 600 10.5px/1 var(--font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.su-hist__line {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 10px;
+  padding: 3px 0;
+  font: 400 12px/1.35 var(--font-ui);
+}
+.su-hist__key {
+  color: var(--text-2);
+}
+.su-hist__val {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.su-hist__line[data-skipped='true'] .su-hist__val {
+  color: var(--text-3);
+}
+
+/* Narrow: the buttons drop under the summary rather than crushing it. */
+@media (max-width: 760px) {
+  .su-hist__row {
+    grid-template-columns: 44px auto minmax(0, 1fr);
+  }
+  .su-hist__row > .su-lib__buttons {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+  .su-hist__diff {
+    margin-left: 0;
+  }
+}

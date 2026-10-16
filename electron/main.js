@@ -1110,6 +1110,10 @@ function publishLmuRoot(settings) {
 
 let serverModule = null; // lazily required from dist
 let shutdownFn = null; // resolves the running server's shutdown
+// The Setups tab's History recorder (electron/setupHistory.js). Built in
+// registerIpc, next to the setup controller it asks "where are we?"; module
+// scope because requireServer hands it the provider's garage polls.
+let setupHistory = null;
 let starting = false;
 
 /** Absolute path to the overlay assets, both in dev and inside the package. */
@@ -1169,6 +1173,18 @@ function requireServer() {
     ).setStallSink({ begin: stallWatch.begin, end: stallWatch.end });
   } catch {
     /* diagnostics must never be the thing that stops the server starting */
+  }
+  // Same inversion for the setup History: the provider already polls the
+  // garage every few seconds, and that poll is what records a change made in
+  // LMU's own garage screen while the Setups tab is shut. See garageTap.ts.
+  try {
+    require(
+      path.join(__dirname, '..', 'dist', 'telemetry', 'garageTap.js'),
+    ).setGarageSink((raw) => {
+      if (setupHistory) setupHistory.observeGarage(raw);
+    });
+  } catch {
+    /* an old dist/ without the tap: History still records from the editor */
   }
   return serverModule;
 }
@@ -4408,9 +4424,46 @@ function registerIpc() {
     return setupController;
   };
 
+  /*
+   * The History recorder. It asks the controller where we are only when a
+   * garage poll shows a change (the editor's own reads carry the identity), so
+   * an unchanged car costs it an in-memory compare and nothing else. History
+   * must never be the thing that breaks the editor: every call into it from
+   * the handlers below is fenced.
+   */
+  try {
+    setupHistory = new (require('./setupHistory').SetupHistory)({
+      dir: path.join(app.getPath('userData'), 'setup-history'),
+      resolveKey: async () => {
+        const ctl = getSetupController();
+        const [summary, session] = await Promise.all([ctl.garageSummary(), ctl.sessionInfo()]);
+        let car = summary.carModel;
+        if (!car) car = (await ctl.getIdentity()).car;
+        return { car, trackFolder: summary.trackFolder || '', trackName: session.trackName };
+      },
+    });
+  } catch (err) {
+    console.error('[app] setup history unavailable:', err.message);
+    setupHistory = null;
+  }
+  const historyCall = (fn) => {
+    if (!setupHistory) return undefined;
+    try {
+      return fn(setupHistory);
+    } catch (err) {
+      console.error('[app] setup history:', err.message);
+      return undefined;
+    }
+  };
+
   ipcMain.handle('setup:state', async () => {
     try {
-      return await getSetupController().getState();
+      const state = await getSetupController().getState();
+      // Hand the panel the History key for this car + track, so the identity
+      // rule lives in one place (setupHistory.observeState).
+      const historyKey = historyCall((h) => h.observeState(state));
+      if (historyKey) state.historyKey = historyKey;
+      return state;
     } catch (err) {
       // An unbuilt dist/ degrades to the tab's offline card, not a dead panel.
       console.error('[app] setup state unavailable:', err.message);
@@ -4423,7 +4476,20 @@ function registerIpc() {
       const key = String((payload && payload.key) || '');
       const value = Number(payload && payload.value);
       if (!key || !Number.isFinite(value)) return { ok: false, error: 'needs { key, value }' };
-      return await getSetupController().setValue(key, value);
+      // Before the POST, so a garage poll landing mid-write is not "the game".
+      historyCall((h) => h.expectWrites([key]));
+      const res = await getSetupController().setValue(key, value);
+      if (res && res.ok) {
+        const s = res.setting;
+        historyCall((h) =>
+          h.noteWrite({
+            key,
+            value: s ? s.value : res.applied,
+            ...(s ? { str: s.stringValue } : {}),
+          }),
+        );
+      }
+      return res;
     } catch (err) {
       console.error('[app] setup write failed:', err.message);
       return { ok: false, error: err.message };
@@ -4434,9 +4500,80 @@ function registerIpc() {
     try {
       const writes = payload && Array.isArray(payload.writes) ? payload.writes : [];
       if (!writes.length) return { ok: false, error: 'needs { writes: [...] }' };
-      return await getSetupController().setBatch(writes);
+      // `meta` says what this Apply was, for History: { source, label }. The
+      // recorder whitelists the source and trims the label itself.
+      const meta = payload && payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+      historyCall((h) => h.expectWrites(writes.map((w) => String((w && w.key) || ''))));
+      const res = await getSetupController().setBatch(writes);
+      if (res && Array.isArray(res.results)) {
+        // The batch ends with a fresh read; take the sim's own value and
+        // wording from it rather than our clamped prediction.
+        const fresh = new Map(
+          ((res.state && res.state.settings) || []).map((s) => [s.key, s]),
+        );
+        const applied = res.results
+          .filter((r) => r && r.ok)
+          .map((r) => {
+            const s = fresh.get(r.key);
+            return s
+              ? { key: r.key, value: s.value, str: s.stringValue }
+              : { key: r.key, value: r.applied };
+          })
+          .filter((w) => typeof w.value === 'number');
+        // Awaited (it is an in-memory step) so the panel's History refresh
+        // straight after Apply already shows the new version.
+        if (applied.length) await historyCall((h) => h.noteBatch(meta, applied));
+      }
+      return res;
     } catch (err) {
       console.error('[app] setup batch failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  /* ---- Setup History ----
+   *
+   * Read side of electron/setupHistory.js. Restore is NOT here: the panel
+   * plans it against the live car and stages it, and the driver's Apply sends
+   * it through setup:writeBatch like any other staged change.
+   */
+  const historyKeyArg = (payload) => {
+    const key = payload && typeof payload.key === 'string' ? payload.key : '';
+    return key.length <= 300 ? key : '';
+  };
+
+  ipcMain.handle('setuphistory:list', async (_evt, payload) => {
+    if (!setupHistory) return { ok: false, error: 'history unavailable', keys: [], entries: [] };
+    try {
+      return await setupHistory.list(historyKeyArg(payload));
+    } catch (err) {
+      console.error('[app] setup history list failed:', err.message);
+      return { ok: false, error: err.message, keys: [], entries: [] };
+    }
+  });
+
+  ipcMain.handle('setuphistory:entry', async (_evt, payload) => {
+    if (!setupHistory) return { ok: false, error: 'history unavailable' };
+    try {
+      const key = historyKeyArg(payload);
+      const id = payload && typeof payload.id === 'string' ? payload.id.slice(0, 64) : '';
+      if (!key || !id) return { ok: false, error: 'needs { key, id }' };
+      const entry = await setupHistory.entry(key, id);
+      return entry ? { ok: true, entry } : { ok: false, error: 'not found' };
+    } catch (err) {
+      console.error('[app] setup history entry failed:', err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('setuphistory:clear', async (_evt, payload) => {
+    if (!setupHistory) return { ok: false, error: 'history unavailable' };
+    try {
+      const key = historyKeyArg(payload);
+      if (!key) return { ok: false, error: 'needs { key }' };
+      return await setupHistory.clear(key);
+    } catch (err) {
+      console.error('[app] setup history clear failed:', err.message);
       return { ok: false, error: err.message };
     }
   });
@@ -7535,6 +7672,9 @@ app.on('will-quit', () => {
   // Flush the day's counters to disk. Not to the cloud: quit is no place for a
   // network round trip, and the next launch offers the same day again for free.
   featureUsage.shutdown();
+  // …and the setup History's open quiet window (a slider moved in the last
+  // ten seconds) plus anything not yet on disk.
+  if (setupHistory) setupHistory.shutdown();
   // Release the DirectInput devices; leaving them acquired holds COM objects
   // alive past process teardown.
   if (gamepad) gamepad.close();
