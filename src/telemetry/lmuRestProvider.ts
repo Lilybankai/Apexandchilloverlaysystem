@@ -119,6 +119,7 @@ import {
   type ReplayMetrics,
 } from './replayFeed';
 import { fingerprintGarageData } from './setupFingerprint';
+import { publishGarage } from './garageTap';
 import {
   LapTraceRecorder,
   writeTrace,
@@ -1721,6 +1722,9 @@ export class LmuRestProvider implements TelemetryProvider {
     if (garage && typeof garage === 'object') {
       this.garageDataRaw = garage;
       this.lastMfdOkAt = Date.now();
+      // The Setups tab's History records garage-screen edits from this same
+      // payload rather than polling it a second time (see garageTap.ts).
+      publishGarage(garage);
     }
   }
 

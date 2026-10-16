@@ -362,13 +362,28 @@
           view: 'setups',
           anchor: '#setup-staged',
           altAnchor: '#setup-offline',
-          title: 'Nothing reaches the car until Apply',
+          title: 'The engineer waits for Apply',
           body:
-            'Drag a slider and the change is STAGED, not sent. The count here tells you how many ' +
-            'are waiting. Apply sends them together; Revert throws them away.',
+            'A setting’s own slider goes straight to the car. The engineer’s sliders and a loaded ' +
+            'library tune are STAGED instead; the count here says how many are waiting. Apply ' +
+            'sends them together; Revert throws them away.',
           note:
-            'This is the single most important thing about this tab: it is deliberate, so you can ' +
-            'plan a change in the pits and commit it in one go.',
+            'This is the single most important thing about this tab: staging is deliberate, so you ' +
+            'can plan a bigger change in the pits and commit it in one go.',
+        },
+        {
+          id: 'history',
+          view: 'setups',
+          // The tab button is built at runtime; offline, the card's own
+          // "Setup history" button is the way in.
+          anchor: '.su-tabs__history',
+          altAnchor: '#setup-history-open',
+          title: 'Every version, and a way back',
+          body:
+            'History keeps each version of the setup for this car and track — your edits, the ' +
+            'engineer’s Applies, library tunes and changes made in the game’s own garage. Restore ' +
+            'stages the way back; Apply sends it.',
+          note: 'Fuel and pit-stop plans are never part of a version, so refuelling never clutters it.',
         },
         {
           id: 'library',

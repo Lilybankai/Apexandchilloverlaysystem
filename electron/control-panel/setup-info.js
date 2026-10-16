@@ -62,7 +62,7 @@
     VM_TRACTIONCONTROLSLIPANGLEMAP: {
       title: 'TC slip angle',
       what: 'The slip-angle sub-map: how much sideways slide TC tolerates before intervening. "Linked" follows the master map.',
-      effect: 'Lower tolerance stabilises corner exit under angle; higher lets the car rotate on throttle.',
+      effect: 'A higher map steps in earlier — a calmer exit under angle, and what wet setups reach for; a lower map lets the car rotate on throttle.',
     },
     VM_TRACTIONCONTROLPOWERCUTMAP: {
       title: 'TC power cut',
@@ -77,7 +77,7 @@
     VM_ANTILOCKBRAKESYSTEMMAP: {
       title: 'ABS map',
       what: 'How aggressively the anti-lock system releases brake pressure at lock-up.',
-      effect: 'Higher = harder late braking with less risk of flat spots; lower = more pedal authority for drivers who trail-brake precisely.',
+      effect: 'LMU labels the high maps "Understeer": higher = a more stable car on the brakes and less risk of flat spots, at the cost of rotation on entry; lower ("Balanced") = more pedal authority and a car that turns in on the brakes.',
     },
     VM_STEER_LOCK: {
       title: 'Steering lock',

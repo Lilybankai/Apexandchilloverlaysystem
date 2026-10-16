@@ -47,6 +47,82 @@ if (fixtures.length === 0) {
   process.exit(1);
 }
 
+/* ---- macro helpers (shared by the fixture loop and the census section) ---- */
+
+const dirsApi = require('../electron/control-panel/setup-directions.js');
+
+/**
+ * The class each garage capture really is. garage-gt3.json predates the
+ * census and is NOT a GT3: its brake ladder (17 = 52.3:47.7), "D36 H-H" front
+ * bar, FF6 diff ramps, 220 N/mm / 950 lbf/in springs, "Linked" TC slip and
+ * N/A ABS are an Oreca 07 LMP2 rung for rung (checked against the census
+ * below). Kept under its old name because other suites load it by that name.
+ */
+const FIXTURE_CLASS = { 'garage-gt3.json': 'LMP2' };
+
+/** Every class with an override block, plus the ELMS spelling that falls back to LMP2. */
+const MACRO_CLASSES = ['GT3', 'GTE', 'HYPERCAR', 'LMP2', 'LMP2_ELMS', 'LMP3'];
+
+const MEANINGFUL_SKIPS = new Set(['fixed by ruleset', 'detached']);
+
+/** Settings whose index 0 is "Detached"/"N/A" — no bar or spring at all. */
+const DETACHABLE = ['VM_FRONT_ANTISWAY', 'VM_REAR_ANTISWAY', 'VM_FRONT_3RD_SPRING', 'VM_REAR_3RD_SPRING'];
+
+function noisySkips(settings, cls) {
+  const out = new Set();
+  for (const macro of macroApi.MACROS) {
+    for (const clicks of [-macroApi.RANGE, macroApi.RANGE]) {
+      for (const sk of macroApi.resolveMacro(macro, clicks, settings, cls).skipped) {
+        if (!MEANINGFUL_SKIPS.has(sk.reason)) out.add(`${macro.id}:${sk.key || sk.match} (${sk.reason})`);
+      }
+    }
+  }
+  return [...out];
+}
+
+function floorRespected(settings) {
+  // Two probes per floored key: sitting just above the floor (a macro may not
+  // step down onto Detached), and sitting on it (a macro may not re-fit it).
+  // Named here rather than read from the table, so a floor deleted from the
+  // table fails this instead of quietly dropping out of it.
+  const floored = [...settings.keys()].filter((k) => DETACHABLE.includes(k));
+  for (const k of floored) {
+    for (const at of [0, 1]) {
+      const s = new Map(settings);
+      s.set(k, { ...settings.get(k), value: at, min: 0, max: Math.max(4, settings.get(k).max) });
+      for (const cls of MACRO_CLASSES) {
+        for (const macro of macroApi.MACROS) {
+          for (let clicks = -macroApi.RANGE; clicks <= macroApi.RANGE; clicks += 1) {
+            for (const ch of macroApi.resolveMacro(macro, clicks, s, cls).changes) {
+              if (ch.key === k && (ch.to < 1 || ch.from < 1)) return false;
+            }
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/** A copy with every adjustable key in the middle of its range. */
+function centred(settings) {
+  const out = new Map();
+  for (const [k, s] of settings) {
+    out.set(k, s.min < s.max ? { ...s, value: Math.round((s.min + s.max) / 2) } : { ...s });
+  }
+  return out;
+}
+
+function balanceStillAtOneClick(settings, cls) {
+  const still = [];
+  for (const macro of macroApi.MACROS.filter((m) => m.group === 'balance')) {
+    for (const clicks of [-1, 1]) {
+      if (macroApi.resolveMacro(macro, clicks, settings, cls).changes.length === 0) still.push(`${macro.id}@${clicks}`);
+    }
+  }
+  return still;
+}
+
 for (const { name, data } of fixtures) {
   console.log(`\n${name}`);
   const state = projectSetupState(data, 'Test Car', 'GT3');
@@ -128,11 +204,15 @@ for (const { name, data } of fixtures) {
 
   // Every match must resolve to at least one key of THIS fixture, or be a key
   // that legitimately varies by class (hybrid/oval hardware) — a typo'd match
-  // silently nudging nothing is precisely the bug this catches.
-  const CLASS_VARIABLE = new Set(['VM_TORQUE_SPLIT']); // hybrid-only; in overrides
+  // silently nudging nothing is precisely the bug this catches. Class
+  // overrides' extra effects are held to the same rule. Nothing is exempt
+  // today: every key a macro names is published (if sometimes fixed) by
+  // every car LMU ships.
+  const CLASS_VARIABLE = new Set();
   const deadMatches = [];
   for (const macro of macroApi.MACROS) {
-    for (const e of macro.effects) {
+    const extras = Object.values(macro.classOverrides || {}).flatMap((ov) => ov.extra || []);
+    for (const e of [...macro.effects, ...extras]) {
       if (macroApi.expandMatch(e.match, keys).length === 0 && !CLASS_VARIABLE.has(e.match)) {
         deadMatches.push(`${macro.id}:${e.match}`);
       }
@@ -140,20 +220,23 @@ for (const { name, data } of fixtures) {
   }
   check('every macro match hits this car', deadMatches.length === 0, deadMatches.join(', ') || 'all live');
 
-  // Full-scale resolution stays in bounds and never touches a locked key.
+  // Full-scale resolution stays in bounds and never touches a locked key — on
+  // every class with overrides, so each override block actually runs.
   let outOfBounds = 0;
   let lockedTouched = 0;
-  for (const macro of macroApi.MACROS) {
-    for (const clicks of [-macroApi.RANGE, macroApi.RANGE]) {
-      const { changes } = macroApi.resolveMacro(macro, clicks, settingsMap, 'GT3');
-      for (const ch of changes) {
-        const s = settingsMap.get(ch.key);
-        if (ch.to < s.min || ch.to > s.max) outOfBounds += 1;
-        if (s.isFree === false || s.min >= s.max) lockedTouched += 1;
+  for (const cls of MACRO_CLASSES) {
+    for (const macro of macroApi.MACROS) {
+      for (const clicks of [-macroApi.RANGE, macroApi.RANGE]) {
+        const { changes } = macroApi.resolveMacro(macro, clicks, settingsMap, cls);
+        for (const ch of changes) {
+          const s = settingsMap.get(ch.key);
+          if (ch.to < s.min || ch.to > s.max) outOfBounds += 1;
+          if (s.isFree === false || s.min >= s.max) lockedTouched += 1;
+        }
       }
     }
   }
-  check('macro resolution clamps to the sim bounds', outOfBounds === 0);
+  check('macro resolution clamps to the sim bounds', outOfBounds === 0, MACRO_CLASSES.join(' '));
   check('macro resolution skips locked and fixed keys', lockedTouched === 0);
 
   const zero = macroApi.MACROS.map((m) => macroApi.resolveMacro(m, 0, settingsMap, 'GT3'));
@@ -161,6 +244,54 @@ for (const { name, data } of fixtures) {
     'zero clicks stages nothing',
     zero.every((r) => r.changes.length === 0),
   );
+
+  // + and − are mirror images. Bounds are widened and every adjustable key is
+  // parked mid-range so clamping cannot hide an asymmetry: what is left is the
+  // rounding, which must go half AWAY from zero (Math.round alone sends .5 to
+  // +∞, so +1 on a 0.5-weight key moved it and −1 did not).
+  const MID = 500;
+  const wide = new Map();
+  for (const [key, s] of settingsMap) {
+    const adjustable = s.available !== false && s.isFree !== false && s.min < s.max;
+    wide.set(key, adjustable ? { ...s, min: 0, max: MID * 2, value: MID } : { ...s });
+  }
+  const asymmetric = [];
+  for (const cls of ['GT3', 'HYPERCAR']) {
+    for (const macro of macroApi.MACROS) {
+      for (let n = 1; n <= macroApi.RANGE; n++) {
+        const up = macroApi.resolveMacro(macro, n, wide, cls);
+        const down = macroApi.resolveMacro(macro, -n, wide, cls);
+        const downBy = new Map(down.changes.map((c) => [c.key, c.to - c.from]));
+        const mirrored =
+          up.changes.length === down.changes.length &&
+          up.changes.every((c) => downBy.get(c.key) === -(c.to - c.from)) &&
+          up.skipped.length === down.skipped.length;
+        if (!mirrored) asymmetric.push(`${cls}:${macro.id}@${n}`);
+      }
+    }
+  }
+  check(
+    'every macro at ±n clicks stages exact mirror images',
+    asymmetric.length === 0,
+    asymmetric.slice(0, 6).join(', ') || `${macroApi.MACROS.length} macros × ±1..${macroApi.RANGE}`,
+  );
+
+  // This capture's real class (see FIXTURE_CLASS): at full scale, every skip
+  // must name something THIS car has locked or detached — never a part the
+  // whole class was built without, which is an override's job to remove.
+  const trueClass = FIXTURE_CLASS[name] || 'GT3';
+  const noise = noisySkips(settingsMap, trueClass);
+  check(`as ${trueClass}, every skip is meaningful`, noise.length === 0, noise.join(', ') || 'only locked/detached');
+
+  // Detached bars and unfitted third springs: never stepped onto, never off.
+  check('no macro ever moves a bar or third spring onto index 0', floorRespected(settingsMap), MACRO_CLASSES.join(' '));
+
+  // From a centred setup (an end-stop legitimately blocks one direction),
+  // one click either way moves at least one real setting.
+  for (const cls of ['GT3', trueClass]) {
+    const still = balanceStillAtOneClick(centred(settingsMap), cls);
+    check(`as ${cls}, every balance slider moves a setting at ±1 click`, still.length === 0, still.join(', ') || 'all move');
+  }
 
   /* ---- 5. info coverage --------------------------------------------------------- */
 
@@ -224,6 +355,299 @@ console.log('\nsample-tune.svm — the .svm → REST-key translation');
     wrong.map(([k]) => k).join(', ') || `${Object.keys(expect).length} checked`,
   );
   check('the [BASIC] pseudo-sliders are not settings', !('Downforce' in parsed.values));
+
+  // The census reads the //label half of each line through svmKeyFor, which
+  // must place every line exactly where parseSvmValues does.
+  const { svmKeyFor } = require('../dist/telemetry/svmMap.js');
+  let section = '';
+  const viaKeyFor = {};
+  for (const raw of svm.split(/\r?\n/)) {
+    const line = raw.trim();
+    const sec = /^\[([A-Z0-9]+)\]$/.exec(line);
+    if (sec) section = sec[1];
+    const kv = /^([A-Za-z0-9]+)=(-?\d+)(?:\/\/|$)/.exec(line);
+    const key = kv ? svmKeyFor(section, kv[1]) : null;
+    if (key) viaKeyFor[key] = Number(kv[2]);
+  }
+  const keyForDrift = Object.keys(parsed.values).filter((k) => viaKeyFor[k] !== parsed.values[k]);
+  check(
+    'svmKeyFor places every line where parseSvmValues does',
+    keyForDrift.length === 0 && Object.keys(viaKeyFor).length === Object.keys(parsed.values).length,
+    keyForDrift.join(', ') || `${Object.keys(viaKeyFor).length} keys`,
+  );
+}
+
+/* ---- corner balance: the macro table and the direction table ---------------
+ *
+ * The engineer's balance sliders are only as right as the direction each key
+ * is moved in. Directions live in setup-directions.js with their evidence;
+ * this pins the macros to that table, the table to every saved setup on the
+ * census (scripts/fixtures/svm-ladders.json), and — once a human has walked a
+ * car with probe-setup-ladders.js — to the full ladders it captures.
+ */
+{
+  console.log('\nCorner balance — macros and directions');
+  const groupIds = macroApi.GROUPS.map((g) => g.id);
+
+  check(
+    'every macro names a real group',
+    macroApi.MACROS.every((m) => groupIds.includes(m.group)),
+    groupIds.join(', '),
+  );
+  const order = macroApi.MACROS.map((m) => m.group);
+  const contiguous = order.every((g, i) => i === 0 || g === order[i - 1] || !order.slice(0, i).includes(g));
+  check('groups are contiguous, so each heading renders once', contiguous, order.join(' '));
+  const balance = macroApi.MACROS.filter((m) => m.group === 'balance').map((m) => m.id);
+  check(
+    'Corner balance is slow entry, slow mid, slow exit, medium, fast',
+    balance.join(',') === 'slow-entry,slow-mid,slow-exit,medium,fast',
+    balance.join(', '),
+  );
+  check(
+    'the four situational sliders stay, under conditions',
+    ['top-speed', 'kerb-compliance', 'tyre-temps', 'bumpy-track'].every(
+      (id) => (macroApi.MACROS.find((m) => m.id === id) || {}).group === 'conditions',
+    ),
+  );
+  const badHint = macroApi.MACROS.filter(
+    (m) => !m.hint || m.hint.length < 30 || (m.group === 'balance' && !/right/i.test(m.hint)),
+  );
+  check(
+    'every slider explains itself (balance hints say what right does)',
+    badHint.length === 0,
+    badHint.map((m) => m.id).join(', ') || 'all',
+  );
+
+  // Every effect, base and override, in physical terms the table can turn
+  // into an index direction. A family missing from the table is a guess.
+  const allEffects = macroApi.MACROS.flatMap((m) =>
+    [
+      ...m.effects,
+      ...Object.values(m.classOverrides || {}).flatMap((ov) => ov.extra || []),
+    ].map((e) => ({ id: m.id, ...e })),
+  );
+  const unsourced = allEffects.filter((e) => !dirsApi.TABLE[dirsApi.familyOfMatch(e.match)]);
+  check(
+    'every effect’s direction comes from the direction table',
+    unsourced.length === 0,
+    unsourced.map((e) => `${e.id}:${e.match}`).join(', ') || `${allEffects.length} effects`,
+  );
+  const badWant = allEffects.filter((e) => e.want !== 1 && e.want !== -1);
+  check('every effect wants +1 or −1, never a raw index sign', badWant.length === 0);
+  const unverified = allEffects.filter((e) => {
+    const t = dirsApi.TABLE[dirsApi.familyOfMatch(e.match)];
+    return t && !t.verified;
+  });
+  check(
+    'no macro moves a key whose direction is unverified',
+    unverified.length === 0,
+    unverified.map((e) => `${e.id}:${e.match}`).join(', ') || 'all verified',
+  );
+  const WEIGHTS = new Set([1, 0.8, 0.6, 0.4, 0.2]);
+  const reweights = macroApi.MACROS.flatMap((m) =>
+    Object.values(m.classOverrides || {}).flatMap((ov) => (ov.reweight || []).map((r) => r.weight)),
+  );
+  const allWeights = [...allEffects.map((e) => e.weight), ...reweights.filter((w) => w !== 0)];
+  check('weights come from the 1 / 0.8 / 0.6 / 0.4 / 0.2 ladder', allWeights.every((w) => WEIGHTS.has(w)));
+  // clicks × weight landing on .5 is the only place a rounding rule could make
+  // +n and −n differ; with these weights it never does.
+  let halfway = 0;
+  for (const w of allWeights) {
+    for (let c = 1; c <= macroApi.RANGE; c += 1) if (Math.abs(((c * w) % 1) - 0.5) < 1e-9) halfway += 1;
+  }
+  check('+n and −n clicks are exact mirror images (no .5 products)', halfway === 0);
+
+  /* ---- the census ---------------------------------------------------------- */
+
+  const census = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'svm-ladders.json'), 'utf8'));
+  const cars = Object.entries(census.cars);
+  const DEAD = /^(N\/A|Non-adjustable|Fixed)$/i; // labels of a setting that cannot move
+  check('the census covers GT3, Hypercar and LMP2', ['GT3', 'HYPERCAR', 'LMP2'].every((c) => cars.some(([, v]) => v.class === c)));
+
+  const against = [];
+  let agreed = 0;
+  for (const [car, { keys: ks }] of cars) {
+    for (const [k, rungs] of Object.entries(ks)) {
+      const r = dirsApi.checkRungs(k, Object.entries(rungs));
+      if (r.verdict === 'agree') agreed += 1;
+      else if (r.verdict === 'disagree' || r.verdict === 'mixed') against.push(`${car} ${k} (${r.verdict})`);
+    }
+  }
+  check(
+    'the direction table agrees with every parseable ladder in the census',
+    against.length === 0 && agreed > 300,
+    against.slice(0, 6).join(' | ') || `${agreed} ladders agree`,
+  );
+
+  // Any setting the census shows as "Detached"/"N/A" at index 0 with real
+  // labels above it must be in DETACHABLE (and floored in the table) — a new
+  // one would otherwise be stepped onto "Detached" as if it were "softer".
+  const detachedAtZero = new Set();
+  for (const [, { keys: ks }] of cars) {
+    for (const [k, rungs] of Object.entries(ks)) {
+      const zeroLabel = String(rungs['0'] || '').trim();
+      const above = Object.entries(rungs).filter(([i, l]) => Number(i) > 0 && !DEAD.test(String(l).trim()));
+      if (/^(Detached|N\/A)$/i.test(zeroLabel) && above.length) detachedAtZero.add(k);
+    }
+  }
+  const unguarded = [...detachedAtZero].filter((k) => !DETACHABLE.includes(k) || !(dirsApi.entryFor(k) || {}).floor);
+  check(
+    'every setting with "Detached"/"N/A" at index 0 is floored',
+    unguarded.length === 0,
+    unguarded.join(', ') || [...detachedAtZero].join(', '),
+  );
+
+  // garage-gt3.json is an Oreca 07: its labels sit on the census Oreca's
+  // ladders, and merged with them the table still agrees.
+  const oreca = census.cars['ELMS2025 LMP2_ELMS Oreca_07'];
+  const garage = fixtures.find((f) => f.name === 'garage-gt3.json');
+  if (oreca && garage) {
+    let same = 0;
+    const mergedAgainst = [];
+    for (const [k, rungs] of Object.entries(oreca.keys)) {
+      const g = garage.data[k];
+      if (!g || typeof g.value !== 'number') continue;
+      if (rungs[g.value] !== undefined && rungs[g.value].trim() === String(g.stringValue).trim()) same += 1;
+      const r = dirsApi.checkRungs(k, [...Object.entries(rungs), [g.value, g.stringValue]]);
+      if (r.verdict === 'disagree' || r.verdict === 'mixed') mergedAgainst.push(k);
+    }
+    check('garage-gt3.json is the Oreca 07 LMP2 rung for rung', same >= 60, `${same} rungs identical`);
+    check(
+      'the table agrees with the garage capture merged into the Oreca census',
+      mergedAgainst.length === 0,
+      mergedAgainst.join(', ') || 'agrees',
+    );
+  }
+
+  /**
+   * A class-wide settings map from the census: a key is adjustable when any
+   * car in the class saved two different indices, fixed when every label it
+   * ever showed is "N/A"/"Non-adjustable"/"Fixed", and otherwise assumed
+   * adjustable a little either side of what was seen (nobody happened to move
+   * it). Values sit mid-range.
+   */
+  function classMap(cls) {
+    const seen = new Map();
+    for (const [, car] of cars) {
+      if (car.class !== cls) continue;
+      for (const [k, rungs] of Object.entries(car.keys)) {
+        if (!seen.has(k)) seen.set(k, { idx: new Set(), dead: true });
+        const s = seen.get(k);
+        for (const [i, label] of Object.entries(rungs)) {
+          s.idx.add(Number(i));
+          if (!DEAD.test(String(label).trim())) s.dead = false;
+        }
+      }
+    }
+    const map = new Map();
+    const proven = new Set();
+    for (const [k, s] of seen) {
+      const idx = [...s.idx].sort((a, b) => a - b);
+      const lo = idx[0];
+      const hi = idx[idx.length - 1];
+      if (idx.length >= 2) {
+        proven.add(k);
+        map.set(k, { value: Math.round((lo + hi) / 2), min: 0, max: hi, isFree: true, available: true });
+      } else if (s.dead) {
+        map.set(k, { value: lo, min: lo, max: lo, isFree: true, available: true });
+      } else {
+        map.set(k, { value: lo, min: Math.max(0, lo - 2), max: lo + 2, isFree: true, available: true });
+      }
+    }
+    return { map, proven };
+  }
+
+  const CENSUS_CLASSES = ['GT3', 'HYPERCAR', 'LMP2', 'LMP2_ELMS'];
+  const maps = Object.fromEntries(CENSUS_CLASSES.map((c) => [c, classMap(c)]));
+
+  // A dead effect inflates "N skipped" on every car: each family a macro names
+  // must be proven adjustable (two saved indices) in at least one class.
+  const neverMoves = allEffects.filter(
+    (e) =>
+      !CENSUS_CLASSES.some((c) =>
+        [...maps[c].proven].some((k) => macroApi.expandMatch(e.match, [k]).length > 0),
+      ),
+  );
+  check(
+    'no macro names a setting no car in the census ever adjusts',
+    neverMoves.length === 0,
+    [...new Set(neverMoves.map((e) => e.match))].join(', ') || 'all live somewhere',
+  );
+
+  for (const cls of CENSUS_CLASSES) {
+    const { map } = maps[cls];
+    const noise = noisySkips(map, cls);
+    check(`${cls} (census): every skip is meaningful`, noise.length === 0, noise.slice(0, 6).join(', ') || 'none');
+    const still = balanceStillAtOneClick(map, cls);
+    check(`${cls} (census): every balance slider moves a setting at ±1 click`, still.length === 0, still.join(', ') || 'all move');
+    check(`${cls} (census): no bar or third spring moves onto index 0`, floorRespected(map));
+  }
+
+  // The directions the balance sliders actually push, spelled out on a GT3:
+  // right = more rotation means rearward bias, a softer front bar, less TC,
+  // less rear wing — the four levers a driver would name.
+  const gt3 = maps.GT3.map;
+  const moveOf = (id, key) => {
+    const ch = macroApi
+      .resolveMacro(macroApi.MACROS.find((m) => m.id === id), 1, gt3, 'GT3')
+      .changes.find((c) => c.key === key);
+    return ch ? Math.sign(ch.to - ch.from) : 0;
+  };
+  check('slow entry +1 moves the bias rearward (index up)', moveOf('slow-entry', 'VM_BRAKE_BALANCE') === 1);
+  check('slow mid +1 softens the front bar (index down)', moveOf('slow-mid', 'VM_FRONT_ANTISWAY') === -1);
+  check('slow exit +1 takes TC away (index down)', moveOf('slow-exit', 'VM_TRACTIONCONTROLMAP') === -1);
+  check('fast +1 trims the rear wing (index down)', moveOf('fast', 'VM_REAR_WING') === -1);
+  const lmp2 = maps.LMP2.map;
+  const coast = macroApi
+    .resolveMacro(macroApi.MACROS.find((m) => m.id === 'slow-entry'), 1, lmp2, 'LMP2')
+    .changes.find((c) => c.key === 'VM_DIFF_COAST');
+  check('LMP2 slow entry +1 frees the coast ramp (less lock = index down)', !!coast && coast.to < coast.from);
+
+  /* ---- probe ladders override the table ------------------------------------ */
+
+  const ladderFiles = fs.readdirSync(fixtureDir).filter((f) => /^ladders-[a-z0-9-]+\.json$/.test(f));
+  const ladderDocs = ladderFiles.map((f) => JSON.parse(fs.readFileSync(path.join(fixtureDir, f), 'utf8')));
+  const ladderReport = dirsApi.applyLadders(ladderDocs);
+  const ladderAgainst = ladderReport.filter((r) => r.verdict !== 'agree');
+  check(
+    'probe ladders agree with the table (a FAIL names the entry to flip)',
+    ladderAgainst.length === 0,
+    ladderFiles.length
+      ? ladderAgainst.map((r) => `${r.cls} ${r.key}: ${r.verdict}`).join(' | ') || `${ladderReport.length} keys in ${ladderFiles.join(', ')}`
+      : 'no ladders-*.json yet — run probe-setup-ladders.js in the garage',
+  );
+  dirsApi.clearLadders();
+
+  // Synthetic: a class whose brake ladder runs FORWARD as the index rises.
+  const report = dirsApi.applyLadders([
+    {
+      class: 'testclass',
+      keys: { VM_BRAKE_BALANCE: { min: 0, max: 2, labels: ['45.0:55.0', '50.0:50.0', '55.0:45.0'] } },
+    },
+  ]);
+  check(
+    'a contradicting ladder is reported',
+    report.length === 1 && report[0].verdict === 'disagree' && report[0].observed === -1,
+  );
+  check('…and overrides the table for that class only', dirsApi.signFor('VM_BRAKE_BALANCE', 'TESTCLASS') === -1 && dirsApi.signFor('VM_BRAKE_BALANCE', 'GT3') === 1);
+  const entry = macroApi.MACROS.find((m) => m.id === 'slow-entry');
+  const mid = new Map([['VM_BRAKE_BALANCE', { value: 10, min: 0, max: 20, isFree: true, available: true }]]);
+  const onTest = macroApi.resolveMacro(entry, 1, mid, 'TESTCLASS').changes[0];
+  const onGt3 = macroApi.resolveMacro(entry, 1, mid, 'GT3').changes[0];
+  check('…so the macro moves that class the other way', onTest && onGt3 && onTest.to === 9 && onGt3.to === 11);
+  dirsApi.clearLadders();
+  check('clearing ladders restores the table', dirsApi.signFor('VM_BRAKE_BALANCE', 'TESTCLASS') === 1);
+
+  /* ---- the runtime self-check -------------------------------------------- */
+
+  check('a rearward bias step agrees', dirsApi.observe('VM_BRAKE_BALANCE', 17, '52.3:47.7', 18, '51.9:48.1').verdict === 'agree');
+  const flipped = dirsApi.observe('VM_BRAKE_BALANCE', 17, '52.3:47.7', 18, '52.8:47.2');
+  check('a forward bias step on a higher index disagrees', flipped.verdict === 'disagree' && flipped.observed === -1);
+  check('bare damper clicks prove nothing either way', dirsApi.observe('WM_SLOWBUMP-W_FL', 10, 'B31', 11, 'B30').verdict === 'unknown');
+  check('a ramp diff locks as its angle falls', dirsApi.observe('VM_DIFF_POWER', 0, 'FF6-60 deg', 1, 'FF6-55 deg').verdict === 'agree');
+  check('mixed units still compare (cm vs in)', dirsApi.observe('WM_RIDEHEIGHT-W_FL', 14, '1.929 in', 15, '5.0 cm').verdict === 'agree');
+  const flippedRun = macroApi.resolveMacro(entry, 1, mid, 'GT3', { flips: { VM_BRAKE_BALANCE: -1 } }).changes[0];
+  check('a remembered per-car flip reverses the macro on that car', !!flippedRun && flippedRun.to === 9);
 }
 
 /* ---- 5. the first-run walkthrough ---------------------------------------- */

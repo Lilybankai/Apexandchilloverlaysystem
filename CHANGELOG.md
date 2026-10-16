@@ -5,6 +5,48 @@
      app until it is renamed.
 -->
 
+## 1.3.11-beta.3 — 2026-10-16
+
+### New
+
+- **Corner balance sliders.** The race engineer now works the way you'd
+  describe the car: five sliders for **Slow entry, Slow mid, Slow exit,
+  Medium corners and Fast corners**. They all run the same way. Left makes
+  the car calmer (more stable, more understeer), and right makes it rotate
+  more. Hover a slider to see where on track it acts. One click moves only
+  the main settings (brake bias, anti-roll bars, TC, wing), and more clicks
+  bring in the supporting ones. The engineer knows your class: no ABS changes
+  on prototypes, and no diff-ramp or third-spring changes on GT3s. It never
+  re-fits an anti-roll bar you've detached. Every direction it pushes was
+  checked against hundreds of real LMU setups. The top speed, kerbs, tyre
+  heat and bumps sliders now sit under **Track & conditions**. Thanks to the
+  driver who suggested this.
+
+- **− and + buttons on every setup slider.** Each adjustable slider on the
+  Setups tab now has a − and a + either side of it. That includes each wheel
+  of the four-corner rows and the race engineer's sliders. One press moves
+  exactly one step. Hold a button to keep stepping, and it greys out at the
+  limit. A quick burst of presses still reaches the car as one change.
+
+- **Setup History.** The Setups tab has a new **History** page. Every change
+  to your setup is saved as a version, kept separately for each car and
+  track, so you can always go back. That includes sliders and ± buttons,
+  race engineer and library Applies, and changes you make in LMU's own
+  garage screen, even with the Setups tab closed. Each version shows what
+  changed, in the game's own wording. **Restore this version** lines the
+  changes up for you to check, and nothing reaches the car until you press
+  Apply. Fuel, virtual energy and pit-stop plans are never part of a
+  version, so refuelling between stints doesn't clutter the list. You can
+  browse History with the game closed.
+
+### Fixed
+
+- The race engineer's + and − now move settings by exactly the same amount
+  in each direction. Before, some settings moved further one way than the
+  other.
+- A four-corner row now stays highlighted while any of its wheels has a
+  staged change. Before, only the rear-right wheel counted.
+
 ## 1.3.11-beta.2 — 2026-10-15
 
 ### Fixed

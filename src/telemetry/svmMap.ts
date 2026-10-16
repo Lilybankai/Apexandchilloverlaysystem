@@ -159,6 +159,27 @@ export interface SvmParseResult {
   symmetric: boolean;
 }
 
+/**
+ * The REST key one `Name=` line under `[SECTION]` stands for, or null when the
+ * table does not know it (or the line is meta, or a [BASIC] pseudo-slider).
+ * The same lookup {@link parseSvmValues} makes, exposed for
+ * scripts/census-svm-ladders.js, which reads the `//label` half of each line
+ * as ladder evidence and so needs the mapping without the value parse.
+ */
+export function svmKeyFor(section: string, name: string): string | null {
+  if (IGNORE.has(name) || section === 'BASIC') return null;
+  const corner = CORNER_SECTIONS[section];
+  if (corner) {
+    const family = CORNER_MAP[name];
+    return family ? `${family}-W_${corner}` : null;
+  }
+  const gear = GEAR_RE.exec(name);
+  if (gear && section === 'DRIVELINE') return `VM_GEAR_${gear[1]}`;
+  const adj = CHASSIS_ADJ_RE.exec(name);
+  if (adj && section === 'SUSPENSION') return `VM_CHASSIS_ADJ_${adj[1]}`;
+  return SECTION_MAP[section]?.[name] ?? null;
+}
+
 /** Parses a .svm's text into REST key space. Never throws on odd lines. */
 export function parseSvmValues(text: string): SvmParseResult {
   const values: Record<string, number> = {};
