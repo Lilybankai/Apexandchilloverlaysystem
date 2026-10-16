@@ -27,6 +27,7 @@ const PANEL_DIR = path.join(__dirname, '..', 'electron', 'control-panel');
 const SCRIPTS = [
   'setup-groups.js',
   'setup-info.js',
+  'setup-directions.js', // before setup-macros.js, as index.html orders them
   'setup-macros.js',
   'setup-tags.js',
   'setup-guide.js',
@@ -370,7 +371,10 @@ async function bootPanel(options = {}) {
     ...(options.setupApi || {}),
   };
 
-  const store = new Map(Object.entries({ 'apex.setup.guide.seen': '1', ...(options.storage || {}) }));
+  // Mark the walkthrough seen at whatever version it is now — a stale flag
+  // lets it auto-open mid-test and steal focus from the button being held.
+  const guide = require('../electron/control-panel/setup-guide.js');
+  const store = new Map(Object.entries({ [guide.SEEN_KEY]: guide.GUIDE_VERSION, ...(options.storage || {}) }));
   const localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
@@ -644,9 +648,9 @@ async function main() {
   console.log('\nEngineer sliders: ± stages, never writes');
   {
     const p = await bootPanel();
-    const turnIn = p.page.macros()[0];
-    const { inc, dec } = p.buttons(turnIn);
-    const clicks = turnIn.querySelector('.su-macro__clicks');
+    const slowEntry = p.page.macros()[0]; // "Slow entry": brake bias + preload at ±1
+    const { inc, dec } = p.buttons(slowEntry);
+    const clicks = slowEntry.querySelector('.su-macro__clicks');
     await p.press(inc);
     check('+ moves the macro one click', clicks.textContent === '+1', clicks.textContent);
     check('…and stages changes', p.page.staged().getAttribute('data-ready') === 'true' && /staged/.test(p.page.stagedCount()), p.page.stagedCount());
@@ -655,6 +659,8 @@ async function main() {
     check('nothing was written live', p.writes.length === 0, JSON.stringify(p.writes));
     await p.press(dec);
     check('− back to 0 stages nothing', clicks.textContent === '0' && p.page.staged().getAttribute('data-ready') === 'false', `${clicks.textContent} / ${p.page.stagedCount()}`);
+    // Setting sliders write live, so the idle hint must not claim they stage.
+    check('the idle hint names the engineer sliders', p.page.stagedCount() === 'Move an engineer slider to stage changes.', p.page.stagedCount());
     await p.press(dec, 8);
     check('− clamps at the bottom and disables', clicks.textContent === '-5' && dec.disabled === true, clicks.textContent);
     p.byId.get('setup-revert').dispatch('click');
@@ -666,19 +672,19 @@ async function main() {
 
   console.log('\nA staged corner keeps its row lit');
   {
-    // Front turn-in moves the front camber only. Every corner's paint used to
-    // write the shared row's data-staged, so RR (painted last, not staged)
-    // switched the whole row off.
+    // Slow entry at +5 softens the FRONT slow bump only. Every corner's paint
+    // used to write the shared row's data-staged, so RR (painted last, not
+    // staged) switched the whole row off.
     const p = await bootPanel();
-    p.page.tabButton('WHEELS & BRAKES').dispatch('click');
+    p.page.tabButton('DAMPERS').dispatch('click');
     await p.clock.advance(0);
-    const frontTurnIn = p.page.macros().find((m) => m.querySelector('.su-macro__label').textContent === 'Front turn-in');
-    await p.press(p.buttons(frontTurnIn).inc, 5);
-    const camber = p.page.rows().find((r) => r.querySelector('.su-row__label') && r.querySelector('.su-row__label').textContent === labelOf('WM_CAMBER'));
-    const cells = camber.querySelectorAll('.su-corner');
+    const slowEntry = p.page.macros().find((m) => m.querySelector('.su-macro__label').textContent === 'Slow entry');
+    await p.press(p.buttons(slowEntry).inc, 5);
+    const bump = p.page.rows().find((r) => r.querySelector('.su-row__label') && r.querySelector('.su-row__label').textContent === labelOf('WM_SLOWBUMP'));
+    const cells = bump.querySelectorAll('.su-corner');
     const stagedCells = cells.filter((c) => c.getAttribute('data-staged') === 'true').length;
     check('only the front cells are staged', stagedCells === 2 && cells[0].getAttribute('data-staged') === 'true' && cells[3].getAttribute('data-staged') === 'false', `${stagedCells} of ${cells.length}`);
-    check('the row is staged although RR (painted last) is not', camber.getAttribute('data-staged') === 'true');
+    check('the row is staged although RR (painted last) is not', bump.getAttribute('data-staged') === 'true');
     check('nothing threw', p.errors.length === 0, errText(p.errors));
     p.done();
   }

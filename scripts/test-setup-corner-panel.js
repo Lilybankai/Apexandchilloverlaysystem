@@ -187,8 +187,18 @@ const fire = async (el, type) => {
   const label = firstSlider && firstSlider.children[0];
   check('sliders carry their driver-English hint', !!label && label.textContent === 'Slow entry' && /Right =/.test(label.title));
 
-  // Drag "Slow entry" to +2.
-  const range = firstSlider.children[2];
+  // Drag "Slow entry" to +2. The range sits inside its − range + group
+  // (label, clicks, then the .su-step wrapper), so look for it by type.
+  const findRange = (el) => {
+    if (!el) return null;
+    if (el.type === 'range') return el;
+    for (const k of el.children || []) {
+      const hit = findRange(k);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const range = findRange(firstSlider);
   range.value = '2';
   await fire(range, 'input');
   const apply = elements.get('#setup-apply');

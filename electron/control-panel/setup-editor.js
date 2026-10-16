@@ -756,7 +756,7 @@
   function showWriteError(message) {
     lastWriteError = message || '';
     if (staged.size > 0) return;
-    elStagedCount.textContent = lastWriteError || 'Drag a slider to stage changes.';
+    elStagedCount.textContent = lastWriteError || 'Move an engineer slider to stage changes.';
     elStaged.setAttribute('data-error', String(Boolean(lastWriteError)));
   }
 
@@ -989,7 +989,7 @@
         lastWriteError ||
         (loadedStage
           ? `“${loadedStage.name}” already matches the car.`
-          : 'Drag a slider to stage changes.');
+          : 'Move an engineer slider to stage changes.');
     } else {
       const parts = [];
       if (loadedStage) parts.push(`“${loadedStage.name}” loaded`);
@@ -1044,7 +1044,7 @@
         `Applied ${okCount} change${okCount === 1 ? '' : 's'}` +
         (skipped.length ? ` · ${skipped.length} skipped` : '');
       setTimeout(() => {
-        if (staged.size === 0) elStagedCount.textContent = 'Drag a slider to stage changes.';
+        if (staged.size === 0) elStagedCount.textContent = 'Move an engineer slider to stage changes.';
       }, 4000);
     } else {
       restage();
