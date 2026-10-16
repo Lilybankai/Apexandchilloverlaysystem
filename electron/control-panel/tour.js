@@ -372,6 +372,20 @@
             'can plan a bigger change in the pits and commit it in one go.',
         },
         {
+          id: 'history',
+          view: 'setups',
+          // The tab button is built at runtime; offline, the card's own
+          // "Setup history" button is the way in.
+          anchor: '.su-tabs__history',
+          altAnchor: '#setup-history-open',
+          title: 'Every version, and a way back',
+          body:
+            'History keeps each version of the setup for this car and track — your edits, the ' +
+            'engineer’s Applies, library tunes and changes made in the game’s own garage. Restore ' +
+            'stages the way back; Apply sends it.',
+          note: 'Fuel and pit-stop plans are never part of a version, so refuelling never clutters it.',
+        },
+        {
           id: 'library',
           view: 'setups',
           anchor: '#setup-library',

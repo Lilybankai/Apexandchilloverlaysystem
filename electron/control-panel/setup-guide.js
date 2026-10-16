@@ -39,7 +39,7 @@
    * the tab gains something a driver could not find on their own; not worth
    * doing for wording.
    */
-  const GUIDE_VERSION = '2'; // 2: the engineer's sliders split by corner speed
+  const GUIDE_VERSION = '2'; // 2: the engineer's sliders split by corner speed, and History
   const SEEN_KEY = 'apex.setup.guide.seen';
 
   /**
@@ -95,6 +95,18 @@
         'Nothing reaches the car while you drag. Affected rows preview old → new, and the counter says how much is staged.',
         'One Apply sends the lot; Revert forgets it. Settings the ruleset locks — and a bar you have detached, which the engineer never re-fits — are skipped, and say so.',
         'If changes land on a page you are not looking at, that tab button glows amber until you apply or revert — a staged edit cannot hide behind the tab you happen to have open.',
+      ],
+    },
+    {
+      id: 'history',
+      icon: 'clock',
+      title: 'Try anything — History keeps the way back',
+      lead: 'The History page, after the six garage pages, keeps every version of the setup for this car and track.',
+      points: [
+        'A version is saved when you Apply, when slider and ± edits settle for ten seconds, and when something changes in the game’s own garage screen — even with this tab closed.',
+        'Each row says who made it and what moved, in the sim’s own wording. Compare with now shows what going back would change.',
+        '“Restore this version” stages the way back like any other change: nothing reaches the car until Apply, and locked settings are skipped and named.',
+        'Fuel, virtual energy and pit-stop plans are never part of a version — refuelling between stints is not a setup change. History is readable with the sim closed too.',
       ],
     },
     {
