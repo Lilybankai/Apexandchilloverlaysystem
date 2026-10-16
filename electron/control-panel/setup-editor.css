@@ -538,6 +538,33 @@
   accent-color: var(--purple);
 }
 
+/* Group headings — "Corner balance" names its two ends, since a balance
+   slider's left and right are "stable" and "rotation", not less and more. */
+.su-macro-group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.su-macro-group:not(:first-child) {
+  margin-top: 6px;
+}
+
+.su-macro-group__title {
+  font: 600 11px/1 var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.su-macro-group__ends {
+  font: 400 10px/1 var(--font-mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 .su-staged {
   display: flex;
   align-items: center;

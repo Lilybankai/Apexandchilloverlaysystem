@@ -813,7 +813,13 @@
   function buildMacros() {
     elMacroList.textContent = '';
     macroSliders.clear();
+    let group = null;
     for (const macro of MACROAPI.MACROS) {
+      if (macro.group !== group) {
+        group = macro.group;
+        const heading = macroGroupHeading(group);
+        if (heading) elMacroList.appendChild(heading);
+      }
       const wrap = document.createElement('div');
       wrap.className = 'su-macro';
 
@@ -853,6 +859,65 @@
   }
 
   /**
+   * A group heading ("Corner balance", "Track & conditions"). Balance groups
+   * also name their two ends, because a balance slider's left and right mean
+   * "stable" and "rotation", not "less" and "more".
+   */
+  function macroGroupHeading(id) {
+    const g = (MACROAPI.GROUPS || []).find((x) => x.id === id);
+    if (!g) return null;
+    const head = document.createElement('div');
+    head.className = 'su-macro-group';
+    head.title = g.hint || '';
+    const title = document.createElement('span');
+    title.className = 'su-macro-group__title';
+    title.textContent = g.label;
+    head.appendChild(title);
+    if (Array.isArray(g.ends) && g.ends.length === 2) {
+      const ends = document.createElement('span');
+      ends.className = 'su-macro-group__ends';
+      ends.textContent = `← ${g.ends[0]} · ${g.ends[1]} →`;
+      head.appendChild(ends);
+    }
+    return head;
+  }
+
+  /** Which car the direction self-check remembers corrections for. */
+  function directionCarId() {
+    return (lastState && (lastState.carModel || lastState.car)) || '';
+  }
+
+  /** Per-car direction corrections the self-check has learned, for resolveMacro. */
+  function macroOpts() {
+    const DIRS = window.APEX_SETUP_DIRECTIONS;
+    return { flips: DIRS ? DIRS.flipsFor(directionCarId()) : null };
+  }
+
+  /**
+   * After an Apply: did each key's label move the way the direction table
+   * said it would? The sim's own wording is the evidence — "52.3:47.7" to
+   * "51.9:48.1" is rearward whatever the table believes. A contradiction is
+   * remembered for this car (macros use the corrected direction from then
+   * on) and logged; anything unparseable says nothing and changes nothing.
+   */
+  function selfCheckDirections(before, state) {
+    const DIRS = window.APEX_SETUP_DIRECTIONS;
+    if (!DIRS || !state || !Array.isArray(state.settings)) return;
+    for (const s of state.settings) {
+      const was = before.get(s.key);
+      if (!was || was.value === s.value) continue;
+      const r = DIRS.observe(s.key, was.value, was.stringValue, s.value, s.stringValue);
+      if (r.verdict !== 'disagree') continue;
+      const saved = DIRS.saveFlip(directionCarId(), r.family, r.observed);
+      console.warn(
+        `[setup] ${s.key} ran against the direction table on ${directionCarId() || 'this car'}: ` +
+          `${was.value} "${was.stringValue}" → ${s.value} "${s.stringValue}"` +
+          (saved ? ' — corrected for this car' : ''),
+      );
+    }
+  }
+
+  /**
    * Recomputes the whole staged overlay from the BASE values, plus a loaded
    * library tune (if any) underneath, plus every macro at its current clicks
    * on top, in panel order. Recomputing from scratch (rather than nudging)
@@ -884,10 +949,11 @@
 
     // 2 ─ macros compound on top.
     let skippedCount = 0;
+    const opts = macroOpts();
     for (const macro of MACROAPI.MACROS) {
       const clicks = macroClicks.get(macro.id) || 0;
       if (clicks === 0) continue;
-      const { changes, skipped } = MACROAPI.resolveMacro(macro, clicks, effective, carClass);
+      const { changes, skipped } = MACROAPI.resolveMacro(macro, clicks, effective, carClass, opts);
       skippedCount += skipped.length;
       for (const ch of changes) {
         staged.set(ch.key, ch.to);
@@ -929,7 +995,7 @@
       if (loadedStage) parts.push(`“${loadedStage.name}” loaded`);
       parts.push(`${staged.size} setting${staged.size === 1 ? '' : 's'} staged`);
       const skipped = (loadedStage ? loadedStage.skipped : 0) + (macroSkipped || 0);
-      if (skipped) parts.push(`${skipped} skipped (locked or not on this car)`);
+      if (skipped) parts.push(`${skipped} skipped (locked, detached or not on this car)`);
       if (loadedStage && loadedStage.warnings.length) parts.push(loadedStage.warnings.join('; '));
       elStagedCount.textContent = `${parts.join(' · ')} — Apply sends it to the car.`;
     }
@@ -971,6 +1037,7 @@
     if (res && res.state && res.state.connected) {
       const okCount = (res.results || []).filter((r) => r.ok).length;
       const skipped = (res.results || []).filter((r) => r.skipped);
+      selfCheckDirections(settingsMap, res.state); // settingsMap is still the pre-Apply car here
       applyState(res.state);
       restage(); // repaints rows, disarms the bar, clears the tab glow
       elStagedCount.textContent =
