@@ -324,6 +324,19 @@
     raceOnly = RL.races().filter((r) => !used.has(r.id));
   }
 
+  /**
+   * Races the game saved with Apex shut go back years on some PCs, and on
+   * Carl's outnumbered the sessions 210 to 147. Past a month they wait behind
+   * "Show older races" (Carl, 2026-10-19). Sessions are never hidden — they
+   * are what the tab is for — and a search reaches everything.
+   */
+  const OLDER_DAYS = 30;
+  const OLDER_KEY = 'apex.review.olderRaces';
+  let showOlder = false;
+  try { showOlder = window.localStorage.getItem(OLDER_KEY) === '1'; } catch { /* storage off: hidden */ }
+
+  const isOlderRace = (r) => r.startedAt < Date.now() / 1000 - OLDER_DAYS * 86400;
+
   /** Every entry for the rail, newest first: `{ at, session }` or `{ at, race }`. */
   function entries() {
     const out = [];
@@ -334,12 +347,21 @@
 
   function renderList() {
     if (!els.list) return;
-    const rows = entries().filter((e) => (e.session ? matchesFilter(e.session) : raceMatchesFilter(e.race)));
+    const matching = entries().filter((e) => (e.session ? matchesFilter(e.session) : raceMatchesFilter(e.race)));
+    // The open race stays listed even when it is an older one.
+    const searching = !!(els.search && els.search.value.trim());
+    const older = matching.filter((e) => e.race && isOlderRace(e.race) && e.race.id !== currentRace);
+    const rows = showOlder || searching ? matching : matching.filter((e) => !older.includes(e));
+    const olderBtn = older.length && !searching
+      ? `<button type="button" class="rvx-older" data-older>${showOlder
+        ? 'Hide older races'
+        : `Show ${older.length} older race${older.length === 1 ? '' : 's'}`}</button>`
+      : '';
 
     if (!rows.length) {
       els.list.innerHTML = `<p class="rv-empty" style="padding:20px 14px">${
         summaries.length || raceOnly.length ? 'Nothing matches that.' : 'No sessions yet.'
-      }</p>`;
+      }</p>${olderBtn}`;
       return;
     }
 
@@ -378,7 +400,7 @@
           </span>
         </button>`;
     }
-    els.list.innerHTML = html;
+    els.list.innerHTML = html + olderBtn;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -3031,7 +3053,12 @@
         const card = evt.target.closest('[data-session]');
         if (card) { void openSession(card.dataset.session); return; }
         const race = evt.target.closest('[data-race]');
-        if (race) openRace(race.dataset.race);
+        if (race) { openRace(race.dataset.race); return; }
+        if (evt.target.closest('[data-older]')) {
+          showOlder = !showOlder;
+          try { window.localStorage.setItem(OLDER_KEY, showOlder ? '1' : '0'); } catch { /* lasts the run */ }
+          renderList();
+        }
       });
     }
 

@@ -2947,3 +2947,19 @@
 /* A race-only card in the list: a race, with no type label of its own. */
 .rv__list .rl-rcard { border-left-color: var(--bad); }
 .rv__list .rl-rcard[data-active='true'] { border-left-color: var(--cyan); }
+
+/* Races older than a month, behind a button at the end of the list. */
+.rvx-older {
+  display: block;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 9px 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.rvx-older:hover { border-color: var(--cyan); color: var(--text); }
