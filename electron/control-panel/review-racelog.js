@@ -23,13 +23,18 @@
  * click on a row or a marker, ↑ ↓ / J K, Previous / Next) goes through
  * `select()`.
  *
- * ## Why a list of its own, and not a view on a session
+ * ## Where it lives: a tab of a race, inside Review
  * A race log is built from the game's results XML, not from our lap files.
- * Most of the 200-odd races on a driver's PC predate Apex, or were driven with
- * it closed, and so have no session in Review to hang off. So the races are a
- * tab of their own — the Race log tab, hosted by racelog-panel.js. A race
- * session in Review that DOES have a log gets a "Race log" button in its
- * header, which hands over to that tab.
+ * From 2026-09-30 it had a rail tab of its own; on 2026-10-19 it moved back
+ * into Review (Carl, after a tester asked for one session list with the race
+ * log and the review as tabs of it). Review's list now holds every session
+ * AND every race: a race session Apex recorded carries a Race log tab beside
+ * Overview and the rest, and a race the game saved with Apex not running —
+ * most of the 200-odd on a driver's PC — is listed on its own, with the race
+ * log as its only tab. review-panel.js owns the list and the header; this
+ * file paints the race log into the element it is handed (`mount`), with the
+ * result tiles on top only for a race-only entry (a session shows them on
+ * its Overview instead).
  *
  * ## Going through a race's incidents
  * The job after an official race is a steward's: every contact, limit and
@@ -37,12 +42,10 @@
  * it, [ and ] replay the incident before or after. Once this race's replay is
  * in the game, Previous / Next in the details card jump the replay too.
  *
- * racelog-panel.js owns the rail and the detail column and hands both to this
- * file. Nothing here polls: the replay status is a push, subscribed while a
- * log is open and dropped the moment it is not. And nothing here reaches the
- * game (replay status, availability, the push) unless the tab is on screen —
- * racelog-panel.js says when, through `shown()` / `hidden()` — so a panel
- * that reopens on the Race log tab costs nothing until it is looked at.
+ * Nothing here polls: the replay status is a push, subscribed while a log is
+ * open and dropped the moment it is not. And nothing here reaches the game
+ * (replay status, availability, the push) unless the Race log tab is on
+ * screen — review-panel.js says when, through `shown()` / `hidden()`.
  *
  * The progression chart is painted by review-charts.js (`drawRaceProgress`),
  * for the hex reason below.
@@ -131,10 +134,16 @@
    * no availability check, no status, no push.
    */
   let active = false;
+  /** The race the game was last asked about while shown; cleared on hide. */
+  let askedFor = null;
   let unsub = null;
   let copiedTimer = null;
 
-  /** Set by racelog-panel.js: `{ detail, rerenderList }`. */
+  /**
+   * Set by review-panel.js through `mount()`: `{ detail, rerenderList, hero }`.
+   * `detail` is the element the log is painted into; `hero` puts the result
+   * tiles on top (a race with no Apex session, so no Overview to hold them).
+   */
   let host = null;
   /** The chart's painters, when review-charts.js is on the page. */
   const CHARTS = window.APEX_REVIEW_CHARTS || null;
@@ -177,19 +186,7 @@
     return `${ms < 0 ? '−' : '+'}${(Math.abs(ms) / 1000).toFixed(3)}`;
   }
 
-  const DAY_FMT = { weekday: 'short', day: 'numeric', month: 'short' };
   const TIME_FMT = { hour: '2-digit', minute: '2-digit' };
-
-  function dayLabel(unixS) {
-    const d = new Date(unixS * 1000);
-    if (Number.isNaN(d.getTime())) return 'Unknown date';
-    const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-    const days = Math.round((midnight(new Date()) - midnight(d)) / 86400000);
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    const opts = d.getFullYear() === new Date().getFullYear() ? DAY_FMT : { ...DAY_FMT, year: 'numeric' };
-    return d.toLocaleDateString(undefined, opts);
-  }
 
   const clockLabel = (unixS) => {
     const d = new Date(unixS * 1000);
@@ -363,11 +360,6 @@
   /*  The rail                                                              */
   /* ---------------------------------------------------------------------- */
 
-  function matches(row, q) {
-    if (!q) return true;
-    return `${row.track} ${className(row.carClass)}`.toLowerCase().includes(q);
-  }
-
   /** `P16 / P4`: the overall place, and the class place in a multiclass race. */
   function placePair(overall, cls, multiclass) {
     if (!known(overall)) return '';
@@ -375,7 +367,7 @@
   }
 
   /** One race card: circuit, when, where it finished, and what it cost. */
-  function cardHtml(row) {
+  function cardHtml(row, on) {
     const mine = row.slot !== null && row.slot !== undefined;
     const cls = className(row.carClass);
     const multi = !!row.multiclass && cls;
@@ -399,7 +391,7 @@
     return `
         <button class="rv__card rl-rcard" type="button" data-race="${esc(row.id)}"
                 data-slot="${mine ? String(row.slot) : 'none'}"
-                data-active="${String(row.id === openId)}">
+                data-active="${String(!!on)}">
           <span class="rl-rcard__top">
             ${mapSvg(outlines[row.mapKey], 'rl-map--card')}
             <span class="rl-rcard__name">
@@ -420,33 +412,8 @@
         </button>`;
   }
 
-  /** The race cards for the rail, day-headed. */
-  function listHtml(query) {
-    if (listState === 'loading' && !races.length) {
-      return '<p class="rv-empty" style="padding:20px 14px">Reading the game’s results…</p>';
-    }
-    const q = String(query || '').trim().toLowerCase();
-    const rows = races.filter((r) => matches(r, q));
-    if (!rows.length) {
-      return `<p class="rv-empty" style="padding:20px 14px">${
-        races.length ? 'No race matches that.' : 'No races yet.'
-      }</p>`;
-    }
-    let html = '';
-    let day = '';
-    for (const row of rows) {
-      const d = dayLabel(row.startedAt);
-      if (d !== day) {
-        day = d;
-        html += `<div class="rv__day">${esc(d)}</div>`;
-      }
-      html += cardHtml(row);
-    }
-    return html;
-  }
-
   /* ---------------------------------------------------------------------- */
-  /*  The race: header and tiles                                            */
+  /*  The race: tiles                                                       */
   /* ---------------------------------------------------------------------- */
 
   function emptyState(icon, title, body) {
@@ -455,30 +422,6 @@
         <svg class="icon"><use href="#i-${icon}" /></svg>
         <b>${esc(title)}</b>
         <p>${body}</p>
-      </div>`;
-  }
-
-  function headHtml(l, summary) {
-    const track = (l && l.track) || (summary && summary.track) || 'Unknown circuit';
-    const at = (l && l.startedAt) || (summary && summary.startedAt) || 0;
-    const outline = (l && l.outline) || (summary && outlines[summary.mapKey]) || null;
-    const mine = l && l.slot !== null;
-    const st = mine ? statusOf(l.finishStatus) : null;
-    const sub = mine
-      ? [className(l.carClass), l.vehicle].filter(Boolean).map((s) => `<span>${esc(s)}</span>`).join('')
-      : '';
-    return `
-      <div class="rl-head">
-        ${mapSvg(outline, 'rl-map--head')}
-        <div class="rl-head__title">
-          <h2>${esc(track)}</h2>
-          <div class="rl-head__sub">
-            ${sub}
-            ${st ? `<span class="rl-status"${st.tone ? ` data-tone="${st.tone}"` : ''}>${esc(st.word)}</span>` : ''}
-            ${l && l.provisional ? '<span class="rl-status">Provisional</span>' : ''}
-          </div>
-        </div>
-        <span class="rl-head__when">${esc(dayLabel(at))} · ${esc(clockLabel(at))}</span>
       </div>`;
   }
 
@@ -1003,36 +946,22 @@
   function render() {
     if (!host || !host.detail) return;
     const el = host.detail;
-    const summary = races.find((r) => r.id === openId) || null;
 
-    if (!openId) {
-      el.innerHTML = listState === 'loading'
-        ? emptyState('clock', 'Reading the game’s results…', 'The first time takes a moment: every race on this PC is read once, then remembered.')
-        : races.length
-          ? emptyState('flag', 'Pick a race', 'Choose one on the left to read it back, lap by lap and incident by incident.')
-          : emptyState('flag', 'No races yet',
-            'Le Mans Ultimate saves a results file after every race it finishes. Race online or offline and it lands here, '
-            + 'with every contact, limits verdict and penalty on your car.');
-      return;
-    }
-    if (reading && !log) {
-      el.innerHTML = `<div class="rv-card rl-hero">${headHtml(null, summary)}</div>${emptyState('clock', 'Reading the race…', 'One moment.')}`;
+    if (!openId || (reading && !log)) {
+      el.innerHTML = emptyState('clock', 'Reading the race…', 'One moment.');
       return;
     }
     if (!log) {
-      el.innerHTML = `<div class="rv-card rl-hero">${headHtml(null, summary)}</div>${emptyState('alert', 'This race could not be read',
-        esc(readError || 'The results file is missing or unreadable. The game may have removed it.'))}`;
+      el.innerHTML = emptyState('alert', 'This race could not be read',
+        esc(readError || 'The results file is missing or unreadable. The game may have removed it.'));
       return;
     }
     if (log.slot === null || repick) {
-      el.innerHTML = `<div class="rv-card rl-hero">${headHtml(log, summary)}</div>${pickerHtml(log)}`;
+      el.innerHTML = pickerHtml(log);
       return;
     }
     el.innerHTML = `
-      <section class="rv-card rl-hero">
-        ${headHtml(log, summary)}
-        ${tilesHtml(log)}
-      </section>
+      ${host.hero ? `<section class="rv-card rl-hero">${tilesHtml(log)}</section>` : ''}
       ${progressHtml(log)}
       <div class="rl-split">
         ${timelineHtml()}
@@ -1571,6 +1500,26 @@
     paintChart();
   }
 
+  /** Nothing is being typed and nothing is open over the page. */
+  function keysAreOurs(evt) {
+    const t = evt.target;
+    if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return false;
+    return !document.querySelector(
+      '.su-guide:not([hidden]), .sheet:not([hidden]), .su-pop:not([hidden]), .tour:not([hidden])',
+    );
+  }
+
+  /** The log is on screen: mounted, attached, and the tab says it is shown. */
+  const onScreen = () => active && !!host && !!host.detail && host.detail.isConnected;
+
+  // The timeline's keys: ↑ ↓ / J K, Enter, [ and ]. On the document, so they
+  // work wherever focus is, and only while the Race log tab is on screen.
+  document.addEventListener('keydown', (evt) => {
+    if (!onScreen() || evt.defaultPrevented || !keysAreOurs(evt)) return;
+    onDocKey(evt);
+  });
+  window.addEventListener('resize', () => { if (onScreen()) paintChart(); });
+
   /** A pointer over a chart marker says it can be clicked. */
   function onMove(evt) {
     const t = evt.target;
@@ -1579,10 +1528,13 @@
   }
 
   /**
-   * The race log for a lap-log session, if the game saved one: a race that
-   * started inside the session's span. Our laps and the results file are
-   * written on the same PC, so the clocks agree to the second; twenty minutes
-   * of slack covers a formation lap and a late first timed lap.
+   * The race log for a lap-log session, if the game saved one: the race whose
+   * span overlaps the session's most. Our laps and the results file are
+   * written on the same PC, so the clocks agree to the second. An overlap,
+   * not "started near the session": a driver who takes over mid-race starts
+   * their session an hour or more after the race began (2026-10-19). A race
+   * with no end on record (a list from before 1.3.12) falls back to that old
+   * rule — started at most twenty minutes before the session, or during it.
    */
   function forSession(s) {
     if (!s || !races.length) return null;
@@ -1592,29 +1544,57 @@
     const to = Date.parse(s.endedAt || s.startedAt) / 1000;
     if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
     let best = null;
+    let bestScore = 0;
     for (const r of races) {
-      if (r.startedAt < from - 1200 || r.startedAt > to) continue;
-      if (!best || Math.abs(r.startedAt - from) < Math.abs(best.startedAt - from)) best = r;
+      let score = 0;
+      if (known(r.endedAt) && r.endedAt > r.startedAt) {
+        // Seconds of the session inside the race, plus one so a session of a
+        // single lap at the very end still counts.
+        const both = Math.min(to, r.endedAt) - Math.max(from, r.startedAt - 1200);
+        score = both >= 0 ? both + 1 : 0;
+      } else if (r.startedAt >= from - 1200 && r.startedAt <= to) {
+        score = 1 / (1 + Math.abs(r.startedAt - from));
+      }
+      // The game's own file over the recorder's provisional copy of the same
+      // race: the file has the whole field, the penalties and the replay.
+      if (r.provisional) score *= 0.25;
+      if (score > bestScore) { best = r; bestScore = score; }
     }
     return best;
   }
 
   window.APEX_REVIEW_RACELOG = {
-    /** racelog-panel.js hands over its detail column and a way to redraw the rail. */
+    /**
+     * review-panel.js hands over the element to paint into — a fresh one each
+     * time it draws the Race log tab — with `hero` and a way to redraw its
+     * list. The element's own listeners are wired once per element.
+     */
     mount(h) {
       host = h;
-      if (h && h.detail) {
-        h.detail.addEventListener('input', onInput);
-        h.detail.addEventListener('mousemove', onMove);
+      const el = h && h.detail;
+      if (el && !el.dataset.rlWired) {
+        el.dataset.rlWired = '1';
+        el.addEventListener('click', onClick);
+        // The picker's rows are buttons, so they answer Enter and Space.
+        el.addEventListener('keydown', onKey);
+        el.addEventListener('input', onInput);
+        el.addEventListener('mousemove', onMove);
       }
     },
     load,
     open,
     render,
-    listHtml,
-    onClick,
-    onKey,
-    onDocKey,
+    /** One race's card for Review's list. */
+    cardHtml: (row, on) => cardHtml(row, on),
+    /** Circuit outlines by key, as the list returned them. */
+    outlines: () => outlines,
+    /** Open the timeline on a tab before (or after) the log is painted. */
+    setFilter(id) {
+      if (!FILTERS.some((f) => f.id === id)) return;
+      filter = id;
+      try { window.localStorage.setItem(FILTER_KEY, filter); } catch { /* the choice lasts the run */ }
+      if (log && !visibleIndexes().includes(cursor)) cursor = incidentIndexes()[0] ?? -1;
+    },
     /** The chart re-fitted to its box, for a window resize. */
     repaint: paintChart,
     /** Review asks this to put a "Race log" button on a race session. */
@@ -1623,9 +1603,9 @@
     openId: () => openId,
     loading: () => listState === 'loading',
     /**
-     * The Race log tab is on screen. The push feed resumes while a log is
-     * open, and the game is asked afresh: pushes stopped while hidden, and
-     * the game may have started or quit since.
+     * The Race log tab is on screen (review-panel.js says so). The push feed
+     * resumes while a log is open, and the game is asked afresh: pushes
+     * stopped while hidden, and the game may have started or quit since.
      */
     shown() {
       active = true;
@@ -1633,9 +1613,26 @@
       subscribe();
       if (log && !reading) void askGame(openId);
     },
-    /** Off the tab: nothing listens while nothing is shown. */
+    /**
+     * Review drew its Race log tab for race `id` into the element last
+     * mounted: paint it, opening it first if it is another race. The game is
+     * asked about the replay once per showing, not on every redraw of the page
+     * around it (a lap list re-read, say).
+     */
+    show(id) {
+      if (!id) return;
+      const fresh = !active || askedFor !== id;
+      active = true;
+      askedFor = id;
+      if (openId !== id) { void open(id); return; }
+      render();
+      subscribe();
+      if (fresh && log && !reading) void askGame(id);
+    },
+    /** Off the tab, or off Review: nothing listens while nothing is shown. */
     hidden() {
       active = false;
+      askedFor = null;
       unsubscribe();
     },
     // The pure halves, for poking at from a console or a harness.

@@ -415,7 +415,8 @@ console.log('\nFeature catalog — the slugs are a contract');
     (m) => m[1],
   );
   const missing = inMarkup.filter((id) => !catalog.TABS.some((t) => t.id === id));
-  const extra = catalog.TABS.filter((t) => !inMarkup.includes(t.id)).map((t) => t.id);
+  // A retired tab keeps its entry so its history keeps its label.
+  const extra = catalog.TABS.filter((t) => !t.retired && !inMarkup.includes(t.id)).map((t) => t.id);
   check('every tab in the panel is in the catalog', missing.length === 0, missing.join(',') || 'none');
   check('and the catalog invents none', extra.length === 0, extra.join(',') || 'none');
 }

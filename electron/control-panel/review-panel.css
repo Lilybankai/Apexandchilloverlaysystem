@@ -40,8 +40,7 @@
    times. Capped rather than uncapped (the pit wall's answer for the Team tab)
    because the report and the charts above it are still prose-shaped and stop
    reading well much past this. */
-.view[data-view="review"] .wrap--wide,
-.view[data-view="racelog"] .wrap--wide { max-width: 1520px; }
+.view[data-view="review"] .wrap--wide { max-width: 1520px; }
 
 .rv {
   display: grid;
@@ -1046,35 +1045,27 @@
  */
 .view[data-view='review'] .rv__list,
 .view[data-view='review'] .rv-sheet__scroll,
-.view[data-view='review'] .rv-micro,
-.view[data-view='racelog'] .rv__list,
-.view[data-view='racelog'] .rv-sheet__scroll {
+.view[data-view='review'] .rv-micro {
   scrollbar-width: thin;
   scrollbar-color: var(--line-2) transparent;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar,
-.view[data-view='racelog'] .rv__list::-webkit-scrollbar,
-.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar-track,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-track,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar-track,
-.view[data-view='racelog'] .rv__list::-webkit-scrollbar-track,
-.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar-track {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .view[data-view='review'] .rv__list::-webkit-scrollbar-thumb,
 .view[data-view='review'] .rv-sheet__scroll::-webkit-scrollbar-thumb,
-.view[data-view='review'] .rv-micro::-webkit-scrollbar-thumb,
-.view[data-view='racelog'] .rv__list::-webkit-scrollbar-thumb,
-.view[data-view='racelog'] .rv-sheet__scroll::-webkit-scrollbar-thumb {
+.view[data-view='review'] .rv-micro::-webkit-scrollbar-thumb {
   background: var(--line-2);
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1083,15 +1074,12 @@
 
 .view[data-view='review'] .rv__list:hover::-webkit-scrollbar-thumb,
 .view[data-view='review'] .rv-sheet__scroll:hover::-webkit-scrollbar-thumb,
-.view[data-view='review'] .rv-micro:hover::-webkit-scrollbar-thumb,
-.view[data-view='racelog'] .rv__list:hover::-webkit-scrollbar-thumb,
-.view[data-view='racelog'] .rv-sheet__scroll:hover::-webkit-scrollbar-thumb {
+.view[data-view='review'] .rv-micro:hover::-webkit-scrollbar-thumb {
   background: var(--text-3);
   background-clip: content-box;
 }
 
-.view[data-view='review'] ::-webkit-scrollbar-corner,
-.view[data-view='racelog'] ::-webkit-scrollbar-corner { background: transparent; }
+.view[data-view='review'] ::-webkit-scrollbar-corner { background: transparent; }
 
 /* ============================== CAREER ==================================
  *
@@ -1578,8 +1566,7 @@
  */
 
 /* The tab uses the width it is given. */
-.view[data-view='review'] .wrap--wide,
-.view[data-view='racelog'] .wrap--wide { max-width: none; }
+.view[data-view='review'] .wrap--wide { max-width: none; }
 
 /* ---- lap mode fills the window ------------------------------------------
    `.content` is the panel's scroller and a flex item with a definite height,
@@ -1984,8 +1971,8 @@
 
 /* ============================== RACE LOG ================================
  *
- * docs/RACE-LOG-PLAN.md phase 3, painted by review-racelog.js on the Race log
- * tab (racelog-panel.js). A race read back as a timeline: race time · lap ·
+ * docs/RACE-LOG-PLAN.md phase 3, painted by review-racelog.js into Review's
+ * Race log tab (since 2026-10-19). A race read back as a timeline: race time · lap ·
  * kind · what happened. The tab reuses Review's frame — the rail, the cards,
  * the sheet — so everything above this heading applies to it too.
  *
@@ -2085,7 +2072,7 @@
   .rv .rv__rail { position: static; max-height: 340px; }
 }
 
-/* ---- the race page, 2026-10-19 ---------------------------------------------
+/* ---- the race log, 2026-10-19 ----------------------------------------------
  *
  * Carl's two concepts, merged: the summary page's rail cards, header and
  * tiles; the workspace's progression chart with the incidents on the line and
@@ -2093,10 +2080,6 @@
  * how it went, how it unfolded, what happened — and one selected event that
  * the timeline, the chart and the details card all agree on.
  */
-
-/* The detail column decides its own layout from its own width, not the
-   window's: the rail beside it takes 300px or nothing. */
-.view[data-view='racelog'] .rv__detail { container: rldetail / inline-size; }
 
 /* A circuit, drawn: the Schedule tab's stroke, sized by its box. */
 .rl-map { flex: 0 0 auto; display: block; }
@@ -2164,42 +2147,7 @@
 .rl-rcard__meta b { display: block; font-weight: 400; color: var(--text-2); }
 .rl-rcard__which { font-size: 12px; color: var(--text-3); }
 
-/* ---- header and tiles ---- */
-.rl-head { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
-.rl-head__title { min-width: 0; flex: 1 1 auto; }
-.rl-head h2 {
-  margin: 0 0 4px;
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-.rl-head__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; color: var(--text-2); font-size: 13px; }
-.rl-head__sub > span:not(.rl-status) + span:not(.rl-status)::before {
-  content: '';
-  display: inline-block;
-  width: 1px;
-  height: 12px;
-  background: var(--line-2);
-  margin: 0 10px;
-  vertical-align: -1px;
-}
-.rl-status {
-  margin-left: 12px;
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line-2);
-  color: var(--text-2);
-}
-.rl-status[data-tone='ok'] { color: var(--ok); background: rgba(53, 208, 127, 0.1); border-color: rgba(53, 208, 127, 0.4); }
-.rl-status[data-tone='bad'] { color: var(--bad); background: rgba(255, 84, 112, 0.1); border-color: rgba(255, 84, 112, 0.4); }
-.rl-head__when { align-self: flex-start; color: var(--text-3); font-size: 12px; white-space: nowrap; }
-
+/* ---- the result tiles (a race with no Apex session) ---- */
 .rl-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .rl-tile {
   display: flex;
@@ -2929,3 +2877,73 @@
   .rvx-quad { grid-template-columns: 1fr 1fr; }
   .rvx-fact { padding: 0 10px; }
 }
+
+/* ---- the race log inside Review (2026-10-19) ----------------------------- */
+
+/* Its own width decides its layout, as it did on its own tab. */
+.rvx-racelog { container: rldetail / inline-size; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.rvx-head__note { margin: 0 0 12px; font-size: 12.5px; color: var(--text-3); }
+.rvx-head .rvx-tabs + .rvx-head__note { margin-top: 12px; }
+
+/* A race session's result, on its Overview. */
+.rvx-race {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 0;
+}
+.rvx-place {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 22px;
+  border-left: 1px solid var(--line);
+}
+.rvx-place:first-child { padding-left: 0; border-left: none; }
+.rvx-place span {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvx-place b {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.rvx-place b i { font-style: normal; color: var(--text-3); font-weight: 400; }
+.rvx-place b em { font-style: normal; color: var(--cyan); font-weight: 700; }
+.rvx-place b small { font-size: 13px; font-weight: 600; }
+.rvx-place b small[data-dir='gain'] { color: var(--ok); }
+.rvx-place b small[data-dir='loss'] { color: var(--bad); }
+.rvx-place__status { font-size: 15px !important; padding-top: 5px; }
+.rvx-place__status[data-tone='ok'] { color: var(--ok) !important; }
+.rvx-place__status[data-tone='bad'] { color: var(--bad) !important; }
+.rvx-race__counts { display: flex; gap: 0; padding: 0 22px; border-left: 1px solid var(--line); }
+.rvx-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0 14px 0 0;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font: inherit;
+  cursor: pointer;
+}
+.rvx-count + .rvx-count { padding-left: 14px; border-left: 1px solid var(--line); }
+.rvx-count b { font-family: var(--font-display); font-size: 22px; line-height: 1.15; }
+.rvx-count span { font-size: 11.5px; white-space: nowrap; }
+.rvx-count:hover span { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.rvx-count[data-tone='bad'] b { color: var(--bad); }
+.rvx-count[data-tone='warn'] b { color: var(--warn); }
+.rvx-count[data-tone='text'] b { color: var(--text); }
+.rvx-race > .btn { margin-left: auto; }
+
+/* A race-only card in the list: a race, with no type label of its own. */
+.rv__list .rl-rcard { border-left-color: var(--bad); }
+.rv__list .rl-rcard[data-active='true'] { border-left-color: var(--cyan); }

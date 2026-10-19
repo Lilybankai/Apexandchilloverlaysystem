@@ -182,6 +182,13 @@ export interface RaceLogSummary {
   multiclass: boolean;
   /** Metres; 0 when unknown (a provisional race). Picks the card's outline. */
   trackLength: number;
+  /**
+   * Unix seconds by which the race was over (a little after the last line of
+   * the file, or the recorder's last write). With `startedAt` it is the span
+   * Review lays its sessions against: a stint taken over mid-race starts well
+   * after the race did, and only an overlap finds it.
+   */
+  endedAt: number;
 }
 
 /** What the replay jump is doing, for the button and its status line. */

@@ -6968,16 +6968,6 @@
     // leaving drops the lap view's listeners.
     if (target === 'practice') window.apexPractice?.shown();
     else window.apexPractice?.hidden();
-    // The Race log tab, same contract: arriving lists the game's results and
-    // resumes the replay pushes for an open race; leaving drops them. Nothing
-    // on it reaches the game while it is hidden.
-    if (target === 'racelog') {
-      window.apexRaceLog?.shown();
-      window.APEX_RACELOG_GUIDE?.maybeAutoOpen();
-    } else {
-      window.apexRaceLog?.hidden();
-      window.APEX_RACELOG_GUIDE?.cancelAutoOpen();
-    }
     // The VR tab's walkthrough. Most of what makes VR "not work" happens in
     // Steam and the headset, where nothing on the page can point, so the
     // first visit gets the preconditions before anything else.
@@ -7058,6 +7048,8 @@
   let restored = 'dashboard';
   try {
     restored = localStorage.getItem(TAB_STORAGE_KEY) || 'dashboard';
+    // The Race log tab folded into Review on 2026-10-19.
+    if (restored === 'racelog') restored = 'review';
   } catch {
     /* storage disabled */
   }

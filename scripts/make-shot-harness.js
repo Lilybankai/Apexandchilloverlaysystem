@@ -62,17 +62,18 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     if (skfilter === 'all' || skfilter === 'upcoming') {
       localStorage.setItem('apex.panel.scheduleFilter', skfilter);
     }
-    // ?racelog=first|picker|<results file> lands on the Race log tab (?tab=
-    // racelog is implied; the first-visit guide is marked read so it does not
-    // sit over the shot — ?tab=racelog on its own shows the guide).
-    // ?rlfilter=incidents|contacts|penalties|positions|laps|pit seeds the
+    // ?racelog=first|picker|<results file> lands on Review with the race's
+    // Race log tab (the race log lives there since 2026-10-19; Review's
+    // first-visit guide is marked read so it does not sit over the shot).
+    // ?rlfilter=key|all|contacts|penalties|positions|laps|pit seeds the
     // timeline's filter the same way the panel remembers it.
     if (q.get('racelog')) {
-      if (!q.get('tab')) localStorage.setItem('apex.panel.tab', 'racelog');
-      localStorage.setItem('apex.racelog.guide.seen', '1');
+      if (!q.get('tab')) localStorage.setItem('apex.panel.tab', 'review');
+      localStorage.setItem('apex.review.tab', 'racelog');
+      localStorage.setItem('apex.review.guide.seen', '2');
       const rlf = q.get('rlfilter');
-      if (rlf) localStorage.setItem('apex.review.racelogFilter', rlf);
-      else localStorage.removeItem('apex.review.racelogFilter');
+      if (rlf) localStorage.setItem('apex.racelog.filter', rlf);
+      else localStorage.removeItem('apex.racelog.filter');
     }
     // ?fuel=<classId>[,<layoutId>] seeds the Fuel tab's saved calculator so a
     // screenshot lands on a real selection. Without it the tab opens empty and
@@ -1402,9 +1403,9 @@ fs.writeFileSync(
   html.replace(marker, `${marker}<script src="__shot-stub.js"></script>`),
 );
 console.log('wrote electron/control-panel/__shot-harness.html + __shot-stub.js');
-console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|racelog|schedule|settings>&pane=<general|display|controls|account>');
+console.log('serve the control-panel dir over http (NOT file://) and open __shot-harness.html?tab=<dashboard|review|schedule|settings>&pane=<general|display|controls|account>');
 console.log('  the lap view: ?tab=review&lap=1[&ref=12|&vs=1][&big=1][&sq=5][&scrub=0.34][&hold=1]');
 console.log('  the schedule: ?tab=schedule[&source=daily|league][&mode=next|calendar][&zone=utc]');
-console.log('  race logs: ?racelog=first|picker|<file>[&rlfilter=incidents][&rlpick=9]' +
+console.log('  race logs (inside Review): ?racelog=first|picker|<file>[&rlfilter=key][&rlpick=9]' +
   '[&replayclick=1&replay=loading|ready|blocked|error|closed|busy][&replay=unavailable|offline]' +
-  '[&rlkeys=down,down,],enter]   (?tab=racelog alone: the first-visit guide)');
+  '[&rlkeys=down,down,],enter]');

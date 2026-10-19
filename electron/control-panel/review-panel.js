@@ -42,9 +42,10 @@
   const CHARTS = window.APEX_REVIEW_CHARTS;
   if (!CHARTS) return;
   /**
-   * The race logs (review-racelog.js). They live on their own tab now
-   * (racelog-panel.js); this tab only asks them one thing — whether a race
-   * session has a log — to put the "Race log" button on its header.
+   * The race logs (review-racelog.js), painted into this tab since
+   * 2026-10-19: a race session the game saved results for has a Race log
+   * tab, and a race the game saved with Apex not running is listed on its
+   * own. This file owns the list and the header; the log paints itself.
    */
   const RL = window.APEX_REVIEW_RACELOG || null;
 
@@ -63,6 +64,15 @@
   let summaries = [];
   /** Circuit outlines by bundled key, `{ d, view }`: what `summaries[].mapKey` names. */
   let outlines = {};
+  /**
+   * The race logs, laid against the sessions: `raceOf` is session id → the
+   * race summary it was (see RL.forSession), `raceOnly` the races no session
+   * matched — driven with Apex shut, or before it was installed.
+   */
+  const raceOf = new Map();
+  let raceOnly = [];
+  /** A race-only entry on screen: its race id. Exclusive with `currentId`. */
+  let currentRace = null;
   /** The session currently open, in full. */
   let current = null;
   let currentId = null;
@@ -289,25 +299,63 @@
     return `${row.track} ${row.car} ${row.carClass}`.toLowerCase().includes(q);
   }
 
+  /** A race-only entry against the search and the type filter: it is a race. */
+  function raceMatchesFilter(r) {
+    const type = els.filter ? els.filter.value : 'all';
+    if (type !== 'all' && type !== 'race') return false;
+    const q = (els.search ? els.search.value : '').trim().toLowerCase();
+    if (!q) return true;
+    return `${r.track} ${r.carClass || ''}`.toLowerCase().includes(q);
+  }
+
+  /** Lay the race logs against the sessions. Cheap: a few hundred of each. */
+  function mergeRaces() {
+    raceOf.clear();
+    raceOnly = [];
+    if (!RL) return;
+    const used = new Set();
+    for (const s of summaries) {
+      const r = RL.forSession(s);
+      if (r && !used.has(r.id)) {
+        raceOf.set(s.id, r);
+        used.add(r.id);
+      }
+    }
+    raceOnly = RL.races().filter((r) => !used.has(r.id));
+  }
+
+  /** Every entry for the rail, newest first: `{ at, session }` or `{ at, race }`. */
+  function entries() {
+    const out = [];
+    for (const s of summaries) out.push({ at: Date.parse(s.startedAt) / 1000, session: s });
+    for (const r of raceOnly) out.push({ at: r.startedAt, race: r });
+    return out.sort((a, b) => b.at - a.at);
+  }
+
   function renderList() {
     if (!els.list) return;
-    const rows = summaries.filter(matchesFilter);
+    const rows = entries().filter((e) => (e.session ? matchesFilter(e.session) : raceMatchesFilter(e.race)));
 
     if (!rows.length) {
       els.list.innerHTML = `<p class="rv-empty" style="padding:20px 14px">${
-        summaries.length ? 'No session matches that.' : 'No sessions yet.'
+        summaries.length || raceOnly.length ? 'Nothing matches that.' : 'No sessions yet.'
       }</p>`;
       return;
     }
 
     let html = '';
     let day = '';
-    for (const row of rows) {
-      const d = dayLabel(row.startedAt);
+    for (const entry of rows) {
+      const d = dayLabel(new Date(entry.at * 1000).toISOString());
       if (d !== day) {
         day = d;
         html += `<div class="rv__day">${esc(d)}</div>`;
       }
+      if (entry.race) {
+        html += RL.cardHtml(entry.race, entry.race.id === currentRace);
+        continue;
+      }
+      const row = entry.session;
       const laps = `${row.laps} lap${row.laps === 1 ? '' : 's'}`;
       const stints = row.stints > 1 ? ` · ${row.stints} stints` : '';
       html += `
@@ -552,7 +600,24 @@
     { id: 'laps', label: 'Laps &amp; stints' },
     { id: 'tyres', label: 'Tyres &amp; fuel' },
     { id: 'compare', label: 'Compare' },
+    { id: 'racelog', label: 'Race log', race: true },
   ];
+
+  /** The tabs this session has: Race log only when the game saved the race. */
+  const tabsFor = (s) => TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
+
+  /** The tab to draw: the one remembered, unless this session lacks it. */
+  function tabFor(s) {
+    return tabsFor(s).some((t) => t.id === subTab) ? subTab : 'overview';
+  }
+
+  function tabsHtml(list, on) {
+    return `
+        <nav class="rvx-tabs" aria-label="Which part of the session">
+          ${list.map((t) => `<button type="button" data-rvtab="${t.id}" data-active="${String(t.id === on)}"
+            ${t.id === on ? 'aria-current="page"' : ''}>${t.label}</button>`).join('')}
+        </nav>`;
+  }
 
   /** A circuit's outline as inline SVG, or '' — the Race log's drawing. */
   function mapSvg(outline, cls) {
@@ -578,13 +643,74 @@
           </div>
           <div class="rvx-head__end">
             <span class="rv-head__when">${esc(dayLabel(s.startedAt))} · ${esc(clockLabel(s.startedAt))}</span>
-            ${raceLogLink(s)}
           </div>
         </div>
-        <nav class="rvx-tabs" aria-label="Which part of the session">
-          ${TABS.map((t) => `<button type="button" data-rvtab="${t.id}" data-active="${String(t.id === subTab)}"
-            ${t.id === subTab ? 'aria-current="page"' : ''}>${t.label}</button>`).join('')}
-        </nav>
+        ${tabsHtml(tabsFor(s), tabFor(s))}
+      </section>`;
+  }
+
+  /**
+   * A race the game saved with Apex not running: no laps of ours to review,
+   * so the race log is its one tab, and the header says why.
+   */
+  function raceHeaderHtml(r) {
+    const at = new Date(r.startedAt * 1000).toISOString();
+    const cls = String(r.carClass || '').replace(/_/g, ' ').trim();
+    return `
+      <section class="rv-card rvx-head">
+        <div class="rvx-head__row">
+          ${mapSvg(RL.outlines()[r.mapKey], 'rl-map--head')}
+          <div class="rvx-head__title">
+            <h2>${esc(r.track || 'Unknown circuit')}</h2>
+            <div class="rvx-head__sub">
+              ${[cls, 'Race'].filter(Boolean).map((b) => `<span>${esc(b)}</span>`).join('')}
+              ${r.provisional ? '<span class="rv-pill">Provisional</span>' : ''}
+            </div>
+          </div>
+          <div class="rvx-head__end">
+            <span class="rv-head__when">${esc(dayLabel(at))} · ${esc(clockLabel(at))}</span>
+          </div>
+        </div>
+        ${tabsHtml(TABS.filter((t) => t.race), 'racelog')}
+        <p class="rvx-head__note">Apex was not running for this race, so there are no laps of yours to review —
+          only the game’s own record of it.</p>
+      </section>`;
+  }
+
+  /**
+   * The race's result on its session's Overview: where it started and
+   * finished, and what it cost. The counts open the Race log on them.
+   */
+  function raceResultHtml(r) {
+    if (!r || r.slot === null || r.slot === undefined) return '';
+    const cls = String(r.carClass || '').replace(/_/g, ' ').trim();
+    const place = (label, grid, fin) => {
+      const moved = known(grid) && known(fin) ? grid - fin : null;
+      return `
+        <div class="rvx-place">
+          <span>${esc(label)}</span>
+          <b>${known(grid) ? `P${grid} <i>→</i> ` : ''}<em>${known(fin) ? `P${fin}` : dash}</em>${moved
+            ? ` <small data-dir="${moved > 0 ? 'gain' : 'loss'}">${moved > 0 ? '+' : '−'}${Math.abs(moved)}</small>` : ''}</b>
+        </div>`;
+    };
+    const count = (n, word, tone, f) => `
+        <button type="button" class="rvx-count" data-rvrace="${f}"${n ? ` data-tone="${tone}"` : ''}
+                title="Show these in the race log"><b>${n}</b><span>${esc(word)}</span></button>`;
+    const finished = /^finished/i.test(String(r.finishStatus || ''));
+    return `
+      <section class="rv-card rvx-race">
+        ${place(r.multiclass ? 'Overall' : 'Position', r.gridPosition, r.finishPosition)}
+        ${r.multiclass && cls ? place(`Class (${cls})`, r.gridClassPosition, r.finishClassPosition) : ''}
+        <div class="rvx-place"><span>Result</span><b class="rvx-place__status" data-tone="${finished ? 'ok' : 'bad'}">${
+          esc(finished ? 'Finished' : (r.finishStatus || dash))}</b></div>
+        <div class="rvx-race__counts">
+          ${count(r.contacts || 0, r.contacts === 1 ? 'contact' : 'contacts', 'bad', 'contacts')}
+          ${count(r.limits || 0, 'track limits', 'warn', 'penalties')}
+          ${count(r.penalties || 0, r.penalties === 1 ? 'penalty' : 'penalties', 'text', 'penalties')}
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-rvtab="racelog">
+          <svg class="icon"><use href="#i-scroll-text" /></svg><span>Race log</span>
+        </button>
       </section>`;
   }
 
@@ -679,6 +805,7 @@
 
   function overviewHtml(s) {
     return `
+      ${raceResultHtml(raceOf.get(s.id))}
       ${kpisHtml(s)}
       <div class="rvx-grid">
         <section class="rv-card rvx-card">
@@ -2560,6 +2687,10 @@
   function renderDetail() {
     if (!els.detail) return;
     if (chartOff) { chartOff(); chartOff = null; }
+    // The race log listens to the game only while its tab is drawn.
+    const raceDrawn = !lapView && !!RL
+      && (!!currentRace || (!!current && tabFor(current) === 'racelog'));
+    if (RL && !raceDrawn) RL.hidden();
     // The lap view is a cockpit that fills the window; the session view is a
     // page that scrolls. The CSS keys off this, hiding the tab's heading and
     // the career strip while a lap is open so the charts get the height.
@@ -2567,11 +2698,23 @@
 
     // Only when there is nothing already on screen: re-reading the list on
     // every visit must not blank a session the driver is still looking at.
-    if (loading && !current) {
+    if (loading && !current && !currentRace) {
       els.detail.innerHTML = emptyState('clock', 'Reading your laps…', 'One moment.');
       return;
     }
-    if (!summaries.length) {
+    // A race-only entry: the race log is all there is.
+    if (currentRace && RL) {
+      const race = raceOnly.find((r) => r.id === currentRace) || RL.races().find((r) => r.id === currentRace);
+      if (race) {
+        if (els.view) els.view.setAttribute('data-mode', 'session');
+        els.detail.innerHTML = `
+          ${raceHeaderHtml(race)}
+          <div class="rvx-body" data-tab="racelog"><div class="rvx-racelog"></div></div>`;
+        showRaceLog(race.id, true);
+        return;
+      }
+    }
+    if (!summaries.length && !raceOnly.length) {
       els.detail.innerHTML = emptyState(
         'flag',
         'No sessions yet',
@@ -2584,7 +2727,7 @@
       els.detail.innerHTML = emptyState(
         'list-ordered',
         'Pick a session',
-        'Choose one on the left to see its report, its lap times and every stint you drove.',
+        'Choose one on the left to see its report, its lap times, every stint you drove and, for a race, its race log.',
       );
       return;
     }
@@ -2609,34 +2752,31 @@
     }
 
     const s = current;
+    const tab = tabFor(s);
     let body = '';
-    if (subTab === 'laps') body = lapsTabHtml(s);
-    else if (subTab === 'tyres') body = tyresTabHtml(s);
-    else if (subTab === 'compare') body = compareTabHtml(s);
+    if (tab === 'laps') body = lapsTabHtml(s);
+    else if (tab === 'tyres') body = tyresTabHtml(s);
+    else if (tab === 'compare') body = compareTabHtml(s);
+    else if (tab === 'racelog') body = '<div class="rvx-racelog"></div>';
     else body = overviewHtml(s);
 
     els.detail.innerHTML = `
       ${headerHtml(s)}
-      ${refBarHtml()}
-      <div class="rvx-body" data-tab="${subTab}">${body}</div>
+      ${tab === 'racelog' ? '' : refBarHtml()}
+      <div class="rvx-body" data-tab="${tab}">${body}</div>
     `;
 
-    paintCharts();
+    if (tab === 'racelog') showRaceLog(raceOf.get(s.id).id, false);
+    else paintCharts();
   }
 
-  /**
-   * "Race log" on a race session the game saved results for. The race lives
-   * on the Race log tab; this is the short way to it from here, and the
-   * click hands over to that tab with the race already open.
-   */
-  function raceLogLink(s) {
-    const race = RL ? RL.forSession(s) : null;
-    if (!race) return '';
-    return `
-      <button type="button" class="btn btn--ghost btn--sm" data-racelog="${esc(race.id)}"
-              title="Every contact, limits verdict and penalty in this race, in order">
-        <svg class="icon"><use href="#i-scroll-text" /></svg><span>Race log</span>
-      </button>`;
+  /** Hand the race log its element, and the race to paint into it. */
+  function showRaceLog(id, hero) {
+    const el = els.detail && els.detail.querySelector('.rvx-racelog');
+    if (!el || !RL) return;
+    // A car picked in the log changes what its card says: merge again.
+    RL.mount({ detail: el, hero, rerenderList: () => { mergeRaces(); renderList(); } });
+    if (visible) RL.show(id);
   }
 
   /**
@@ -2774,6 +2914,9 @@
     loading = true;
     renderDetail();
     const keep = currentId;
+    // The races alongside, from main's cache of the results files (after the
+    // first visit, a directory listing). No game call rides on it.
+    const racesRead = RL ? RL.load().catch(() => []) : Promise.resolve([]);
     try {
       const res = await window.apex.reviewSessions();
       summaries = (res && Array.isArray(res.sessions)) ? res.sessions : [];
@@ -2783,6 +2926,8 @@
       summaries = [];
       career = null;
     }
+    await racesRead;
+    mergeRaces();
     renderCareer();
     loadedOnce = true;
     loading = false;
@@ -2792,11 +2937,30 @@
       currentId = null;
       current = null;
     }
+    if (currentRace && !raceOnly.some((r) => r.id === currentRace)) currentRace = null;
     renderList();
-    // Land on the most recent session: it is what the driver just finished and
+    // Land on the most recent entry: it is what the driver just finished and
     // came here to look at. Anything else makes them click before they can read.
-    if (!currentId && summaries.length) await openSession(summaries[0].id);
-    else renderDetail();
+    if (!currentId && !currentRace) {
+      const first = entries()[0];
+      if (first && first.session) await openSession(first.session.id);
+      else if (first && first.race) openRace(first.race.id);
+      else renderDetail();
+    } else {
+      renderDetail();
+    }
+  }
+
+  /** A race-only entry: its header and its race log. */
+  function openRace(id) {
+    if (!id) return;
+    if (lapOff) { lapOff(); lapOff = null; }
+    lapView = null;
+    currentId = null;
+    current = null;
+    currentRace = id;
+    renderList();
+    renderDetail();
   }
 
   async function openSession(id) {
@@ -2805,6 +2969,7 @@
     if (lapOff) { lapOff(); lapOff = null; }
     lapView = null;
     currentId = id;
+    currentRace = null;
     current = null;
     // The session's own reference goes with the session; the circuit's pin
     // does not — that is the whole point of pinning.
@@ -2864,21 +3029,29 @@
     if (els.list) {
       els.list.addEventListener('click', (evt) => {
         const card = evt.target.closest('[data-session]');
-        if (card) void openSession(card.dataset.session);
+        if (card) { void openSession(card.dataset.session); return; }
+        const race = evt.target.closest('[data-race]');
+        if (race) openRace(race.dataset.race);
       });
     }
 
     if (els.detail) {
       els.detail.addEventListener('click', (evt) => {
-        // Over to the Race log tab, with this race open on arrival.
-        const toRace = evt.target.closest('[data-racelog]');
-        if (toRace) { window.apexRaceLog?.openRace(toRace.dataset.racelog); return; }
+        // Inside the race log, its own handler (review-racelog.js) has it.
+        if (evt.target.closest('.rvx-racelog')) return;
+        // A count on the race result: the race log, on those.
+        const raceCount = evt.target.closest('[data-rvrace]');
+        if (raceCount && current && RL) {
+          RL.setFilter(raceCount.dataset.rvrace);
+          setTab('racelog');
+          return;
+        }
         if (evt.target.closest('[data-lapback]')) {
           closeLap();
           return;
         }
         const tabBtn = evt.target.closest('[data-rvtab]');
-        if (tabBtn && current && !lapView) {
+        if (tabBtn && (current || currentRace) && !lapView) {
           setTab(tabBtn.dataset.rvtab);
           return;
         }
@@ -3126,21 +3299,8 @@
       // Always re-read. Sessions land while the driver is in the sim, not while
       // they are looking at this window, so arriving IS the refresh event — and
       // the whole lap log is a few hundred kilobytes, read in one pass.
+      // The races come with it (see readList).
       void loadList(true);
-      // The races too, in the background: main caches every results file by
-      // mtime, so after the first visit this is a directory listing. It is
-      // what puts the Race log button on a race session's header. No game
-      // call rides on it — those are the Race log tab's, and only while it
-      // is on screen.
-      if (RL) {
-        void RL.load().then(() => {
-          if (!visible) return;
-          if (!lapView && current && RL.forSession(current)
-              && els.detail && !els.detail.querySelector('[data-racelog]')) {
-            renderDetail();
-          }
-        });
-      }
     },
     /**
      * Open one of the driver's laps against a leaderboard row — the
@@ -3178,6 +3338,7 @@
     /** …and this on the way out. Nothing here runs while the tab is hidden. */
     hidden() {
       visible = false;
+      if (RL) RL.hidden();
       if (chartOff) { chartOff(); chartOff = null; }
       if (lapOff) { lapOff(); lapOff = null; }
     },

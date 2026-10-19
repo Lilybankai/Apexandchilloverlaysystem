@@ -52,7 +52,7 @@
       title: 'Every session you have driven is already in here',
       lead: 'Apex has been writing a file for every lap since the day you installed it. This tab reads those files back — nothing is uploaded, nothing needs an account, and nothing is ever thrown away.',
       points: [
-        'The rail on the left is one card per session: the circuit, the car, your best lap in it, how many laps and how many stints. Newest at the top.',
+        'The rail on the left is one card per session: the circuit, the car, your best lap in it, how many laps and how many stints. Newest at the top. Races the game saved while Apex was not running are in the list too, with where you finished.',
         'The box above it searches by track or by car, and the dropdown narrows to practice, qualifying or race.',
         'The strip across the top is your whole career on this PC — laps, distance, hours at the wheel, and the circuit you have driven most.',
         'Sessions land while you are in the sim, not while you are looking at this page, so opening the tab IS the refresh. Refresh at the top right is only there for a session driven with the window already open.',
@@ -81,6 +81,31 @@
         'A lap with the small trace mark has telemetry behind it, and Study this lap opens it.',
         'The vs button at the end of a row makes that lap the reference for the whole session — every lap you open afterwards opens against it.',
         'Only laps you drove with Apex running have telemetry. An older session may have times and no traces; that is the lap being older, not the tab being broken.',
+      ],
+    },
+    {
+      id: 'race',
+      icon: 'scroll-text',
+      title: 'A race, and its race log',
+      lead: 'Le Mans Ultimate saves a results file after every race it finishes, and Apex reads those back too — every race on this PC, including the ones driven before Apex was installed. A race session opens with its result on Overview, and a Race log tab beside the others.',
+      points: [
+        'The result says where you finished overall and in class, the places made from the grid, and your contacts, limits and penalties. Click a count to list them in the race log.',
+        'In the Race log, Race progression is your place lap by lap with every incident sat on the line. The timeline opens on Key moments — the start and the flag, everything that happened to the car, stops and swaps, big swings in place and your best lap — and All events has every lap too.',
+        'A race the game saved while Apex was not running has no laps of yours to review, so the race log is its only tab.',
+        'Which car was yours? Apex matches a race to your car from your lap log, or failing that your driver name. In a team race you may not have driven the car at all, so it can ask; pick your car once and it is remembered for that race. “Not your car?” in Session details asks again.',
+      ],
+    },
+    {
+      id: 'replay',
+      icon: 'video',
+      title: 'Replay, from the game’s own recording',
+      lead: 'Pick a line in the race log and Event details shows what it was and the lap before and after it. Open game replay loads the game’s own replay of that race, with the camera on your car, 5 s before the moment.',
+      points: [
+        'The game has to be at its main menu. From inside a session Apex will not pull you out of it, and says so.',
+        'A big replay takes up to a minute to load. After that, every other Replay in the same race is a jump, not a reload — Previous and Next in Event details step through and jump the replay to each incident in turn.',
+        'The game keeps five replays per circuit and deletes the oldest. A greyed Replay button says why when you hover over it: the replay is gone, or the game is not running.',
+        '↑ and ↓, or J and K, move down the timeline. Enter replays the line you are on, and [ and ] replay the previous and next incident.',
+        'Copy as text puts the lines on screen on the clipboard, headed with the circuit, the date and your car, ready for a protest or a league post. Key moments or Contacts gives a steward’s version.',
       ],
     },
     {

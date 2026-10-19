@@ -59,7 +59,9 @@
     { id: 'team', label: 'Team' },
     { id: 'review', label: 'Review (Analyse)' },
     { id: 'practice', label: 'Practice review', gated: 'beta' },
-    { id: 'racelog', label: 'Race log' },
+    // Folded into Review on 2026-10-19: no tab to visit any more, and its
+    // history stays under its own id.
+    { id: 'racelog', label: 'Race log (own tab, until 1.3.12)', retired: true },
     { id: 'overlays', label: 'Overlays' },
     { id: 'vr', label: 'VR headset', gated: 'beta' },
     { id: 'streamers', label: 'Streamers' },
@@ -90,11 +92,11 @@
     { slug: 'action:practice.debrief', tab: 'practice', label: 'Opened a practice debrief' },
     { slug: 'action:practice.lap', tab: 'practice', label: 'Studied a practice lap' },
 
-    // The Race log tab. The slugs keep their review. names from the months the
-    // log was a view inside Review — a slug is never renamed (see the top of
-    // this file) — and only their tab moved, as VR's did.
-    { slug: 'action:review.racelog', tab: 'racelog', label: 'Opened a race log' },
-    { slug: 'action:review.replay', tab: 'racelog', label: 'Jumped into a race replay' },
+    // The race log: a tab of a race inside Review again since 2026-10-19 (its
+    // own rail tab from 2026-09-30). The slugs never changed — a slug is never
+    // renamed, see the top of this file — only the tab they belong to.
+    { slug: 'action:review.racelog', tab: 'review', label: 'Opened a race log' },
+    { slug: 'action:review.replay', tab: 'review', label: 'Jumped into a race replay' },
 
     // Setups.
     { slug: 'action:setup.edit', tab: 'setups', label: 'Edited a setup in the garage' },

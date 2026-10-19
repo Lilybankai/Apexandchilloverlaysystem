@@ -1744,6 +1744,7 @@ function liveSummary(race: LiveRace): RaceLogSummary {
     finishStatus: log.finishStatus,
     multiclass: log.multiclass,
     trackLength: 0,
+    endedAt: Math.round(race.lastAt / 1000),
   };
 }
 
@@ -1850,6 +1851,10 @@ function* listSteps(resultsDir: string | null, opts: RaceLogOptions): Steps<Race
       finishStatus: car ? car.finishStatus : '',
       multiclass: d.multiclass,
       trackLength: d.trackLength,
+      // No later than the file was written: on a server joined late the
+      // stream's own clock can run hours past it (15 Oct 2026, a 0-lap file
+      // written 12:52 claimed to run to 15:14).
+      endedAt: Math.round(Math.min(d.toMs, (writtenAt(id) ?? Infinity) + 60_000) / 1000),
     });
   }
 
