@@ -5,6 +5,8 @@
      app until it is renamed.
 -->
 
+## 1.3.12-beta.1 — 2026-10-19
+
 ### Changed
 
 - **Review and the Race log are one place now.** The Race log tab is gone
