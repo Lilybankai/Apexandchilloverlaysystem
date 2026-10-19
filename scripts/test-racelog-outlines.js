@@ -60,5 +60,18 @@ check('a log gets its outline', !!outlines.decorateLog({ track: 'Fuji Speedway',
 check('a log with no circuit is left as it was',
   !('outline' in outlines.decorateLog({ track: 'Nowhere', trackLength: 1 })));
 
+// The Review tab's sessions: the length is the end of the lap log's key.
+check('a session key gives its length', outlines.sessionLength({ trackKey: 'algarve-international-circuit_4635' }) === 4635);
+check('a key with no length gives none', outlines.sessionLength({ trackKey: 'somewhere' }) === 0);
+const ses = outlines.decorateSessions([
+  { id: 's1', track: 'Silverstone Grand Prix Circuit - ELMS', trackKey: 'silverstone-grand-prix-circuit-elms_5869' },
+  { id: 's2', track: 'Nowhere', trackKey: 'nowhere_1000' },
+]);
+check('a session gets its circuit', ses.sessions[0].mapKey === 'silverstone-grand-prix-circuit-wec-5870');
+check('and keeps its own shape', !('trackLength' in ses.sessions[0]) && ses.sessions[0].id === 's1');
+check('an unknown circuit stays bare', !('mapKey' in ses.sessions[1]));
+check('one session opened gets its outline',
+  !!outlines.decorateSession({ track: 'Fuji Speedway', trackKey: 'fuji-speedway_4536' }).outline);
+
 console.log(`\ntest-racelog-outlines: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

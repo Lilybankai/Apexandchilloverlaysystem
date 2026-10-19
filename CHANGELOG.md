@@ -19,6 +19,17 @@
   shows each circuit's outline, where you started and finished, and marks a
   clean race.
 
+- **A new Review page.** A session now opens on Overview: your best lap
+  against your own record here, your average, consistency, clean laps and
+  the time left on the table, then your lap pace, your reference pace, your
+  progress at the circuit over the last month and where you stand on the
+  leaderboard. Laps & stints lists a stint's laps with their sectors, fuel
+  and energy; click one and the panel beside it shows that lap in full,
+  including each tyre's temperature and wear, with a lap-by-lap strip
+  underneath to jump around the stint. Tyres & fuel has the wear chart and
+  each stint's tyres, and Compare has the full leaderboard and your laps
+  with telemetry, ready to compare against.
+
 ## 1.3.11 — 2026-10-19
 
 Smoother racing and recovery, an honest stall log, and a Team page that

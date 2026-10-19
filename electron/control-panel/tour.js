@@ -633,8 +633,8 @@
           anchor: '#rv-detail',
           title: 'What the session came to',
           body:
-            'Best lap, and then the part that matters: optimal is your own best three sectors added ' +
-            'together, and untapped is the gap to it — time you have already driven, in pieces. ' +
+            'Overview: best lap, and then the part that matters — optimal is your own best three sectors ' +
+            'added together, and potential gain is the gap to it: time you have already driven, in pieces. ' +
             'Consistency leads with the real spread in seconds rather than a percentage.',
           note:
             'A lap that broke the limits still appears, with the reason printed on it, instead of ' +
@@ -644,11 +644,11 @@
           id: 'sheet',
           view: 'review',
           anchor: '#rv-detail',
-          title: 'Stints, and the lap sheet',
+          title: 'Laps & stints',
           body:
-            'Open a stint for its lap sheet and the tyres it ended on. Purple is the session best, ' +
-            'green a stint best, amber a lap that broke the clean rule. A row with a trace mark has ' +
-            'telemetry behind it — click it and the lap opens.',
+            'Pick a stint and click any lap: the panel beside the list reads it in full — sectors, fuel, ' +
+            'energy, and each tyre at the end of it. Purple is the session best, green a stint best. A lap ' +
+            'with a trace mark has telemetry behind it, and Study this lap opens it.',
           note:
             'Only laps driven with Apex running have telemetry. An older session may have times and ' +
             'no traces; that is the lap being older, not the tab being broken.',
@@ -660,7 +660,7 @@
           title: 'Two laps, one window',
           body:
             'Speed, throttle and brake, gear and steering, drawn against DISTANCE round the circuit ' +
-            'so two laps line up at the same corner. Pin a driver from the leaderboard card, or press ' +
+            'so two laps line up at the same corner. Pin a driver from the board on Compare, or press ' +
             'vs on one of your own laps, and it is laid underneath with a delta band above: slower ' +
             'above the line, faster below.',
           note:

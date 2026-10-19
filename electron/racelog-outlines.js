@@ -17,6 +17,9 @@
  * tie. With no length (a provisional race the game never saved), the name
  * alone, and only when most of its words agree.
  *
+ * The Review tab's session cards use it too: a session's `trackKey` ends in
+ * the circuit's length, which is all a match needs.
+ *
  * The path is drawn by lmu-trackmaps.js's `outlineOf`, so a race card and a
  * schedule card draw a circuit identically. Each outline is a kilobyte and is
  * remembered for the life of the process.
@@ -167,4 +170,31 @@ function decorateLog(log) {
   return outline ? { ...log, outline } : log;
 }
 
-module.exports = { matchKey, likeness, decorateList, decorateLog, LENGTH_SLACK };
+/**
+ * The Review tab's sessions are keyed `circuit-name_4635`: the lap log's own
+ * slug and the length in metres. The length is what a match needs.
+ */
+function sessionLength(s) {
+  const m = /_(\d+(?:\.\d+)?)$/.exec(String((s && s.trackKey) || ''));
+  return m ? Number(m[1]) : 0;
+}
+
+/** The session list with `mapKey`s, and their outlines: `{ sessions, outlines }`. */
+function decorateSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const { races, outlines } = decorateList(list.map((s) => ({ ...s, trackLength: sessionLength(s) })));
+  // Handed back without the borrowed length, so a session row is the shape
+  // stintReview.ts says it is, plus its mapKey.
+  return { sessions: races.map(({ trackLength, ...s }) => s), outlines };
+}
+
+/** One session with its circuit's `outline`, when there is one. */
+function decorateSession(session) {
+  if (!session) return session;
+  const outline = outlineForKey(matchKey(maps(), session.track, sessionLength(session)));
+  return outline ? { ...session, outline } : session;
+}
+
+module.exports = {
+  matchKey, likeness, decorateList, decorateLog, decorateSessions, decorateSession, sessionLength, LENGTH_SLACK,
+};

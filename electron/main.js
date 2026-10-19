@@ -4867,7 +4867,9 @@ function registerIpc() {
       // Both out of ONE read of the log: the career totals are a fold over the
       // same records the sessions are grouped from, so asking separately would
       // read every lap file twice to answer one screen.
-      return { ok: true, ...review.listSessionsWithCareer() };
+      const { sessions, ...rest } = review.listSessionsWithCareer();
+      // Each session's circuit outline, as the Race log's cards have them.
+      return { ok: true, ...rest, ...racelogOutlines.decorateSessions(sessions) };
     } catch (err) {
       console.error('[app] session list unavailable:', err.message);
       return { ok: false, sessions: [], error: err.message };
@@ -4888,7 +4890,7 @@ function registerIpc() {
       } catch (err) {
         console.error('[app] session pace unavailable:', err.message);
       }
-      return { ok: true, session: session && { ...session, pace } };
+      return { ok: true, session: session && racelogOutlines.decorateSession({ ...session, pace }) };
     } catch (err) {
       console.error('[app] session unavailable:', err.message);
       return { ok: false, session: null, error: err.message };

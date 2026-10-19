@@ -1533,7 +1533,6 @@
 }
 .rv-board__none { color: var(--text-3); }
 .rv-board__note { margin: 0; padding: 12px 14px; font-size: 12px; color: var(--text-3); }
-.rv-board[data-folded='true'] .rv-card__head { margin-bottom: 0; }
 /* Set before the driven line was captured: the comparison is the charts and
    the delta, and the map shows only your line. Dashed says "partial". */
 .rv-refbtn[data-line='false'] { border-style: dashed; }
@@ -2500,4 +2499,433 @@
   .rl-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rl-head .rl-map--head { display: none; }
   .rl-search { width: 100%; order: 3; }
+}
+
+/* ============================ THE SESSION PAGE ===========================
+ *
+ * 2026-10-19, from Carl's two Review concepts: a header naming the session,
+ * four tabs instead of one long scroll, KPI tiles, and on Laps & stints a lap
+ * picked from the breakdown and read in a panel beside it. The lap view below
+ * (data-mode='lap') is untouched. The race card's outline and type classes
+ * (`rl-*`) are the Race log's, shared on purpose.
+ */
+
+.view[data-view='review'] .rv__detail { container: rvdetail / inline-size; }
+
+/* ---- the rail's session card ---- */
+.rv__card.rvx-scard { padding: 10px 11px; }
+.rv__card.rvx-scard[data-active='true'] {
+  background: linear-gradient(90deg, rgba(38, 187, 244, 0.09), transparent 70%), var(--panel-2);
+}
+.rv__card.rvx-scard[data-active='true'] .rl-map path { stroke: var(--cyan); }
+.rv__card.rvx-scard .rv__cardfoot { margin-top: 8px; }
+.rvx-type {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvx-type[data-type='race'] { color: var(--bad); }
+.rvx-type[data-type='qualifying'] { color: var(--warn); }
+.rvx-type[data-type='practice'] { color: var(--blue); }
+
+/* ---- header and tabs ---- */
+.rvx-head { padding-bottom: 0; }
+.rvx-head__row { display: flex; align-items: center; gap: 16px; }
+.rvx-head__title { min-width: 0; flex: 1 1 auto; }
+.rvx-head h2 {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.rvx-head__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; color: var(--text-2); font-size: 13px; }
+.rvx-head__sub > span:not(.rv-pill) + span:not(.rv-pill)::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-3);
+  margin: 0 9px;
+  vertical-align: 3px;
+}
+.rvx-head__sub .rv-pill { margin-left: 10px; }
+.rvx-head__end { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; align-self: flex-start; }
+
+.rvx-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px -16px 0;
+  padding: 0 10px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.rvx-tabs::-webkit-scrollbar { display: none; }
+.rvx-tabs button {
+  flex: 0 0 auto;
+  padding: 11px 14px 10px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rvx-tabs button:hover { color: var(--text-2); }
+.rvx-tabs button[data-active='true'] { color: var(--text); font-weight: 600; border-bottom-color: var(--cyan); }
+
+.rvx-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.rvx-card__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; }
+.rvx-card__head h3 {
+  margin: 0 auto 0 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.rvx-good { color: var(--ok); }
+.rvx-loss { color: var(--bad); }
+.rvx-best { color: var(--rv-session-best); }
+
+/* ---- Overview: the tiles ---- */
+.rvx-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.25fr);
+  gap: 10px;
+}
+.rvx-kpi,
+.rvx-quad {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  min-width: 0;
+}
+.rvx-kpi__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  color: var(--cyan);
+}
+.rvx-kpi__icon .icon { width: 17px; height: 17px; }
+.rvx-kpi--best .rvx-kpi__icon { color: var(--rv-session-best); }
+.rvx-kpi--good .rvx-kpi__icon { color: var(--ok); }
+.rvx-kpi__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.rvx-kpi__label,
+.rvx-quad span {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvx-kpi__value {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--text);
+  white-space: nowrap;
+}
+.rvx-kpi--best .rvx-kpi__value { color: var(--cyan); }
+.rvx-kpi--good .rvx-kpi__value { color: var(--ok); }
+.rvx-kpi__value[data-none='true'] { color: var(--text-3); }
+.rvx-kpi__note { font-size: 12px; color: var(--text-3); }
+.rvx-kpi__note b { font-family: var(--font-mono); font-weight: 600; }
+.rvx-kpi .rv-bar { margin-top: 4px; }
+.rvx-quad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  border-left: 3px solid var(--line-2);
+}
+.rvx-quad div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rvx-quad b { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; }
+
+/* ---- Overview: the four cards ---- */
+.rvx-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.rvx-grid .rv-chart--laps { height: 230px; }
+.rvx-grid .rv-chart--trend { height: 170px; }
+.rvx-pacecard .rv-pace { margin: 0; padding: 0; border: none; background: none; }
+.rvx-pacecard .rv-pace__label { display: none; }
+.rvx-card__head .rv-refbtn { opacity: 0.9; }
+.rvx-peek th:nth-child(2),
+.rvx-peek th:nth-child(3),
+.rvx-peek td.who,
+.rvx-peek td.car { text-align: left; }
+.rvx-peek td.who { font-family: var(--font-ui); }
+.rvx-peek td.car { font-family: var(--font-ui); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.rvx-peek tr[data-you='true'] td { color: var(--cyan); background: rgba(38, 187, 244, 0.08); }
+.rvx-peek tr[data-you='true'] td:first-child { box-shadow: inset 3px 0 0 var(--cyan); }
+
+/* ---- Laps & stints ---- */
+.rvx-stintbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 0;
+}
+.rvx-stintpick { margin-right: 18px; }
+.rvx-stintpick select {
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 8px 12px;
+  min-width: 170px;
+}
+.rvx-stintpick--one { font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+.rvx-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 18px;
+  border-left: 1px solid var(--line);
+}
+.rvx-fact span { font-size: 11.5px; color: var(--text-3); }
+.rvx-fact b { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.rvx-fact--best b { color: var(--rv-stint-best); }
+
+.rvx-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 14px;
+  align-items: start;
+}
+
+.rvx-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.rvx-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.rvx-chips button span { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.rvx-chips button[data-active='true'] { border-color: var(--cyan); color: var(--text); background: rgba(38, 187, 244, 0.1); }
+.rvx-chips i { width: 7px; height: 7px; border-radius: 50%; }
+.rvx-chips i[data-dot='ok'] { background: var(--ok); }
+.rvx-chips i[data-dot='warn'] { background: var(--warn); }
+
+.rvx-laps__scroll { margin: 0 -16px; max-height: 560px; overflow-y: auto; }
+.rvx-laptable tbody tr { cursor: pointer; }
+.rvx-laptable tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
+.rvx-laptable tbody tr:focus-visible { outline: 1px solid var(--cyan); outline-offset: -1px; }
+.rvx-laptable tr[data-selected='true'] td { background: rgba(38, 187, 244, 0.1); }
+.rvx-laptable tr[data-selected='true'] td:first-child { box-shadow: inset 3px 0 0 var(--cyan); }
+.rvx-laptable th:first-child,
+.rvx-laptable td.num { padding-left: 16px; white-space: nowrap; }
+.rvx-laptable td.num .rv-trace { display: inline-flex; vertical-align: -2px; margin-left: 5px; }
+.rvx-laptable td.lap { font-weight: 600; }
+.rvx-laptable td.lap[data-rank='session'] { color: var(--rv-session-best); }
+.rvx-laptable td.lap[data-rank='stint'] { color: var(--rv-stint-best); }
+.rvx-laptable td.gain { color: var(--ok); }
+.rvx-laptable td.loss { color: var(--warn); }
+
+.rvx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--panel-3);
+  white-space: nowrap;
+}
+.rvx-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.rvx-status[data-tone='ok'] { color: var(--ok); background: rgba(53, 208, 127, 0.1); }
+.rvx-status[data-tone='ok']::before { background: var(--ok); }
+.rvx-status[data-tone='warn'] { color: var(--warn); background: rgba(255, 176, 32, 0.1); }
+.rvx-status[data-tone='warn']::before { background: var(--warn); }
+
+.rvx-strip { display: flex; align-items: flex-start; gap: 14px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.rvx-strip__title { flex: 0 0 auto; font-size: 12px; color: var(--text-3); padding-top: 3px; }
+.rvx-strip__laps { display: flex; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.rvx-strip__laps button {
+  flex: 1 1 0;
+  min-width: 4px;
+  max-width: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.rvx-strip__laps i { display: block; width: 100%; height: 18px; border-radius: 3px; background: var(--line-2); }
+.rvx-strip__laps [data-kind='clean'] i { background: rgba(38, 187, 244, 0.45); }
+.rvx-strip__laps [data-kind='best'] i { background: var(--rv-session-best); }
+.rvx-strip__laps [data-kind='flagged'] i { background: rgba(255, 176, 32, 0.55); }
+.rvx-strip__laps button:hover i { filter: brightness(1.4); }
+.rvx-strip__laps [data-selected='true'] i { background: var(--cyan); box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--cyan); }
+.rvx-strip__laps span { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); }
+
+/* The lap picked. */
+.rvx-lap {
+  position: sticky;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rvx-lap__top { display: flex; align-items: center; justify-content: space-between; }
+.rvx-lap__top h3 { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.rvx-lap__time {
+  font-family: var(--font-mono);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--cyan);
+  margin-top: 4px;
+}
+.rvx-lap__time[data-rank='session'] { color: var(--rv-session-best); }
+.rvx-lap__gap { font-size: 13px; color: var(--text-2); }
+.rvx-lap__gap b { font-family: var(--font-mono); }
+.rvx-lap__sectors,
+.rvx-lap__pair {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.rvx-lap__pair { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; padding-top: 0; border-top: none; }
+.rvx-lap__sectors > div,
+.rvx-lap__pair > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rvx-lap__sectors > div + div,
+.rvx-lap__pair > div + div { padding-left: 12px; border-left: 1px solid var(--line); }
+.rvx-lap__sectors span,
+.rvx-lap__pair span { font-size: 11.5px; color: var(--text-3); }
+.rvx-lap__sectors b,
+.rvx-lap__pair b { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--text); }
+.rvx-lap__sectors b[data-rank='session'] { color: var(--rv-session-best); }
+.rvx-lap__sectors b[data-rank='stint'] { color: var(--rv-stint-best); }
+.rvx-lap__sub {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.rvx-tyres { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rvx-tyre {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.rvx-tyre__name { font-family: var(--font-display); font-size: 10.5px; letter-spacing: 0.08em; color: var(--text-3); }
+.rvx-tyre b { font-family: var(--font-mono); font-size: 17px; font-weight: 600; color: var(--text); }
+.rvx-tyre b[data-heat='hot'] { color: var(--bad); }
+.rvx-tyre b[data-heat='warm'] { color: var(--warn); }
+.rvx-tyre b[data-heat='cool'] { color: var(--cyan); }
+.rvx-tyre__left { font-size: 11.5px; color: var(--text-3); }
+.rvx-tyre .rv-corner__wear { margin-top: 2px; }
+.rvx-lap__acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rvx-lap__study { background: var(--grad); color: white; border: none; }
+.rvx-lap__nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.rvx-lapnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.rvx-lapnav:last-child { justify-content: flex-end; text-align: right; }
+.rvx-lapnav:hover { border-color: var(--cyan); color: var(--text); }
+.rvx-lapnav span { display: flex; flex-direction: column; min-width: 0; }
+.rvx-lapnav b { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.rvx-lapnav i { font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.rvx-lapnav .icon { flex: 0 0 auto; width: 14px; height: 14px; }
+
+/* ---- Tyres & fuel ---- */
+.rvx-stintcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.rvx-stintcard .rv-stint__side { border: none; padding: 0; background: none; width: auto; }
+.rvx-body[data-tab='tyres'] .rv-chart--wear { height: 220px; }
+
+/* ---- Compare ---- */
+.rvx-compare { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.rvx-compare__mine { display: flex; flex-direction: column; gap: 6px; }
+.rvx-compare__mine .rv-card__note { margin: 0 0 6px; }
+.rvx-mylap {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.rvx-mylap__no { font-family: var(--font-mono); color: var(--text-3); }
+.rvx-mylap b { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+.rvx-mylap b[data-rank='session'] { color: var(--rv-session-best); }
+.rvx-mylap .rv-refbtn { opacity: 0.85; }
+
+/* ---- narrower ---- */
+@container rvdetail (max-width: 1100px) {
+  .rvx-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rvx-quad { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .rvx-grid,
+  .rvx-compare { grid-template-columns: minmax(0, 1fr); }
+}
+@container rvdetail (max-width: 940px) {
+  .rvx-split { grid-template-columns: minmax(0, 1fr); }
+  .rvx-lap { position: static; }
+  .rvx-head .rl-map--head { display: none; }
+}
+@container rvdetail (max-width: 600px) {
+  .rvx-quad { grid-template-columns: 1fr 1fr; }
+  .rvx-fact { padding: 0 10px; }
 }

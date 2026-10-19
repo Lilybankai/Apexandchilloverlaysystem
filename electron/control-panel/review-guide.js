@@ -32,7 +32,8 @@
   'use strict';
 
   /** Bumping this re-offers the walkthrough to everyone, once. */
-  const GUIDE_VERSION = '1';
+  // 2: the 2026-10-19 redesign (tabs, the lap panel), explained once to everyone.
+  const GUIDE_VERSION = '2';
   const SEEN_KEY = 'apex.review.guide.seen';
 
   const AUTO_DELAY_MS = 700;
@@ -61,22 +62,23 @@
       id: 'report',
       icon: 'trophy',
       title: 'What the session came to',
-      lead: 'The report at the top of a session is the part a driver actually wants: not just the best lap, but how much was left in it.',
+      lead: 'A session opens on Overview: not just the best lap, but how much was left in it. The tabs under its name take you to the laps, the tyres and fuel, and comparing.',
       points: [
-        'Optimal lap is your own best sector 1, best sector 2 and best sector 3 added together — a lap you have already driven in pieces. Untapped is the gap between that and your real best, which is the time on the table before you change anything about the car.',
+        'Best lap says how it sits against your own record here. Optimal lap is your own best sector 1, best sector 2 and best sector 3 added together — a lap you have already driven in pieces. Potential gain is the gap between that and your real best, which is the time on the table before you change anything about the car.',
         'Consistency leads with the real spread in seconds, not a percentage. ±0.31 s is something you can go and work on; 84% is a score.',
-        'Clean driving is the share of your laps that kept inside the limits and out of the pits. A lap that broke the rule still appears — with the reason printed on it — rather than quietly vanishing.',
-        'Under the report: the lap-time chart, your best here over the last 30 days, and tyre wear lap by lap.',
+        'Clean laps is the share of your laps that kept inside the limits and out of the pits. A lap that broke the rule still appears — with the reason printed on it — rather than quietly vanishing.',
+        'Under the tiles: your lap pace, your reference pace, your best here over the last 30 days, and where you stand on the leaderboard. Click a point on the lap pace chart to read that lap.',
       ],
     },
     {
       id: 'sheet',
       icon: 'list-ordered',
-      title: 'Stints, and the lap sheet',
-      lead: 'Every stint is a card you can open, holding its lap sheet and the tyres it ended on.',
+      title: 'Laps & stints',
+      lead: 'Pick a stint, and every lap in it is listed with its sectors, fuel and energy. Click a lap and the panel beside it reads it in full: its sectors, the fuel and energy it used, and each tyre’s temperature and wear at the end of it.',
       points: [
-        'Purple is the session best and green a stint best, the way every timing screen in the sport has coloured them for thirty years. Amber is a lap with a real time that broke the clean rule.',
-        'A row with the small trace mark on it has telemetry behind it. Click that row and the lap opens.',
+        'Purple is the session best and green a stint best, the way every timing screen in the sport has coloured them for thirty years. The status says Clean, or why a lap was not. Clean and Flagged narrow the list.',
+        'The lap timeline under the list is the whole stint at a glance. Click a block to pick that lap; Previous and Next in the panel, or ↑ and ↓, step through them.',
+        'A lap with the small trace mark has telemetry behind it, and Study this lap opens it.',
         'The vs button at the end of a row makes that lap the reference for the whole session — every lap you open afterwards opens against it.',
         'Only laps you drove with Apex running have telemetry. An older session may have times and no traces; that is the lap being older, not the tab being broken.',
       ],
@@ -87,7 +89,7 @@
       title: 'One lap, and the lap you are chasing',
       lead: 'Open a lap and you get speed, throttle and brake, gear and steering, all drawn against DISTANCE round the circuit rather than against time — so two laps line up at the same corner instead of drifting apart.',
       points: [
-        'The leaderboard card on the session screen lists everyone’s best here. Press vs on a driver and they are pinned to this circuit: every lap you open at this track is laid over theirs, dashed, in each channel’s own colour, until you unpin them. The vs on your own sheet does the same with one of your laps. The delta band above them reads slower above the line, faster below.',
+        'Compare lists everyone’s best here on the leaderboard. Press vs on a driver and they are pinned to this circuit: every lap you open at this track is laid over theirs, dashed, in each channel’s own colour, until you unpin them. The vs on your own sheet does the same with one of your laps. The delta band above them reads slower above the line, faster below.',
         'Move the mouse across the traces to read every value at that point of the road. Click to hold a point; drag across a section to zoom into it; scroll to zoom.',
         'The chips under the charts split the lap into stretches of about 500 m and say what each one cost or gained against the other lap. Red is where the time went. Click one and the charts and the map both go there.',
         'This is the point of the tab: getting from "I was 0.7 s slower" to "I was 0.18 s slower into turn 11".',
