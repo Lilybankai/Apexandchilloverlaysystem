@@ -5,6 +5,17 @@
      app until it is renamed.
 -->
 
+## 1.3.11-beta.4 — 2026-10-19
+
+### Changed
+
+- **The Setups tab is back to how it was.** The corner balance sliders, the
+  − and + buttons and the setup History page from 1.3.11-beta.3 have been
+  taken out again. They made the tab more complicated than it was worth. The
+  race engineer has its familiar sliders back, and everything else on the
+  Setups tab works as it did in 1.3.11-beta.2. Your saved setups aren't
+  affected. Thanks to everyone who tried it and told us.
+
 ## 1.3.11-beta.2 — 2026-10-15
 
 ### Fixed
