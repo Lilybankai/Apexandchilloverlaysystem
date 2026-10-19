@@ -5,7 +5,10 @@
      app until it is renamed.
 -->
 
-## 1.3.12-beta.1 — 2026-10-19
+## 1.3.12 — 2026-10-19
+
+A new Review: your sessions and your races in one list, each with its own
+tabs, and a race log that shows how the race unfolded.
 
 ### Changed
 
@@ -41,6 +44,11 @@
   you started.
 
 - **Circuit outlines** on every session and race in the list.
+
+- **Older races wait behind a button.** Races the game saved with Apex
+  closed that are more than a month old are tucked behind "Show older
+  races" at the bottom of the list, so the list leads with what you drove
+  recently. Searching still finds every race.
 
 ## 1.3.11 — 2026-10-19
 
