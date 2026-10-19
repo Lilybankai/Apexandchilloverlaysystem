@@ -511,6 +511,7 @@ function unmatchedLog(r: ResultsSession, id: string): RaceLog {
     finishStatus: '',
     laps: 0,
     multiclass: new Set(r.drivers.map((d) => d.carClass)).size > 1,
+    ...(r.header.trackLength > 0 ? { trackLength: r.header.trackLength } : {}),
     matchedBy: null,
     provisional: false,
     events: [],
@@ -686,18 +687,7 @@ export function buildRaceLog(
 
   // TRACK LIMITS
   const limit = pointsLimitOf(r);
-  let prevLimits: Extract<StreamEntry, { type: 'limits' }> | null = null;
-  for (const e of r.stream) {
-    // "No Further Action" is folded into its lap (see the lap loop): a
-    // four-hour race has ~140 of them, and a log of them is not a brief record.
-    if (e.type !== 'limits' || e.slot !== slot || isNoAction(e)) continue;
-    // LMU often files a verdict again ~1 s later with the points total
-    // unchanged (Long Beach 2026-09-24, slot 32: 754.9 then 756.1, both
-    // "0.25"). Nothing new was charged, so it is the same moment.
-    const echo = prevLimits !== null && e.et - prevLimits.et <= LIMITS_ECHO_S
-      && e.resolution === prevLimits.resolution && e.currentPoints === prevLimits.currentPoints;
-    prevLimits = e;
-    if (echo) continue;
+  for (const e of chargedLimits(r, slot)) {
     const detail: RaceLogDetail = { verdict: e.verdict, warningPoints: e.currentPoints };
     if (limit !== undefined) detail.pointsLimit = limit;
     push(e.et, 'limits', limitsText(e.resolution, e.verdict, e.currentPoints, limit), detail);
@@ -784,6 +774,7 @@ export function buildRaceLog(
     finishStatus: me.finishStatus,
     laps: me.laps,
     multiclass,
+    ...(r.header.trackLength > 0 ? { trackLength: r.header.trackLength } : {}),
     matchedBy,
     provisional: false,
     events,
@@ -842,6 +833,29 @@ function bestBeforeOf(cars: ResultsDriver[], crossings: Map<ResultsDriver, Map<n
 /** A track-limits verdict of "No Further Action". */
 function isNoAction(e: Extract<StreamEntry, { type: 'limits' }>): boolean {
   return e.resolution === 7 || /no further action/i.test(e.verdict);
+}
+
+/**
+ * The track-limits verdicts a log lists for one car: one line per call race
+ * control charged. Shared by the log and the race list's digest, so the count
+ * on a race's card is the count on its page.
+ */
+function chargedLimits(r: ResultsSession, slot: number): Extract<StreamEntry, { type: 'limits' }>[] {
+  const out: Extract<StreamEntry, { type: 'limits' }>[] = [];
+  let prev: Extract<StreamEntry, { type: 'limits' }> | null = null;
+  for (const e of r.stream) {
+    // "No Further Action" is folded into its lap (see the lap loop): a
+    // four-hour race has ~140 of them, and a log of them is not a brief record.
+    if (e.type !== 'limits' || e.slot !== slot || isNoAction(e)) continue;
+    // LMU often files a verdict again ~1 s later with the points total
+    // unchanged (Long Beach 2026-09-24, slot 32: 754.9 then 756.1, both
+    // "0.25"). Nothing new was charged, so it is the same moment.
+    const echo = prev !== null && e.et - prev.et <= LIMITS_ECHO_S
+      && e.resolution === prev.resolution && e.currentPoints === prev.currentPoints;
+    prev = e;
+    if (!echo) out.push(e);
+  }
+  return out;
 }
 
 function limitsText(resolution: number, verdict: string, points: number, limit: number | undefined): string {
@@ -1330,25 +1344,38 @@ interface Digest {
   toMs: number;
   /** `names`: who drove the laps that matched, for {@link seedNames}. */
   laplog: { n: number; slot: number | null; names: string[] };
+  /** Metres, from the header; 0 when the file did not say. Picks the race card's outline. */
+  trackLength: number;
+  multiclass: boolean;
   cars: {
     slot: number;
     names: string[];
     carClass: string;
+    grid: number | null;
+    classGrid: number | null;
     position: number | null;
     classPosition: number | null;
+    finishStatus: string;
+    /** Laps with a line in the file: the tie-break for whose car. */
     laps: number;
+    /** `<Laps>`: what the classification credits. */
+    lapsDone: number;
     contacts: number;
+    limits: number;
     penalties: number;
   }[];
 }
 
 interface DigestIndex {
-  v: 4;
+  v: 5;
   files: Record<string, Digest>;
 }
 
-/** 4: `laplog.names` follow the tighter {@link SEED_MAJORITY} and {@link SEED_MIN_LAPS}. */
-const INDEX_VERSION = 4;
+/**
+ * 4: `laplog.names` follow the tighter {@link SEED_MAJORITY} and {@link SEED_MIN_LAPS}.
+ * 5: the race card's grid, limits, status, class count and circuit length.
+ */
+const INDEX_VERSION = 5;
 const indexMemo = new Map<string, DigestIndex>();
 
 function* loadIndexStep(stateDir: string): Steps<DigestIndex> {
@@ -1419,23 +1446,33 @@ function digestOf(r: ResultsSession, st: fs.Stats, laps: LapRecord[]): Digest {
     fromMs,
     toMs,
     laplog: laplogSlot(r, laps),
+    trackLength: r.header.trackLength > 0 ? r.header.trackLength : 0,
+    multiclass: new Set(r.drivers.map((d) => d.carClass)).size > 1,
     cars: r.drivers
       .filter((d) => d.slot !== null)
       .map((d) => ({
         slot: d.slot!,
         names: names.get(d.slot!) ?? [],
         carClass: d.carClass,
+        grid: d.gridPos,
+        classGrid: d.classGridPos,
         position: d.position,
         classPosition: d.classPosition,
+        finishStatus: d.finishStatus,
         laps: d.lapList.length,
+        lapsDone: d.laps,
         contacts: contacts.get(d.slot!)?.length ?? 0,
+        limits: chargedLimits(r, d.slot!).length,
         penalties: penalties.get(d.slot!) ?? 0,
       })),
   };
 }
 
 function badDigest(st: fs.Stats): Digest {
-  return { bad: true, mtimeMs: st.mtimeMs, size: st.size, track: '', startedAt: 0, greenEt: 0, lastEt: 0, fromMs: 0, toMs: 0, laplog: { n: 0, slot: null, names: [] }, cars: [] };
+  return {
+    bad: true, mtimeMs: st.mtimeMs, size: st.size, track: '', startedAt: 0, greenEt: 0, lastEt: 0, fromMs: 0, toMs: 0,
+    laplog: { n: 0, slot: null, names: [] }, trackLength: 0, multiclass: false, cars: [],
+  };
 }
 
 /**
@@ -1700,6 +1737,13 @@ function liveSummary(race: LiveRace): RaceLogSummary {
     penalties: log.events.filter((e) => e.kind === 'penalty' && !/^served/i.test(e.text)).length,
     slot: log.slot !== null && log.slot >= 0 ? log.slot : null,
     provisional: true,
+    gridPosition: log.gridPosition,
+    gridClassPosition: log.gridClassPosition,
+    laps: log.laps,
+    limits: log.events.filter((e) => e.kind === 'limits').length,
+    finishStatus: log.finishStatus,
+    multiclass: log.multiclass,
+    trackLength: 0,
   };
 }
 
@@ -1799,6 +1843,13 @@ function* listSteps(resultsDir: string | null, opts: RaceLogOptions): Steps<Race
       penalties: car ? car.penalties : 0,
       slot,
       provisional: false,
+      gridPosition: car ? car.grid : null,
+      gridClassPosition: car ? car.classGrid : null,
+      laps: car ? car.lapsDone : 0,
+      limits: car ? car.limits : 0,
+      finishStatus: car ? car.finishStatus : '',
+      multiclass: d.multiclass,
+      trackLength: d.trackLength,
     });
   }
 

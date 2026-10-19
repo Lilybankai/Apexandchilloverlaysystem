@@ -12,6 +12,8 @@
  *   drawTrend(canvas, trend, markDay, fmt) — the 30 days behind the session.
  *   drawPositions(canvas, series) — a race's place lap by lap, for the Race
  *     log tab's header (review-racelog.js builds the series).
+ *   drawRaceProgress(canvas, series) — the same, both places on one axis
+ *     with the race's incidents on the line: the Race log's progression chart.
  *
  * Both are DPR-aware and re-measure their CSS box on every call. Neither
  * formats anything itself: `fmt` carries the panel's own `fmtLap` and
@@ -392,6 +394,161 @@
     ctx.fillText('GRID', padL, h);
     ctx.textAlign = 'right';
     ctx.fillText(`LAP ${laps}`, w - padR, h);
+    return out;
+  }
+
+  /**
+   * A race's place lap by lap, on one axis, with what happened on the way —
+   * the Race log tab's progression chart (review-racelog.js builds the input).
+   *
+   * `series`: `{ laps, rows: [{ id, label, pos[] }], focus, marks, selected }`.
+   * `pos[n]` is the place at the end of lap n, 0 the grid. Both rows share the
+   * P axis, P1 at the top; the `focus` row is drawn in cyan with its end
+   * labelled, the other quiet behind it. Places only change at the line, so
+   * the lines are steps, not slopes. `marks` are `{ lap, tone, index }`: an
+   * incident sits on the focus line at the lap it happened in, and the one
+   * whose `index` is `selected` is filled and ringed.
+   *
+   * Returns the marks as drawn, `[{ x, y, index }]` in CSS px, for the panel to
+   * hit-test a click against.
+   */
+  function drawRaceProgress(canvas, series) {
+    const { ctx, w, h } = surface(canvas);
+    const rows = (series && Array.isArray(series.rows) ? series.rows : [])
+      .filter((r) => Array.isArray(r.pos) && r.pos.some(isNum));
+    const laps = series && isNum(series.laps) ? series.laps : 0;
+    if (!rows.length || laps < 1) return [];
+    const focus = rows.find((r) => r.id === series.focus) || rows[0];
+
+    const padL = 40;
+    const padR = 46;
+    const padT = 10;
+    const padB = 22;
+    const plotW = Math.max(1, w - padL - padR);
+    const plotH = Math.max(1, h - padT - padB);
+
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const r of rows) for (const p of r.pos) if (isNum(p)) { lo = Math.min(lo, p); hi = Math.max(hi, p); }
+    lo = Math.max(1, lo - 1);
+    hi += 1;
+    const x = (n) => padL + (n / laps) * plotW;
+    const y = (p) => padT + ((p - lo) / Math.max(1, hi - lo)) * plotH;
+
+    // Places, on round numbers: P1, then every 1, 2, 5 or 10.
+    const span = hi - lo;
+    const step = span <= 6 ? 1 : span <= 14 ? 2 : span <= 36 ? 5 : 10;
+    ctx.font = '10px "Cascadia Mono", Consolas, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const ticks = new Set([lo]);
+    for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) if (p >= lo) ticks.add(p);
+    for (const p of ticks) {
+      const py = Math.round(y(p)) + 0.5;
+      ctx.strokeStyle = CSS.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padL, py);
+      ctx.lineTo(padL + plotW, py);
+      ctx.stroke();
+      ctx.fillStyle = CSS.text3;
+      ctx.fillText(`P${p}`, padL - 8, py);
+    }
+
+    // Laps along the bottom, on round numbers too.
+    const lapStep = [1, 2, 5, 10, 20, 25, 50, 100, 200].find((s) => laps / s <= 12) || 500;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let n = 0; n <= laps; n += lapStep) {
+      ctx.fillText(n === 0 ? 'Grid' : String(n), x(n), padT + plotH + 7);
+    }
+
+    // The lap the selected event happened in: a quiet column behind the lines.
+    const sel = (series.marks || []).find((m) => m.index === series.selected);
+    if (sel && isNum(sel.lap)) {
+      const a = x(Math.max(0, sel.lap - 1));
+      const b = x(Math.min(laps, Math.max(1, sel.lap)));
+      ctx.fillStyle = 'rgba(38, 187, 244, 0.08)';
+      ctx.fillRect(a, padT, Math.max(2, b - a), plotH);
+    }
+
+    const stepLine = (pos) => {
+      ctx.beginPath();
+      let prev = null;
+      pos.forEach((p, n) => {
+        if (!isNum(p)) return;
+        if (prev === null) ctx.moveTo(x(n), y(p));
+        else {
+          ctx.lineTo(x(n), y(prev));
+          ctx.lineTo(x(n), y(p));
+        }
+        prev = p;
+      });
+      ctx.stroke();
+    };
+    const lastOf = (pos) => {
+      let n = pos.length - 1;
+      while (n > 0 && !isNum(pos[n])) n -= 1;
+      return n;
+    };
+
+    for (const r of rows) {
+      if (r === focus) continue;
+      ctx.strokeStyle = 'rgba(154, 164, 184, 0.45)';
+      ctx.lineWidth = 1.25;
+      stepLine(r.pos);
+      const n = lastOf(r.pos);
+      ctx.fillStyle = CSS.text3;
+      ctx.font = '10px "Cascadia Mono", Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`P${r.pos[n]}`, x(n) + 8, y(r.pos[n]));
+    }
+    ctx.strokeStyle = CSS.cyan;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    stepLine(focus.pos);
+    const end = lastOf(focus.pos);
+    ctx.beginPath();
+    ctx.arc(x(end), y(focus.pos[end]), 4, 0, Math.PI * 2);
+    ctx.fillStyle = CSS.cyan;
+    ctx.fill();
+    ctx.font = '600 11px "Cascadia Mono", Consolas, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`P${focus.pos[end]}`, x(end) + 8, y(focus.pos[end]));
+
+    // The incidents, on the focus line in the middle of their lap.
+    const TONE = { bad: CSS.bad, warn: CSS.warn, pit: CSS.text2 };
+    const out = [];
+    const placeAt = (n) => {
+      for (let k = Math.min(n, focus.pos.length - 1); k >= 0; k -= 1) if (isNum(focus.pos[k])) return focus.pos[k];
+      return null;
+    };
+    for (const m of series.marks || []) {
+      if (!isNum(m.lap) || m.lap < 1 || m.lap > laps) continue;
+      const p = placeAt(m.lap - 1);
+      if (p === null) continue;
+      const px = x(m.lap - 0.5);
+      const py = y(p);
+      const on = m.index === series.selected;
+      const col = TONE[m.tone] || CSS.text2;
+      ctx.beginPath();
+      ctx.arc(px, py, on ? 5.5 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = on ? col : '#0c111c';
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.75;
+      ctx.stroke();
+      if (on) {
+        ctx.beginPath();
+        ctx.arc(px, py, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(244, 246, 251, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      out.push({ x: px, y: py, index: m.index });
+    }
     return out;
   }
 
@@ -2224,7 +2381,7 @@
   }
 
   return {
-    drawLapChart, drawTrend, drawPositions, drawChannels, drawLapMap, drawWear,
+    drawLapChart, drawTrend, drawPositions, drawRaceProgress, drawChannels, drawLapMap, drawWear,
     channelBands, distanceAtPoint, stationNear, holdPlan,
     brakePoints, brakePointPairs,
     aidsKnown, steerRangeOf, drawWheel,

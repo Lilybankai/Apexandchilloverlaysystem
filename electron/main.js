@@ -51,6 +51,7 @@ const streamBot = require('./streamBot');
 const simgrid = require('./simgrid');
 const lmuDailies = require('./lmu-dailies');
 const lmuTrackmaps = require('./lmu-trackmaps');
+const racelogOutlines = require('./racelog-outlines');
 const scheduleCloud = require('./schedule-cloud');
 const scheduleCore = require('./control-panel/schedule-core.js');
 const raceReminders = require('./race-reminders');
@@ -4906,7 +4907,9 @@ function registerIpc() {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // The async form: a first listing parses every file (~120 MB on Carl's
       // PC) and must hand the main process back between files, not freeze it.
-      return { ok: true, races: await raceLog.listRaceLogsAsync() };
+      // Each race's circuit outline rides along, drawn from the bundled
+      // circuits so the cards have them with the game shut.
+      return { ok: true, ...racelogOutlines.decorateList(await raceLog.listRaceLogsAsync()) };
     } catch (err) {
       console.error('[app] race log list unavailable:', err.message);
       return { ok: false, races: [], error: err.message };
@@ -4919,7 +4922,7 @@ function registerIpc() {
     try {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // Async and sliced: the sync load held main ~92 ms on a 5 MB race.
-      return { ok: true, log: await raceLog.loadRaceLogAsync(id) };
+      return { ok: true, log: racelogOutlines.decorateLog(await raceLog.loadRaceLogAsync(id)) };
     } catch (err) {
       console.error('[app] race log unavailable:', err.message);
       return { ok: false, log: null, error: err.message };
@@ -4935,7 +4938,7 @@ function registerIpc() {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // Also forgets a driver name that had placed this race on the wrong car.
       if (!(await raceLog.pickSlotAsync(id, slot))) return { ok: false, log: null, error: 'not saved' };
-      return { ok: true, log: await raceLog.loadRaceLogAsync(id) };
+      return { ok: true, log: racelogOutlines.decorateLog(await raceLog.loadRaceLogAsync(id)) };
     } catch (err) {
       console.error('[app] race log pick failed:', err.message);
       return { ok: false, log: null, error: err.message };

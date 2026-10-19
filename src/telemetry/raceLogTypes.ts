@@ -132,6 +132,8 @@ export interface RaceLog {
   laps: number;
   /** More than one class on track: say both positions. */
   multiclass: boolean;
+  /** The circuit's length in metres, from the file's header: picks its outline. */
+  trackLength?: number;
   /**
    * How our car was picked out of the file. `'live'`: there is no file; the
    * live recorder followed our car itself (a `provisional` log).
@@ -169,6 +171,17 @@ export interface RaceLogSummary {
   /** null until our car has been found in the file. */
   slot: number | null;
   provisional: boolean;
+  // The race card's second line: where it started, how far it went, and how
+  // it ended. null / 0 / '' until our car is found.
+  gridPosition: number | null;
+  gridClassPosition: number | null;
+  laps: number;
+  /** Track-limits calls race control charged, as the log lists them. */
+  limits: number;
+  finishStatus: string;
+  multiclass: boolean;
+  /** Metres; 0 when unknown (a provisional race). Picks the card's outline. */
+  trackLength: number;
 }
 
 /** What the replay jump is doing, for the button and its status line. */

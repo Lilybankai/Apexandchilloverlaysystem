@@ -5,6 +5,20 @@
      app until it is renamed.
 -->
 
+### Changed
+
+- **A new Race log.** Each race now opens with how it went: where you
+  finished overall and in class, the places you made from the grid, your
+  laps and best lap, and your contacts, track limits and penalties. Click a
+  count to list them. Under that, your place lap by lap from the grid to the
+  flag, with every incident and pit stop marked on the line. The timeline
+  opens on Key moments rather than every lap, and you can search it. Pick any
+  line, or any marker on the chart, and the panel beside it shows the details:
+  who you touched, the points charged, and the lap before and after so you
+  can see what it cost, with the game replay one click away. The race list
+  shows each circuit's outline, where you started and finished, and marks a
+  clean race.
+
 ## 1.3.11 — 2026-10-19
 
 Smoother racing and recovery, an honest stall log, and a Team page that

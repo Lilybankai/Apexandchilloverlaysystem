@@ -30,7 +30,8 @@
   'use strict';
 
   /** Bumping this re-offers the walkthrough to everyone, once. */
-  const GUIDE_VERSION = '1';
+  // 2: the 2026-10-19 redesign, so everyone sees the new page explained once.
+  const GUIDE_VERSION = '2';
   const SEEN_KEY = 'apex.racelog.guide.seen';
 
   const AUTO_DELAY_MS = 700;
@@ -46,13 +47,13 @@
     {
       id: 'what',
       icon: 'scroll-text',
-      title: 'Every race, read back as a timeline',
+      title: 'Every race, read back',
       lead: 'Le Mans Ultimate saves a results file after every race it finishes. This tab reads those files back, so every race on this PC is here, including the ones driven before Apex was installed.',
       points: [
-        'Open one and it reads down the page in order: the start, every lap, places gained and lost, each contact naming the other car, damage, track limits, penalties, pit stops and driver swaps.',
+        'Open one and the top says how it went: where you finished overall and in class, the places made from the grid, your laps and best lap, and the contacts, limits and penalties. Click a count to list them.',
+        'Race progression is your place lap by lap, from the grid to the flag, with every incident sat on the line. Click a marker to see it.',
+        'The timeline opens on Key moments: the start and the flag, everything that happened to the car, stops and swaps, big swings in place and your best lap. All events has every lap too, and Apex remembers the tab you last used.',
         'Contacts and penalties are red, limits and minor damage amber. Lap times are purple for a class best and green for a personal best, as on the lap sheet.',
-        'The line under the facts is your place lap by lap, from the grid to the flag, overall and in class.',
-        'The filters narrow the timeline. Incidents shows what a steward would read; Apex remembers the one you last used.',
       ],
     },
     {
@@ -62,7 +63,7 @@
       lead: 'Apex matches a race to your car from your lap log, or failing that your driver name. In a team race you may not have driven the car at all, so it can be left unsure.',
       points: [
         'When it cannot tell, the race opens on “Which car was yours?” with the whole field. Pick your car once and it is remembered for that race.',
-        'Picked the wrong one, or a teammate drove the car it chose? “Not your car?” under the facts asks again.',
+        'Picked the wrong one, or a teammate drove the car it chose? “Not your car?” in Session details asks again.',
         'A race session in Review that has a log carries a Race log button in its header. It opens that race here.',
       ],
     },
@@ -70,7 +71,7 @@
       id: 'replay',
       icon: 'video',
       title: 'Replay, from the game’s own recording',
-      lead: 'Replay on a contact, a limits call, damage or a penalty loads the game’s own replay of that race, with the camera on your car, 5 s before the moment.',
+      lead: 'Open game replay in Event details, or Replay on a contact, a limits call, damage or a penalty, loads the game’s own replay of that race, with the camera on your car, 5 s before the moment.',
       points: [
         'The game has to be at its main menu. From inside a session Apex will not pull you out of it, and says so.',
         'A big replay takes up to a minute to load. After that, every other Replay in the same race is a jump, not a reload.',
@@ -81,10 +82,10 @@
       id: 'steward',
       icon: 'keyboard',
       title: 'Going through the incidents',
-      lead: 'Once a replay is in the game, Previous and Next in the replay strip step through the incidents one after another, each replayed in turn. The row being replayed stays marked and on screen.',
+      lead: 'Event details shows the line you picked: what it was, the lap before and after it, and its replay. Once a replay is in the game, Previous and Next there step through the timeline and jump the replay to each incident in turn.',
       points: [
-        '↑ and ↓, or J and K, move a row cursor down the timeline. Enter replays the row the cursor is on.',
-        '[ and ] step to the previous and next incident, the same as the buttons.',
+        '↑ and ↓, or J and K, move down the timeline. Enter replays the line you are on.',
+        '[ and ] replay the previous and next incident.',
         'The steps follow the filter. On Contacts, Next is the next contact; on Limits & penalties, the next call from race control.',
       ],
     },
@@ -94,7 +95,7 @@
       title: 'Copy as text',
       lead: 'Copy as text puts the lines on screen on the clipboard as plain text, headed with the circuit, the date and your car, ready for a protest or a league post.',
       points: [
-        'It copies what the filter shows, so filter to Incidents first for a steward’s version.',
+        'It copies what the tab and the search show, so Key moments or Contacts gives a steward’s version.',
         'Refresh re-reads the game’s results after a race finished with this window open. Press “How it works” to open this guide again.',
       ],
     },

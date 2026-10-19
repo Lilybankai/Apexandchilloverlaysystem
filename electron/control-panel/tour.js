@@ -697,7 +697,7 @@
       id: 'racelog',
       title: 'Race log',
       icon: 'scroll-text',
-      blurb: 'Every race the game saved, as a timeline — and a jump into its replay at each incident.',
+      blurb: 'Every race the game saved, read back — and a jump into its replay at each incident.',
       steps: [
         {
           id: 'races',
@@ -714,12 +714,12 @@
           id: 'log',
           view: 'racelog',
           anchor: '#rl-detail',
-          title: 'One race, in order',
+          title: 'One race, at a glance',
           body:
-            'The start, every lap, places gained and lost, each contact naming the other car, damage, ' +
-            'limits, penalties and pit stops. Contacts and penalties are red, limits amber. The line ' +
-            'under the facts is your place lap by lap.',
-          note: 'Incidents narrows it to what a steward would read, and the filter you use is remembered.',
+            'Where you finished and how many places you made, your laps and best lap, and the contacts, ' +
+            'limits and penalties. Under it, your place lap by lap with every incident on the line, then ' +
+            'the timeline: Key moments first, every lap under All events.',
+          note: 'Click a line or a marker and Event details shows it, with the lap before and after.',
         },
         {
           id: 'replay',
@@ -728,8 +728,8 @@
           title: 'Replay, 5 s before the moment',
           body:
             'Replay loads the game’s own replay of the race with the camera on your car. The game has ' +
-            'to be at its main menu, and a big replay takes up to a minute. Then Previous and Next step ' +
-            'through the incidents, and the keys do the same: ↑ ↓ to move, Enter to replay, [ and ].',
+            'to be at its main menu, and a big replay takes up to a minute. Then Previous and Next in ' +
+            'Event details step through, and the keys do the same: ↑ ↓ to move, Enter to replay, [ and ].',
           note:
             'The game keeps five replays per circuit. A greyed Replay button says why when you hover over it.',
         },
