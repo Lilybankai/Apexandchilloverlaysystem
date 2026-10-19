@@ -5,6 +5,43 @@
      app until it is renamed.
 -->
 
+## 1.3.12-beta.1 — 2026-10-19
+
+### Changed
+
+- **Review and the Race log are one place now.** The Race log tab is gone
+  from the menu: every session and every race is in Review's list. Pick one,
+  then choose what to look at with the tabs across the top — Overview, Laps &
+  stints, Tyres & fuel, Compare and, for a race, Race log. A race you drove
+  with Apex closed (or before you installed it) is still in the list, with
+  its race log.
+
+- **A new session page.** A session opens on Overview: your best lap
+  against your own record here, your average, consistency, clean laps and
+  the time left on the table, then your lap pace, your reference pace, your
+  progress at the circuit over the last month and where you stand on the
+  leaderboard. For a race, the result comes first: where you started and
+  finished, overall and in class, and your contacts, track limits and
+  penalties. Laps & stints lists a stint's laps with their sectors, fuel and
+  energy; click one and the panel beside it shows that lap in full,
+  including each tyre's temperature and wear, with a lap-by-lap strip
+  underneath to jump around the stint. Tyres & fuel has the wear chart and
+  each stint's tyres, and Compare has the full leaderboard and your laps
+  with telemetry, ready to compare against.
+
+- **A new race log.** Your place lap by lap from the grid to the flag, with
+  every incident and pit stop marked on the line. The timeline opens on Key
+  moments rather than every lap, and you can search it. Pick any line, or any
+  marker on the chart, and the panel beside it shows the details: who you
+  touched, the points charged, and the lap before and after so you can see
+  what it cost, with the game replay one click away.
+
+- **A race found from your own laps, even when you took over mid-race.** A
+  stint you drove in a team race now opens that race's log, not just a race
+  you started.
+
+- **Circuit outlines** on every session and race in the list.
+
 ## 1.3.11 — 2026-10-19
 
 Smoother racing and recovery, an honest stall log, and a Team page that

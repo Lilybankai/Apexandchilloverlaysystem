@@ -179,17 +179,12 @@
       <button class="tab" type="button" data-tab="review">
         <svg class="icon"><use href="#i-activity" /></svg><span class="tab__label">Review</span>
       </button>
-      <!-- The game's own results, read back as a timeline (docs/RACE-LOG-PLAN.md).
-           Its own tab since 2026-09-30 (Carl): behind a Sessions | Races switch
-           in Review's rail, drivers never found it. Not gated, for Review's
-           reason: the results files are on every PC that has raced. -->
-      <button class="tab" type="button" data-tab="racelog">
-        <svg class="icon"><use href="#i-scroll-text" /></svg><span class="tab__label">Race log</span>
-      </button>
+      <!-- The race log (docs/RACE-LOG-PLAN.md) is a tab of a race inside
+           Review since 2026-10-19; it had its own rail tab here from
+           2026-09-30. -->
       <!-- Practice review (docs/PRACTICE-REVIEW-PLAN.md): every practice session
            against the lap the driver chased, and where the time went. Its own
-           tab, not a view inside Review (Carl, 2026-10-08), under the Race log
-           so that one stays directly under Review where Carl put it. Beta-only,
+           tab, not a view inside Review (Carl, 2026-10-08). Beta-only,
            hidden until the channel is known (applyPracticeTabVisibility): Carl
            held it out of the 1.3.8 stable release. -->
       <button class="tab" type="button" data-tab="practice" hidden>
@@ -2343,8 +2338,8 @@
         <div class="view__head">
           <div>
             <h1>Review</h1>
-            <p>Every session you have driven, stint by stint, lap by lap. Read off this
-               machine's own files — no account needed.</p>
+            <p>Every session you have driven, stint by stint, lap by lap, and every race
+               with its race log. Read off this machine's own files — no account needed.</p>
           </div>
           <div class="view__head-actions">
             <!-- The walkthrough opens by itself the first time this tab is
@@ -2366,7 +2361,7 @@
           <aside class="rv__rail">
             <div class="rv__find">
               <input id="rv-search" type="search" placeholder="Find a track or car"
-                     aria-label="Filter sessions by track or car" />
+                     aria-label="Filter sessions and races by track or car" />
               <select id="rv-type" aria-label="Filter sessions by type">
                 <option value="all">All</option>
                 <option value="practice">Practice</option>
@@ -2444,77 +2439,6 @@
           </aside>
 
           <div class="rv__detail" id="pr-detail"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ========================= RACE LOG ============================= -->
-    <!-- docs/RACE-LOG-PLAN.md. The game's results files, one race at a time,
-         as a timeline. The Review tab's frame and classes on purpose — it was
-         a view inside Review until 2026-09-30 — but its own ids and its own
-         host (racelog-panel.js), so neither tab borrows the other's columns.
-         Everything below the header is painted by review-racelog.js. -->
-    <section class="view" data-view="racelog">
-      <div class="wrap wrap--wide">
-        <div class="view__head">
-          <div>
-            <h1>Race log</h1>
-            <p>Every race the game saved results for on this PC, as a timeline: laps, places,
-               contacts, damage, track limits and penalties. Replay jumps the game's own replay
-               to the moment.</p>
-          </div>
-          <div class="view__head-actions">
-            <!-- The walkthrough opens by itself the first time this tab is
-                 used; this is how it comes back afterwards. -->
-            <button class="btn btn--ghost btn--sm" id="racelog-guide-open" type="button"
-                    title="A short walkthrough: where the races come from, the replay, and the keys">
-              <svg class="icon"><use href="#i-graduation-cap" /></svg><span>How it works</span>
-            </button>
-            <button class="btn btn--ghost btn--sm" id="rl-refresh" type="button"
-                    title="Re-read the game's results files">
-              <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="rv">
-          <aside class="rv__rail">
-            <div class="rv__find">
-              <input id="rl-search" type="search" placeholder="Find a track or class"
-                     aria-label="Filter races by track or class" />
-            </div>
-            <div class="rv__list" id="rl-races"></div>
-          </aside>
-
-          <div class="rv__detail" id="rl-detail"></div>
-        </div>
-
-        <!-- ================== HOW IT WORKS ========================== -->
-        <!-- First-run walkthrough. Steps are built by racelog-guide.js — only
-             the frame is static, same contract as the Review and VR guides. -->
-        <div id="racelog-guide" class="su-guide" hidden role="dialog" aria-modal="true"
-             aria-labelledby="racelog-guide-title">
-          <div id="racelog-guide-scrim" class="su-guide__scrim"></div>
-          <section class="su-guide__panel">
-            <header class="su-guide__head">
-              <span id="racelog-guide-icon" class="su-guide__icon"></span>
-              <span class="su-guide__titles">
-                <h2 id="racelog-guide-title" class="su-guide__title"></h2>
-                <p id="racelog-guide-sub" class="su-guide__sub"></p>
-              </span>
-              <button id="racelog-guide-close" class="iconbtn" type="button" title="Close" aria-label="Close">
-                <svg class="icon"><use href="#i-x" /></svg>
-              </button>
-            </header>
-            <div id="racelog-guide-body" class="su-guide__body"></div>
-            <footer class="su-guide__foot">
-              <div id="racelog-guide-dots" class="su-guide__dots" aria-hidden="true"></div>
-              <div class="su-guide__nav">
-                <button id="racelog-guide-back" class="btn btn--ghost btn--sm" type="button">Back</button>
-                <button id="racelog-guide-next" class="btn btn--accent btn--sm" type="button">Next</button>
-              </div>
-            </footer>
-          </section>
         </div>
       </div>
     </section>
@@ -4625,6 +4549,8 @@
 <!-- Review tab: the canvas painters first (pure, also require()d by
      scripts/test-reviewcharts.js), then the page itself. -->
 <script src="review-charts.js"></script>
+<!-- The race log, painted into Review's Race log tab. Before review-panel.js,
+     which asks it for the races to list. -->
 <script src="review-racelog.js"></script>
 <script src="review-panel.js"></script>
 <script src="practice-panel.js"></script>
@@ -4632,10 +4558,6 @@
 <!-- Training ▸ Chase: which lap the training overlays chase. Mounted by
      control-panel.js the first time the Training tab opens. -->
 <script src="training-reference.js"></script>
-<!-- Race log tab: review-racelog.js paints it (and hands Review the "Race
-     log" button on a race session); this is the tab that hosts it. -->
-<script src="racelog-panel.js"></script>
-<script src="racelog-guide.js"></script>
 <script src="vr-guide.js"></script>
 <script src="engineer-panel.js"></script>
 <!-- Team tab header ▸ Relay source. Self-contained; reads the team roster

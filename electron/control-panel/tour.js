@@ -633,8 +633,8 @@
           anchor: '#rv-detail',
           title: 'What the session came to',
           body:
-            'Best lap, and then the part that matters: optimal is your own best three sectors added ' +
-            'together, and untapped is the gap to it — time you have already driven, in pieces. ' +
+            'Overview: best lap, and then the part that matters — optimal is your own best three sectors ' +
+            'added together, and potential gain is the gap to it: time you have already driven, in pieces. ' +
             'Consistency leads with the real spread in seconds rather than a percentage.',
           note:
             'A lap that broke the limits still appears, with the reason printed on it, instead of ' +
@@ -644,11 +644,11 @@
           id: 'sheet',
           view: 'review',
           anchor: '#rv-detail',
-          title: 'Stints, and the lap sheet',
+          title: 'Laps & stints',
           body:
-            'Open a stint for its lap sheet and the tyres it ended on. Purple is the session best, ' +
-            'green a stint best, amber a lap that broke the clean rule. A row with a trace mark has ' +
-            'telemetry behind it — click it and the lap opens.',
+            'Pick a stint and click any lap: the panel beside the list reads it in full — sectors, fuel, ' +
+            'energy, and each tyre at the end of it. Purple is the session best, green a stint best. A lap ' +
+            'with a trace mark has telemetry behind it, and Study this lap opens it.',
           note:
             'Only laps driven with Apex running have telemetry. An older session may have times and ' +
             'no traces; that is the lap being older, not the tab being broken.',
@@ -660,7 +660,7 @@
           title: 'Two laps, one window',
           body:
             'Speed, throttle and brake, gear and steering, drawn against DISTANCE round the circuit ' +
-            'so two laps line up at the same corner. Pin a driver from the leaderboard card, or press ' +
+            'so two laps line up at the same corner. Pin a driver from the board on Compare, or press ' +
             'vs on one of your own laps, and it is laid underneath with a delta band above: slower ' +
             'above the line, faster below.',
           note:
@@ -683,6 +683,19 @@
             'those two lines actually were.',
         },
         {
+          id: 'racelog',
+          view: 'review',
+          anchor: '#rv-detail',
+          title: 'A race, and its race log',
+          body:
+            'Le Mans Ultimate saves a results file after every race, and races land in this list too — ' +
+            'including races from before Apex. A race opens with its result on Overview and a Race log ' +
+            'tab: your place lap by lap, then the timeline, Key moments first. Pick a line and Open game ' +
+            'replay loads the game’s replay 5 s before it; the game has to be at its main menu.',
+          note:
+            'In the Race log, ↑ ↓ to move, Enter to replay, [ and ] for the previous and next incident.',
+        },
+        {
           id: 'career',
           view: 'review',
           anchor: '#rv-career',
@@ -690,57 +703,6 @@
           body:
             'Laps, distance, hours at the wheel and the circuit you have driven most — the whole of ' +
             'what this PC has recorded, across every session on the list.',
-        },
-      ],
-    },
-    {
-      id: 'racelog',
-      title: 'Race log',
-      icon: 'scroll-text',
-      blurb: 'Every race the game saved, as a timeline — and a jump into its replay at each incident.',
-      steps: [
-        {
-          id: 'races',
-          view: 'racelog',
-          anchor: '#rl-races',
-          title: 'Every race the game saved',
-          body:
-            'Le Mans Ultimate writes a results file after every race, and this list reads them back — ' +
-            'including races driven before Apex was installed. Newest first; search by track or class.',
-          note:
-            'In a team race Apex may not know which car was yours. It asks once, and remembers.',
-        },
-        {
-          id: 'log',
-          view: 'racelog',
-          anchor: '#rl-detail',
-          title: 'One race, in order',
-          body:
-            'The start, every lap, places gained and lost, each contact naming the other car, damage, ' +
-            'limits, penalties and pit stops. Contacts and penalties are red, limits amber. The line ' +
-            'under the facts is your place lap by lap.',
-          note: 'Incidents narrows it to what a steward would read, and the filter you use is remembered.',
-        },
-        {
-          id: 'replay',
-          view: 'racelog',
-          anchor: '#rl-detail',
-          title: 'Replay, 5 s before the moment',
-          body:
-            'Replay loads the game’s own replay of the race with the camera on your car. The game has ' +
-            'to be at its main menu, and a big replay takes up to a minute. Then Previous and Next step ' +
-            'through the incidents, and the keys do the same: ↑ ↓ to move, Enter to replay, [ and ].',
-          note:
-            'The game keeps five replays per circuit. A greyed Replay button says why when you hover over it.',
-        },
-        {
-          id: 'copy',
-          view: 'racelog',
-          anchor: '#rl-detail',
-          title: 'Copy as text',
-          body:
-            'Copy as text puts the lines on screen on the clipboard, headed with the circuit, the date ' +
-            'and your car — ready for a protest or a league post.',
         },
       ],
     },

@@ -1024,13 +1024,9 @@ verifyPage({
     // The VR tab's walkthrough; the tab's controls themselves live in
     // control-panel.js with the rest of the settings.
     'vr-guide.js',
-    // The Race log tab. review-racelog.js paints the race list and one race
-    // as a timeline into the columns racelog-panel.js hands it, so it
-    // reaches for no id of its own — scanned so it never starts to. The host
-    // owns the tab's ids; racelog-guide.js is its first-visit walkthrough.
+    // The race log, painted into Review's Race log tab: it reaches for no id
+    // of its own — scanned so it never starts to.
     'review-racelog.js',
-    'racelog-panel.js',
-    'racelog-guide.js',
     // The Get started checklist. Its navigation targets are written as '#id'
     // strings in the STEPS data precisely so this scanner treats them as
     // lookups and refuses to let the cards be renamed underneath it.
@@ -1108,9 +1104,6 @@ console.log('\nIcon sprite — icons.js');
     wanted.add(`i-${s.icon}`);
   }
   for (const s of require('../electron/control-panel/vr-guide.js').STEPS) {
-    wanted.add(`i-${s.icon}`);
-  }
-  for (const s of require('../electron/control-panel/racelog-guide.js').STEPS) {
     wanted.add(`i-${s.icon}`);
   }
   // Same for the checklist's rows — plus the tick, which is chosen at paint

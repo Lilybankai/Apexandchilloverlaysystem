@@ -1032,5 +1032,41 @@ function squareMap(rise) {
     && !none.calls.some(([op]) => op === 'arc'));
 }
 
+/* -------------------------------------------------------------------------- */
+/*  The Race log's progression: both places on one axis, incidents on it      */
+/* -------------------------------------------------------------------------- */
+/*
+ * The redesigned chart (2026-10-19) shares one P axis between overall and
+ * class, so P1 must still be up, the marks must sit on the line the driver is
+ * following, and the hit list must give the panel back the event to select.
+ */
+{
+  const series = {
+    laps: 4,
+    rows: [
+      { id: 'overall', label: 'Overall', pos: [21, 18, 18, 14, 12] },
+      { id: 'class', label: 'LMP2', pos: [6, 5, 5, 3, 2] },
+    ],
+    focus: 'class',
+    marks: [{ lap: 2, tone: 'bad', index: 7 }, { lap: 4, tone: 'pit', index: 9 }, { lap: 9, tone: 'warn', index: 11 }],
+    selected: 7,
+  };
+  const { canvas, calls } = fakeCanvas(600, 230);
+  const hits = CHARTS.drawRaceProgress(canvas, series);
+  check('progression: a hit per mark inside the race',
+    hits.length === 2 && hits[0].index === 7 && hits[1].index === 9, JSON.stringify(hits));
+  check('progression: a mark after the flag is left off', !hits.some((h) => h.index === 11));
+  const texts = calls.filter(([op]) => op === 'fillText').map(([, t]) => t);
+  check('progression: the focus line is labelled with its finish', texts.includes('P2'), texts.join());
+  check('progression: the other line is labelled too', texts.includes('P12'));
+  check('progression: the lap axis starts at the grid', texts.includes('Grid'));
+  const other = CHARTS.drawRaceProgress(fakeCanvas(600, 230).canvas, { ...series, focus: 'overall' });
+  check('progression: P1 is up, so a class mark sits above the overall one',
+    hits[0].y < other[0].y, `${hits[0].y} vs ${other[0].y}`);
+  check('progression: marks sit mid-lap, left to right', hits[0].x < hits[1].x);
+  check('progression: no rows, nothing painted',
+    CHARTS.drawRaceProgress(fakeCanvas().canvas, { laps: 5, rows: [] }).length === 0);
+}
+
 console.log(`\ntest-reviewcharts: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -42,9 +42,10 @@
   const CHARTS = window.APEX_REVIEW_CHARTS;
   if (!CHARTS) return;
   /**
-   * The race logs (review-racelog.js). They live on their own tab now
-   * (racelog-panel.js); this tab only asks them one thing — whether a race
-   * session has a log — to put the "Race log" button on its header.
+   * The race logs (review-racelog.js), painted into this tab since
+   * 2026-10-19: a race session the game saved results for has a Race log
+   * tab, and a race the game saved with Apex not running is listed on its
+   * own. This file owns the list and the header; the log paints itself.
    */
   const RL = window.APEX_REVIEW_RACELOG || null;
 
@@ -61,6 +62,17 @@
 
   /** Session summaries, newest first, as `review:sessions` returned them. */
   let summaries = [];
+  /** Circuit outlines by bundled key, `{ d, view }`: what `summaries[].mapKey` names. */
+  let outlines = {};
+  /**
+   * The race logs, laid against the sessions: `raceOf` is session id → the
+   * race summary it was (see RL.forSession), `raceOnly` the races no session
+   * matched — driven with Apex shut, or before it was installed.
+   */
+  const raceOf = new Map();
+  let raceOnly = [];
+  /** A race-only entry on screen: its race id. Exclusive with `currentId`. */
+  let currentRace = null;
   /** The session currently open, in full. */
   let current = null;
   let currentId = null;
@@ -68,8 +80,6 @@
   let loadedOnce = false;
   let visible = false;
   let tempUnit = 'c';
-  /** Stint numbers the driver has collapsed on the open session. */
-  const collapsed = new Set();
   /** Teardown for the lap chart's listeners, so a re-render never stacks them. */
   let chartOff = null;
   /** The same, for the lap-detail view's scrub. */
@@ -107,6 +117,22 @@
    * offered as a comparison at all.
    */
   let board = { key: '', state: 'idle', rows: [], error: '' };
+  /**
+   * The session page's tab — overview | laps | tyres | compare — remembered
+   * per viewer: a driver who always reads the lap sheet lands on it.
+   */
+  const TAB_KEY = 'apex.review.tab';
+  let subTab = 'overview';
+  try {
+    const saved = window.localStorage.getItem(TAB_KEY);
+    if (saved === 'overview' || saved === 'laps' || saved === 'tyres' || saved === 'compare') subTab = saved;
+  } catch {
+    /* storage off: Overview */
+  }
+  /** Laps & stints: the stint on screen, the lap picked in it, and the chips' filter. */
+  let selStint = null;
+  let selLapNo = null;
+  let lapFilter = 'all';
   // The rail used to switch between Sessions and Races and remembered which.
   // Races are their own tab since 2026-09-30, so the remembered choice means
   // nothing; drop it rather than leave it lying in every profile.
@@ -273,33 +299,77 @@
     return `${row.track} ${row.car} ${row.carClass}`.toLowerCase().includes(q);
   }
 
+  /** A race-only entry against the search and the type filter: it is a race. */
+  function raceMatchesFilter(r) {
+    const type = els.filter ? els.filter.value : 'all';
+    if (type !== 'all' && type !== 'race') return false;
+    const q = (els.search ? els.search.value : '').trim().toLowerCase();
+    if (!q) return true;
+    return `${r.track} ${r.carClass || ''}`.toLowerCase().includes(q);
+  }
+
+  /** Lay the race logs against the sessions. Cheap: a few hundred of each. */
+  function mergeRaces() {
+    raceOf.clear();
+    raceOnly = [];
+    if (!RL) return;
+    const used = new Set();
+    for (const s of summaries) {
+      const r = RL.forSession(s);
+      if (r && !used.has(r.id)) {
+        raceOf.set(s.id, r);
+        used.add(r.id);
+      }
+    }
+    raceOnly = RL.races().filter((r) => !used.has(r.id));
+  }
+
+  /** Every entry for the rail, newest first: `{ at, session }` or `{ at, race }`. */
+  function entries() {
+    const out = [];
+    for (const s of summaries) out.push({ at: Date.parse(s.startedAt) / 1000, session: s });
+    for (const r of raceOnly) out.push({ at: r.startedAt, race: r });
+    return out.sort((a, b) => b.at - a.at);
+  }
+
   function renderList() {
     if (!els.list) return;
-    const rows = summaries.filter(matchesFilter);
+    const rows = entries().filter((e) => (e.session ? matchesFilter(e.session) : raceMatchesFilter(e.race)));
 
     if (!rows.length) {
       els.list.innerHTML = `<p class="rv-empty" style="padding:20px 14px">${
-        summaries.length ? 'No session matches that.' : 'No sessions yet.'
+        summaries.length || raceOnly.length ? 'Nothing matches that.' : 'No sessions yet.'
       }</p>`;
       return;
     }
 
     let html = '';
     let day = '';
-    for (const row of rows) {
-      const d = dayLabel(row.startedAt);
+    for (const entry of rows) {
+      const d = dayLabel(new Date(entry.at * 1000).toISOString());
       if (d !== day) {
         day = d;
         html += `<div class="rv__day">${esc(d)}</div>`;
       }
+      if (entry.race) {
+        html += RL.cardHtml(entry.race, entry.race.id === currentRace);
+        continue;
+      }
+      const row = entry.session;
       const laps = `${row.laps} lap${row.laps === 1 ? '' : 's'}`;
       const stints = row.stints > 1 ? ` · ${row.stints} stints` : '';
       html += `
-        <button class="rv__card" type="button" data-session="${esc(row.id)}"
+        <button class="rv__card rvx-scard" type="button" data-session="${esc(row.id)}"
                 data-type="${typeKey(row.sessionType)}"
                 data-active="${String(row.id === currentId)}">
-          <b>${esc(row.track || 'Unknown circuit')}</b>
-          <i>${esc([row.car, row.carClass].filter(Boolean).join(' · ') || typeName(row.sessionType))}</i>
+          <span class="rl-rcard__top">
+            ${mapSvg(outlines[row.mapKey], 'rl-map--card')}
+            <span class="rl-rcard__name">
+              <b>${esc(row.track || 'Unknown circuit')}</b>
+              <i>${esc([row.car, row.carClass].filter(Boolean).join(' · ') || typeName(row.sessionType))}</i>
+            </span>
+            <span class="rvx-type" data-type="${typeKey(row.sessionType)}">${esc(typeName(row.sessionType))}</span>
+          </span>
           <span class="rv__cardfoot">
             <span class="rv__cardtime" data-none="${String(!known(row.bestMs))}">${
               known(row.bestMs) ? fmtLap(row.bestMs) : 'no clean lap'
@@ -317,44 +387,6 @@
 
   /** The consistency bar's band. Below 40 is a stint that got away from you. */
   const consistencyBand = (v) => (v >= 70 ? 'high' : v >= 40 ? 'mid' : 'low');
-
-  function tile(label, value, opts = {}) {
-    const none = value === dash || value == null;
-    return `
-      <div class="rv-tile${opts.tone ? ` rv-tile--${opts.tone}` : ''}">
-        <div class="rv-tile__label">${esc(label)}</div>
-        <div class="rv-tile__value" data-none="${String(none)}">${value == null ? dash : value}</div>
-        ${opts.note ? `<div class="rv-tile__note">${opts.note}</div>` : ''}
-        ${opts.bar !== undefined && known(opts.bar)
-          ? `<div class="rv-bar" data-band="${consistencyBand(opts.bar)}">
-               <span style="width:${Math.max(2, Math.min(100, opts.bar))}%"></span>
-             </div>`
-          : ''}
-      </div>`;
-  }
-
-  /**
-   * The one line under the best lap. It answers the question a driver actually
-   * has when they see their time: was that any good *for me*? Comparing to
-   * their own record is the only comparison we can make honestly offline —
-   * against the field is what phase 4 buys.
-   */
-  function heroNote(s) {
-    if (!known(s.stats.bestMs)) {
-      return `<span class="rv-hero__note">No clean lap in this session</span>`;
-    }
-    if (s.pbHere || !known(s.pbMs)) {
-      return `<span class="rv-hero__note" data-tone="pb">
-        <svg class="icon"><use href="#i-trophy" /></svg>Your best here${
-          s.carClass ? ` in ${esc(s.carClass)}` : ''
-        }
-      </span>`;
-    }
-    const off = s.stats.bestMs - s.pbMs;
-    return `<span class="rv-hero__note" data-tone="off">
-      <svg class="icon"><use href="#i-target" /></svg>${fmtDelta(off)} off your ${fmtLap(s.pbMs)}
-    </span>`;
-  }
 
   /** "3 laps lost to track limits" — the plan's more-specific-than-Delta note. */
   const DIRTY_WORDS = {
@@ -454,71 +486,6 @@
       </div>`;
   }
 
-  function reportHtml(s) {
-    const st = s.stats;
-    return `
-      <div class="rv-report">
-        <div class="rv-hero">
-          <div>
-            <div class="rv-hero__label">Best lap</div>
-            <div class="rv-hero__time" data-none="${String(!known(st.bestMs))}">${
-              known(st.bestMs) ? fmtLap(st.bestMs) : dash
-            }</div>
-          </div>
-          <div>
-            ${heroNote(s)}
-            ${st.bestSectors.some((v) => known(v)) ? `
-            <div class="rv-hero__sectors">
-              ${st.bestSectors.map((v, i) => `
-                <span><b>S${i + 1}</b>${known(v) ? fmtSector(v) : dash}</span>`).join('')}
-            </div>` : ''}
-          </div>
-        </div>
-        <div class="rv-tiles">
-          ${tile('Optimal lap', known(st.optimalMs) ? fmtLap(st.optimalMs) : dash, {
-            tone: 'accent',
-            note: 'Your own best sectors',
-          })}
-          ${tile('Untapped', known(st.untappedMs) ? fmtDelta(st.untappedMs) : dash, {
-            note: 'Best minus optimal',
-          })}
-          ${tile('Average lap', known(st.averageMs) ? fmtLap(st.averageMs) : dash, {
-            note: `${st.cleanLaps} clean lap${st.cleanLaps === 1 ? '' : 's'}`,
-          })}
-          ${tile('Consistency', known(st.spreadMs) ? `±${fix(st.spreadMs / 1000, 2)}s` : dash, {
-            bar: st.consistency,
-            note: known(st.consistency) ? `${fix(st.consistency, 0)}% of the scale` : '',
-          })}
-          ${tile('Clean driving', known(st.cleanPct) ? pct(st.cleanPct) : dash, {
-            tone: known(st.cleanPct) && st.cleanPct >= 0.85 ? 'good' : undefined,
-            note: cleanNote(st),
-          })}
-          ${tile('Laps', String(st.laps), {
-            note: `${s.stints.length} stint${s.stints.length === 1 ? '' : 's'}`,
-          })}
-          ${tile('On track', fmtSpan(st.driveMs), {
-            note: `${fmtSpan(st.elapsedMs)} in the car`,
-          })}
-          ${tile('Fuel', known(st.fuelPerLapL) ? `${fix(st.fuelPerLapL, 2)} L` : dash, {
-            note: known(st.fuelUsedL) ? `${fix(st.fuelUsedL, 1)} L per stint` : 'not recorded',
-          })}
-          ${known(st.vePerLapPct)
-            ? tile('Energy', `${fix(st.vePerLapPct, 2)}%`, { note: 'per lap' })
-            : ''}
-        </div>
-        ${paceHtml(s)}
-      </div>`;
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /*  The lap sheet                                                         */
-  /* ---------------------------------------------------------------------- */
-
-  const sheetCols = () => [
-    'Lap', 'S1', 'S2', 'S3', 'Time', 'Δ best', 'Fuel L', 'VE %',
-    `Tyres °${tempUnit === 'f' ? 'F' : 'C'}`, 'Wear', 'vs',
-  ];
-
   /**
    * Rank a figure against the session's and the stint's best. Purple for the
    * session, green for the stint, nothing otherwise — the convention every
@@ -529,74 +496,6 @@
     if (known(sessionBest) && value === sessionBest) return ' data-rank="session"';
     if (known(stintBest) && value === stintBest) return ' data-rank="stint"';
     return '';
-  }
-
-  function flagsFor(lap) {
-    if (lap.clean) return '';
-    return lap.dirty
-      .map((why) => `<span class="rv-flag" data-why="${esc(why)}">${esc(why)}</span>`)
-      .join('');
-  }
-
-  function sheetHtml(stint, session) {
-    const sBest = session.stats.bestMs;
-    const sSec = session.stats.bestSectors;
-    const tBest = stint.stats.bestMs;
-    const tSec = stint.stats.bestSectors;
-
-    const rows = stint.laps.map((lap) => {
-      // The delta is against the SESSION best, not the stint's: a driver
-      // reading stint three wants to know where it sits against their whole
-      // evening, and a per-stint delta silently re-bases every card.
-      // A pit lap's gap to the best is arithmetic, not information: it says
-      // how long the pit lane is. Every other timed lap gets one.
-      const comparable = lap.timed && !lap.isOutLap && !lap.isInLap;
-      const delta = known(sBest) && comparable && lap.lapMs !== sBest ? lap.lapMs - sBest : null;
-      const deltaCls = delta === null ? 'dim' : delta < 0 ? 'gain' : 'loss';
-      const worst = lap.wear ? Math.min(...lap.wear) : null;
-      // Bare numbers: the column heading carries the unit, and four degree
-      // marks per row across forty rows is noise in a column of figures.
-      const temps = lap.temp
-        ? lap.temp.map((t) => Math.round(tempUnit === 'f' ? t * 1.8 + 32 : t)).join(' ')
-        : dash;
-      const mark = lap.hasTrace
-        ? `<span class="rv-trace" title="Telemetry captured for this lap"><svg class="icon"><use href="#i-activity" /></svg></span>`
-        : '';
-      // A row is a link to the lap only when there is a trace behind it.
-      // Making every row look clickable and then telling a third of them
-      // "nothing recorded" is the affordance lying about itself.
-      return `
-        <tr data-timed="${String(lap.timed)}" data-lap="${lap.lapNo}"
-            ${lap.hasTrace ? `data-open="${esc(lap.id || '')}"` : ''}
-            ${lap.hasTrace ? 'tabindex="0" role="button" title="Study this lap"' : ''}>
-          <td class="num">${lap.lapNo}${mark}</td>
-          <td class="sec"${rank(lap.s1Ms, tSec[0], sSec[0])}>${fmtSector(lap.s1Ms)}</td>
-          <td class="sec"${rank(lap.s2Ms, tSec[1], sSec[1])}>${fmtSector(lap.s2Ms)}</td>
-          <td class="sec"${rank(lap.s3Ms, tSec[2], sSec[2])}>${fmtSector(lap.s3Ms)}</td>
-          <td class="lap"${lap.clean ? rank(lap.lapMs, tBest, sBest) : ''}>${
-            lap.timed ? fmtLap(lap.lapMs) : dash
-          }${flagsFor(lap)}</td>
-          <td class="${deltaCls}">${delta === null ? dash : fmtDelta(delta)}</td>
-          <td>${known(lap.fuelUsedL) ? `${fix(lap.fuelUsedL, 2)}` : `<span class="dim">${dash}</span>`}</td>
-          <td>${known(lap.veUsedPct) ? `${fix(lap.veUsedPct, 2)}` : `<span class="dim">${dash}</span>`}</td>
-          <td class="dim">${temps}</td>
-          <td>${known(worst) ? pct(worst) : `<span class="dim">${dash}</span>`}</td>
-          <td class="ref">${lap.hasTrace ? `
-            <button type="button" class="rv-refbtn" data-ref="${esc(lap.id || '')}"
-                    data-on="${String(!!refLap && refLap.id === lap.id)}"
-                    title="${refLap && refLap.id === lap.id
-                      ? 'Stop comparing against this lap'
-                      : 'Compare every other lap against this one'}">vs</button>` : ''}</td>
-        </tr>`;
-    }).join('');
-
-    return `
-      <div class="rv-sheet__scroll">
-        <table class="rv-sheet">
-          <thead><tr>${sheetCols().map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -684,37 +583,520 @@
       </div>`;
   }
 
-  function stintHtml(stint, session) {
-    const st = stint.stats;
-    const open = !collapsed.has(stint.no);
-    // This stint's average against the reference — whether the pace held.
-    const sp = session.pace && session.pace.stints && session.pace.stints[stint.no - 1];
-    const stintPace = sp && sp.ok ? sp : null;
-    const fact =(label, value, cls = '') => `
-      <span class="rv-fact${cls}"><b>${esc(label)}</b>
-        <span data-none="${String(value === dash)}">${value}</span></span>`;
+  /* ---------------------------------------------------------------------- */
+  /*  The session page (redesigned 2026-10-19)                              */
+  /* ---------------------------------------------------------------------- */
+  /*
+   * Carl's two concepts: a header that says which session this is, then four
+   * tabs rather than one long scroll — Overview (the numbers, the pace, where
+   * you stand), Laps & stints (one stint's laps, one lap picked and read in a
+   * panel beside them), Tyres & fuel, and Compare (the board, and what every
+   * lap you open is laid over). The lap view is unchanged: Study this lap
+   * still opens it.
+   */
 
+  const TABS = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'laps', label: 'Laps &amp; stints' },
+    { id: 'tyres', label: 'Tyres &amp; fuel' },
+    { id: 'compare', label: 'Compare' },
+    { id: 'racelog', label: 'Race log', race: true },
+  ];
+
+  /** The tabs this session has: Race log only when the game saved the race. */
+  const tabsFor = (s) => TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
+
+  /** The tab to draw: the one remembered, unless this session lacks it. */
+  function tabFor(s) {
+    return tabsFor(s).some((t) => t.id === subTab) ? subTab : 'overview';
+  }
+
+  function tabsHtml(list, on) {
     return `
-      <section class="rv-stint" data-stint="${stint.no}" data-open="${String(open)}">
-        <button class="rv-stint__head" type="button" data-toggle="${stint.no}"
-                aria-expanded="${String(open)}">
-          <svg class="icon rv-stint__caret"><use href="#i-chevron-down" /></svg>
-          <span class="rv-stint__name">Stint ${stint.no}</span>
-          <span class="rv-stint__facts">
-            ${fact('Laps', String(st.laps))}
-            ${fact('Best', known(st.bestMs) ? fmtLap(st.bestMs) : dash, ' rv-fact--best')}
-            ${fact('Average', known(st.averageMs) ? fmtLap(st.averageMs) : dash)}
-            ${stintPace ? fact('vs ref', `${fix(stintPace.percent, 1)}%`) : ''}
-            ${fact('Spread', known(st.spreadMs) ? `±${fix(st.spreadMs / 1000, 2)}s` : dash)}
-            ${fact('Fuel', known(st.fuelPerLapL) ? `${fix(st.fuelPerLapL, 2)} L/lap` : dash)}
-            ${fact('Time', fmtSpan(st.elapsedMs))}
-          </span>
-        </button>
-        <div class="rv-stint__body">
-          ${sheetHtml(stint, session)}
-          ${sideHtml(stint)}
+        <nav class="rvx-tabs" aria-label="Which part of the session">
+          ${list.map((t) => `<button type="button" data-rvtab="${t.id}" data-active="${String(t.id === on)}"
+            ${t.id === on ? 'aria-current="page"' : ''}>${t.label}</button>`).join('')}
+        </nav>`;
+  }
+
+  /** A circuit's outline as inline SVG, or '' — the Race log's drawing. */
+  function mapSvg(outline, cls) {
+    if (!outline || typeof outline.d !== 'string' || !outline.d) return '';
+    const view = Number(outline.view) || 100;
+    return `<svg class="rl-map ${cls || ''}" viewBox="-4 -4 ${view + 8} ${view + 8}" aria-hidden="true"><path d="${esc(outline.d)}"/></svg>`;
+  }
+
+  function headerHtml(s) {
+    const wet = s.stints.some((st) => st.laps.some((l) => l.wet));
+    const bits = [s.car, s.carClass, typeName(s.sessionType),
+      `${s.stints.length} stint${s.stints.length === 1 ? '' : 's'}`].filter(Boolean);
+    return `
+      <section class="rv-card rvx-head">
+        <div class="rvx-head__row">
+          ${mapSvg(s.outline, 'rl-map--head')}
+          <div class="rvx-head__title">
+            <h2>${esc(s.track || 'Unknown circuit')}</h2>
+            <div class="rvx-head__sub">
+              ${bits.map((b) => `<span>${esc(b)}</span>`).join('')}
+              ${wet ? '<span class="rv-pill rv-pill--wet">Wet</span>' : ''}
+            </div>
+          </div>
+          <div class="rvx-head__end">
+            <span class="rv-head__when">${esc(dayLabel(s.startedAt))} · ${esc(clockLabel(s.startedAt))}</span>
+          </div>
         </div>
+        ${tabsHtml(tabsFor(s), tabFor(s))}
       </section>`;
+  }
+
+  /**
+   * A race the game saved with Apex not running: no laps of ours to review,
+   * so the race log is its one tab, and the header says why.
+   */
+  function raceHeaderHtml(r) {
+    const at = new Date(r.startedAt * 1000).toISOString();
+    const cls = String(r.carClass || '').replace(/_/g, ' ').trim();
+    return `
+      <section class="rv-card rvx-head">
+        <div class="rvx-head__row">
+          ${mapSvg(RL.outlines()[r.mapKey], 'rl-map--head')}
+          <div class="rvx-head__title">
+            <h2>${esc(r.track || 'Unknown circuit')}</h2>
+            <div class="rvx-head__sub">
+              ${[cls, 'Race'].filter(Boolean).map((b) => `<span>${esc(b)}</span>`).join('')}
+              ${r.provisional ? '<span class="rv-pill">Provisional</span>' : ''}
+            </div>
+          </div>
+          <div class="rvx-head__end">
+            <span class="rv-head__when">${esc(dayLabel(at))} · ${esc(clockLabel(at))}</span>
+          </div>
+        </div>
+        ${tabsHtml(TABS.filter((t) => t.race), 'racelog')}
+        <p class="rvx-head__note">Apex was not running for this race, so there are no laps of yours to review —
+          only the game’s own record of it.</p>
+      </section>`;
+  }
+
+  /**
+   * The race's result on its session's Overview: where it started and
+   * finished, and what it cost. The counts open the Race log on them.
+   */
+  function raceResultHtml(r) {
+    if (!r || r.slot === null || r.slot === undefined) return '';
+    const cls = String(r.carClass || '').replace(/_/g, ' ').trim();
+    const place = (label, grid, fin) => {
+      const moved = known(grid) && known(fin) ? grid - fin : null;
+      return `
+        <div class="rvx-place">
+          <span>${esc(label)}</span>
+          <b>${known(grid) ? `P${grid} <i>→</i> ` : ''}<em>${known(fin) ? `P${fin}` : dash}</em>${moved
+            ? ` <small data-dir="${moved > 0 ? 'gain' : 'loss'}">${moved > 0 ? '+' : '−'}${Math.abs(moved)}</small>` : ''}</b>
+        </div>`;
+    };
+    const count = (n, word, tone, f) => `
+        <button type="button" class="rvx-count" data-rvrace="${f}"${n ? ` data-tone="${tone}"` : ''}
+                title="Show these in the race log"><b>${n}</b><span>${esc(word)}</span></button>`;
+    const finished = /^finished/i.test(String(r.finishStatus || ''));
+    return `
+      <section class="rv-card rvx-race">
+        ${place(r.multiclass ? 'Overall' : 'Position', r.gridPosition, r.finishPosition)}
+        ${r.multiclass && cls ? place(`Class (${cls})`, r.gridClassPosition, r.finishClassPosition) : ''}
+        <div class="rvx-place"><span>Result</span><b class="rvx-place__status" data-tone="${finished ? 'ok' : 'bad'}">${
+          esc(finished ? 'Finished' : (r.finishStatus || dash))}</b></div>
+        <div class="rvx-race__counts">
+          ${count(r.contacts || 0, r.contacts === 1 ? 'contact' : 'contacts', 'bad', 'contacts')}
+          ${count(r.limits || 0, 'track limits', 'warn', 'penalties')}
+          ${count(r.penalties || 0, r.penalties === 1 ? 'penalty' : 'penalties', 'text', 'penalties')}
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-rvtab="racelog">
+          <svg class="icon"><use href="#i-scroll-text" /></svg><span>Race log</span>
+        </button>
+      </section>`;
+  }
+
+  /* ---- Overview ---- */
+
+  function kpi(icon, label, value, note, opts = {}) {
+    return `
+      <div class="rvx-kpi${opts.tone ? ` rvx-kpi--${opts.tone}` : ''}">
+        <span class="rvx-kpi__icon"><svg class="icon"><use href="#i-${icon}" /></svg></span>
+        <div class="rvx-kpi__body">
+          <span class="rvx-kpi__label">${esc(label)}</span>
+          <span class="rvx-kpi__value" data-none="${String(value === dash)}">${value}</span>
+          ${note ? `<span class="rvx-kpi__note">${note}</span>` : ''}
+          ${opts.bar !== undefined && known(opts.bar)
+            ? `<div class="rv-bar" data-band="${consistencyBand(opts.bar)}"><span style="width:${Math.max(2, Math.min(100, opts.bar))}%"></span></div>`
+            : ''}
+        </div>
+      </div>`;
+  }
+
+  /** "Own record +1.250s", or that this was it. */
+  function recordNote(s) {
+    if (!known(s.stats.bestMs)) return 'No clean lap in this session';
+    if (s.pbHere || !known(s.pbMs)) return `<span class="rvx-good">Your best here${s.carClass ? ` in ${esc(s.carClass)}` : ''}</span>`;
+    return `Own record <b class="rvx-loss">${fmtDelta(s.stats.bestMs - s.pbMs)}</b>`;
+  }
+
+  function cleanLapsNote(st) {
+    const partial = st.dirtyBy && st.dirtyBy.partial ? st.dirtyBy.partial : 0;
+    const why = cleanNote(st);
+    if (why) return why;
+    if (partial) return esc(`${partial} partial lap${partial === 1 ? '' : 's'}`);
+    return esc(`${st.cleanLaps} of ${st.timedLaps || st.laps}`);
+  }
+
+  function kpisHtml(s) {
+    const st = s.stats;
+    return `
+      <div class="rvx-kpis">
+        ${kpi('timer', 'Best lap', known(st.bestMs) ? fmtLap(st.bestMs) : dash, recordNote(s), { tone: 'best' })}
+        ${kpi('clock', 'Average lap', known(st.averageMs) ? fmtLap(st.averageMs) : dash,
+          esc(`${st.cleanLaps} clean lap${st.cleanLaps === 1 ? '' : 's'}`))}
+        ${kpi('activity', 'Consistency', known(st.spreadMs) ? `±${fix(st.spreadMs / 1000, 2)}s` : dash,
+          'Lap-time spread', { bar: st.consistency })}
+        ${kpi('check', 'Clean laps', known(st.cleanPct) ? pct(st.cleanPct) : dash, cleanLapsNote(st),
+          { tone: known(st.cleanPct) && st.cleanPct >= 0.85 ? 'good' : '' })}
+        <div class="rvx-quad">
+          <div><span>Optimal</span><b>${known(st.optimalMs) ? fmtLap(st.optimalMs) : dash}</b></div>
+          <div><span>Potential gain</span><b>${known(st.untappedMs) ? `${fix(st.untappedMs / 1000, 3)}s` : dash}</b></div>
+          <div><span>Laps</span><b>${st.laps} laps</b></div>
+          <div><span>On track</span><b>${fmtSpan(st.driveMs)}</b></div>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * The board for this circuit and class, cut to the top five and your own
+   * row: where you stand, at a glance. The whole board, with its vs buttons,
+   * is on Compare.
+   */
+  function boardPeekHtml() {
+    const s = current;
+    const note = boardNote();
+    let body = '';
+    if (note) {
+      body = `<p class="rv-board__note">${esc(note)}</p>`;
+    } else {
+      const top = board.rows.slice(0, 5);
+      const you = board.rows.find((r) => r.is_you);
+      if (you && !top.includes(you)) top.push(you);
+      body = `
+        <table class="rv-sheet rvx-peek">
+          <thead><tr><th>Pos</th><th>Driver</th><th>Car</th><th>Best lap</th></tr></thead>
+          <tbody>${top.map((row) => `
+            <tr data-you="${String(!!row.is_you)}">
+              <td class="num">P${row.rank}</td>
+              <td class="who">${esc(row.is_you ? 'You' : row.display_name || 'Driver')}</td>
+              <td class="car">${esc(row.car || '')}</td>
+              <td class="lap">${fmtLap(row.lap_ms)}</td>
+            </tr>`).join('')}</tbody>
+        </table>`;
+    }
+    return `
+      <section class="rv-card rvx-card" data-boardcard="peek">
+        <div class="rvx-card__head">
+          <h3>${esc(s && s.carClass ? `${s.carClass} leaderboard` : 'Leaderboard')}</h3>
+          <button type="button" class="rv-refbtn" data-rvtab="compare">Compare</button>
+        </div>
+        ${body}
+      </section>`;
+  }
+
+  function overviewHtml(s) {
+    return `
+      ${raceResultHtml(raceOf.get(s.id))}
+      ${kpisHtml(s)}
+      <div class="rvx-grid">
+        <section class="rv-card rvx-card">
+          <div class="rvx-card__head">
+            <h3>Lap pace</h3>
+            <span class="rv-legend">
+              <span style="color:var(--cyan)"><i></i>Clean lap</span>
+              <span style="color:var(--warn)"><i></i>Not clean</span>
+              <span style="color:var(--rv-session-best)"><i></i>Session best</span>
+            </span>
+          </div>
+          <div class="rv-chart rv-chart--laps"><canvas></canvas></div>
+        </section>
+        <section class="rv-card rvx-card rvx-pacecard">
+          <div class="rvx-card__head"><h3>Reference pace</h3></div>
+          ${paceHtml(s) || '<p class="rv-card__note">No reference time for this circuit and class.</p>'}
+        </section>
+        <section class="rv-card rvx-card">
+          <div class="rvx-card__head">
+            <h3>Your progress at ${esc(s.track || 'this circuit')}</h3>
+            <span class="rv-legend"><span>Last 30 days · ${esc(s.carClass || 'this class')}</span></span>
+          </div>
+          ${s.trend.length > 1
+            ? '<div class="rv-chart rv-chart--trend"><canvas></canvas></div>'
+            : '<p class="rv-card__note">Your best lap here, day by day, shows once you have driven this circuit on two different days in the last month.</p>'}
+        </section>
+        ${boardPeekHtml()}
+      </div>`;
+  }
+
+  /* ---- Laps & stints ---- */
+
+  const stintOf = (s) => s.stints.find((st) => st.no === selStint) || s.stints[s.stints.length - 1];
+
+  /** A lap's state, as a pill: Clean, Partial, the reason it was flagged, or No time. */
+  function statusOf(lap) {
+    if (!lap.timed) return { word: 'No time', tone: 'none' };
+    if (lap.clean) return { word: 'Clean', tone: 'ok' };
+    if (lap.dirty.length === 1 && lap.dirty[0] === 'partial') return { word: 'Partial', tone: 'none' };
+    const why = lap.dirty.filter((w) => w !== 'partial');
+    const word = why.map((w) => ({ limits: 'Limits', pit: 'Pit', penalty: 'Penalty', implausible: 'Bad time' }[w] || w)).join(' · ');
+    return { word: word || 'Flagged', tone: 'warn' };
+  }
+
+  const statusPill = (lap) => {
+    const st = statusOf(lap);
+    return `<span class="rvx-status" data-tone="${st.tone}">${esc(st.word)}</span>`;
+  };
+
+  const LAP_FILTERS = [
+    { id: 'all', label: 'All laps', test: () => true },
+    { id: 'clean', label: 'Clean', test: (l) => l.clean, dot: 'ok' },
+    { id: 'flagged', label: 'Flagged', test: (l) => !l.clean && l.timed, dot: 'warn' },
+  ];
+
+  /** The lap picked in this stint, or its best, or its first. */
+  function selectedLap(stint) {
+    const hit = stint.laps.find((l) => l.lapNo === selLapNo);
+    if (hit) return hit;
+    return stint.laps.find((l) => l.clean && l.lapMs === stint.stats.bestMs) || stint.laps[0] || null;
+  }
+
+  function stintBarHtml(s, stint) {
+    const st = stint.stats;
+    const sp = s.pace && s.pace.stints && s.pace.stints[stint.no - 1];
+    const fact = (label, value, cls = '') => `
+      <div class="rvx-fact${cls}"><span>${esc(label)}</span><b data-none="${String(value === dash)}">${value}</b></div>`;
+    const picker = s.stints.length > 1
+      ? `<label class="rvx-stintpick">
+          <select data-rvstint aria-label="Which stint">${s.stints.map((x) => `<option value="${x.no}"${x.no === stint.no ? ' selected' : ''}>Stint ${x.no} · ${x.stats.laps} laps</option>`).join('')}</select>
+        </label>`
+      : '<span class="rvx-stintpick rvx-stintpick--one">Stint 1</span>';
+    return `
+      <section class="rv-card rvx-stintbar">
+        ${picker}
+        ${fact('Laps', String(st.laps))}
+        ${fact('Best', known(st.bestMs) ? fmtLap(st.bestMs) : dash, ' rvx-fact--best')}
+        ${fact('Average', known(st.averageMs) ? fmtLap(st.averageMs) : dash)}
+        ${sp && sp.ok ? fact('vs ref', `${fix(sp.percent, 1)}%`) : ''}
+        ${fact('Spread', known(st.spreadMs) ? `±${fix(st.spreadMs / 1000, 2)}s` : dash)}
+        ${fact('Fuel', known(st.fuelPerLapL) ? `${fix(st.fuelPerLapL, 2)} L/lap` : dash)}
+        ${fact('Time', fmtSpan(st.elapsedMs))}
+      </section>`;
+  }
+
+  function lapTableHtml(s, stint, lap) {
+    const sBest = s.stats.bestMs;
+    const sSec = s.stats.bestSectors;
+    const tBest = stint.stats.bestMs;
+    const tSec = stint.stats.bestSectors;
+    const f = LAP_FILTERS.find((x) => x.id === lapFilter) || LAP_FILTERS[0];
+    const rows = stint.laps.filter(f.test).map((l) => {
+      const comparable = l.timed && !l.isOutLap && !l.isInLap;
+      const delta = known(sBest) && comparable && l.lapMs !== sBest ? l.lapMs - sBest : null;
+      const mark = l.hasTrace
+        ? '<span class="rv-trace" title="Telemetry captured for this lap"><svg class="icon"><use href="#i-activity" /></svg></span>'
+        : '';
+      return `
+        <tr data-sellap="${l.lapNo}" data-selected="${String(!!lap && l.lapNo === lap.lapNo)}" tabindex="0">
+          <td class="num">${l.lapNo}${mark}</td>
+          <td class="lap"${l.clean ? rank(l.lapMs, tBest, sBest) : ''}>${l.timed ? fmtLap(l.lapMs) : dash}</td>
+          <td class="${delta === null ? 'dim' : delta < 0 ? 'gain' : 'loss'}">${delta === null ? dash : fmtDelta(delta)}</td>
+          <td class="sec"${rank(l.s1Ms, tSec[0], sSec[0])}>${fmtSector(l.s1Ms)}</td>
+          <td class="sec"${rank(l.s2Ms, tSec[1], sSec[1])}>${fmtSector(l.s2Ms)}</td>
+          <td class="sec"${rank(l.s3Ms, tSec[2], sSec[2])}>${fmtSector(l.s3Ms)}</td>
+          <td>${known(l.fuelUsedL) ? fix(l.fuelUsedL, 2) : `<span class="dim">${dash}</span>`}</td>
+          <td>${known(l.veUsedPct) ? fix(l.veUsedPct, 2) : `<span class="dim">${dash}</span>`}</td>
+          <td class="st">${statusPill(l)}</td>
+          <td class="ref">${l.hasTrace ? `
+            <button type="button" class="rv-refbtn" data-ref="${esc(l.id || '')}"
+                    data-on="${String(!!refLap && refLap.id === l.id)}"
+                    title="${refLap && refLap.id === l.id ? 'Stop comparing against this lap' : 'Compare every other lap against this one'}">vs</button>` : ''}</td>
+        </tr>`;
+    }).join('');
+    const chips = LAP_FILTERS.map((x) => {
+      const n = stint.laps.filter(x.test).length;
+      return `<button type="button" data-lapfilter="${x.id}" data-active="${String(x.id === f.id)}">${
+        x.dot ? `<i data-dot="${x.dot}"></i>` : ''}${x.label}<span>${n}</span></button>`;
+    }).join('');
+    return `
+      <section class="rv-card rvx-card rvx-laps">
+        <div class="rvx-card__head">
+          <h3>Lap breakdown</h3>
+          <nav class="rvx-chips" aria-label="Which laps">${chips}</nav>
+        </div>
+        ${rows ? `
+        <div class="rv-sheet__scroll rvx-laps__scroll">
+          <table class="rv-sheet rvx-laptable">
+            <thead><tr><th>Lap</th><th>Lap time</th><th>Δ best</th><th>S1</th><th>S2</th><th>S3</th><th>Fuel L</th><th>VE %</th><th>Status</th><th>vs</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>` : '<p class="rv-card__note">No laps of that kind in this stint.</p>'}
+        ${lapStripHtml(s, stint, lap)}
+      </section>`;
+  }
+
+  /** Every lap of the stint as a block: the shape of it at a glance, and a way to pick one. */
+  function lapStripHtml(s, stint, lap) {
+    if (stint.laps.length < 2) return '';
+    const every = stint.laps.length > 40 ? 10 : 5;
+    return `
+      <div class="rvx-strip">
+        <span class="rvx-strip__title">Lap timeline</span>
+        <div class="rvx-strip__laps">
+          ${stint.laps.map((l) => {
+            const kind = !l.timed ? 'none' : l.clean ? (l.lapMs === s.stats.bestMs ? 'best' : 'clean') : 'flagged';
+            return `<button type="button" data-sellap="${l.lapNo}" data-kind="${kind}"
+              data-selected="${String(!!lap && l.lapNo === lap.lapNo)}"
+              title="Lap ${l.lapNo} · ${l.timed ? fmtLap(l.lapMs) : 'no time'}"><i></i>${
+              l.lapNo === 1 || l.lapNo % every === 0 || l === stint.laps[stint.laps.length - 1] ? `<span>${l.lapNo}</span>` : ''}</button>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
+  /** The lap picked, read in full. */
+  function lapPanelHtml(s, stint, lap) {
+    if (!lap) return '';
+    const sBest = s.stats.bestMs;
+    const tSec = stint.stats.bestSectors;
+    const sSec = s.stats.bestSectors;
+    const i = stint.laps.indexOf(lap);
+    const prev = stint.laps[i - 1] || null;
+    const next = stint.laps[i + 1] || null;
+    const best = lap.clean && lap.lapMs === sBest;
+    const gap = known(sBest) && lap.timed && !best ? lap.lapMs - sBest : null;
+    const temps = Array.isArray(lap.temp) ? lap.temp : null;
+    const wear = Array.isArray(lap.wear) ? lap.wear : null;
+    const mean = temps ? temps.reduce((a, b) => a + b, 0) / temps.length : null;
+    const tyres = temps || wear ? `
+        <div class="rvx-lap__sub">Tyres at this lap</div>
+        <div class="rvx-tyres">
+          ${CORNERS.map((name, k) => {
+            const t = temps ? temps[k] : null;
+            const w = wear ? wear[k] : null;
+            return `
+            <div class="rvx-tyre">
+              <span class="rvx-tyre__name">${name}</span>
+              <b${heatOf(t, mean)}>${known(t) ? degrees(t) : dash}</b>
+              ${known(w) ? `<span class="rvx-tyre__left">${pct(w)} left</span>
+                <div class="rv-corner__wear" data-band="${wearBand(w)}"><span style="width:${Math.max(2, Math.min(100, w * 100))}%"></span></div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>` : '';
+    const nav = (l, dir) => l ? `
+        <button type="button" class="rvx-lapnav" data-sellap="${l.lapNo}">
+          ${dir < 0 ? '<svg class="icon"><use href="#i-chevron-left" /></svg>' : ''}
+          <span><b>${dir < 0 ? 'Previous lap' : 'Next lap'}</b><i>Lap ${l.lapNo} · ${l.timed ? fmtLap(l.lapMs) : 'no time'}</i></span>
+          ${dir > 0 ? '<svg class="icon"><use href="#i-chevron-right" /></svg>' : ''}
+        </button>` : '<span></span>';
+    return `
+      <aside class="rv-card rvx-lap">
+        <div class="rvx-lap__top">
+          <h3>Lap ${lap.lapNo}</h3>
+          ${statusPill(lap)}
+        </div>
+        <div class="rvx-lap__time"${best ? ' data-rank="session"' : ''}>${lap.timed ? fmtLap(lap.lapMs) : dash}</div>
+        <div class="rvx-lap__gap">${best ? '<span class="rvx-best">Session best</span>'
+          : gap !== null ? `<b class="${gap > 0 ? 'rvx-loss' : 'rvx-good'}">${fmtDelta(gap)}s</b> to session best` : '&nbsp;'}</div>
+        <div class="rvx-lap__sectors">
+          ${['s1Ms', 's2Ms', 's3Ms'].map((k, n) => `
+            <div><span>Sector ${n + 1}</span><b class="sec"${rank(lap[k], tSec[n], sSec[n])}>${fmtSector(lap[k])}</b></div>`).join('')}
+        </div>
+        ${known(lap.fuelUsedL) || known(lap.veUsedPct) ? `
+        <div class="rvx-lap__sub">Fuel &amp; energy</div>
+        <div class="rvx-lap__pair">
+          <div><span>Fuel used</span><b>${known(lap.fuelUsedL) ? `${fix(lap.fuelUsedL, 2)} L` : dash}</b></div>
+          <div><span>Virtual energy</span><b>${known(lap.veUsedPct) ? `${fix(lap.veUsedPct, 2)}%` : dash}</b></div>
+        </div>` : ''}
+        ${tyres}
+        <div class="rvx-lap__acts">
+          ${lap.hasTrace ? `
+          <button type="button" class="btn btn--sm rvx-lap__study" data-open="${esc(lap.id || '')}">
+            <svg class="icon"><use href="#i-activity" /></svg><span>Study this lap</span>
+          </button>
+          <button type="button" class="btn btn--ghost btn--sm" data-ref="${esc(lap.id || '')}">
+            <span>${refLap && refLap.id === lap.id ? 'Stop comparing' : 'Compare against it'}</span>
+          </button>` : '<p class="rv-card__note">No telemetry was recorded for this lap, so it cannot be studied corner by corner.</p>'}
+        </div>
+        <div class="rvx-lap__nav">${nav(prev, -1)}${nav(next, 1)}</div>
+      </aside>`;
+  }
+
+  function lapsTabHtml(s) {
+    const stint = stintOf(s);
+    if (!stint) return '';
+    const lap = selectedLap(stint);
+    return `
+      ${stintBarHtml(s, stint)}
+      <div class="rvx-split">
+        ${lapTableHtml(s, stint, lap)}
+        ${lapPanelHtml(s, stint, lap)}
+      </div>`;
+  }
+
+  /* ---- Tyres & fuel ---- */
+
+  function tyresTabHtml(s) {
+    const cards = s.stints.map((stint) => `
+      <section class="rv-card rvx-card rvx-stintcard">
+        <div class="rvx-card__head">
+          <h3>Stint ${stint.no}</h3>
+          <span class="rv-legend"><span>${stint.stats.laps} laps · ${fmtSpan(stint.stats.elapsedMs)}${
+            known(stint.stats.fuelPerLapL) ? ` · ${fix(stint.stats.fuelPerLapL, 2)} L/lap` : ''}</span></span>
+        </div>
+        ${sideHtml(stint)}
+      </section>`).join('');
+    return `
+      ${wearLaps(s) > 1 ? `
+      <section class="rv-card rvx-card">
+        <div class="rvx-card__head">
+          <h3>Tyre wear, lap by lap</h3>
+          <span class="rv-legend">
+            <span style="color:var(--cyan)"><i></i>FL</span>
+            <span style="color:var(--rv-session-best)"><i></i>FR</span>
+            <span style="color:var(--ok)"><i></i>RL</span>
+            <span style="color:var(--warn)"><i></i>RR</span>
+          </span>
+        </div>
+        <div class="rv-chart rv-chart--wear"><canvas></canvas></div>
+        <p class="rv-card__note">Percentage of the tyre used, so it climbs as the stint
+          goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
+      </section>` : ''}
+      <div class="rvx-stintcards">${cards}</div>`;
+  }
+
+  /* ---- Compare ---- */
+
+  function compareTabHtml(s) {
+    const traced = [];
+    for (const stint of s.stints) for (const l of stint.laps) if (l.hasTrace && l.timed) traced.push(l);
+    traced.sort((a, b) => a.lapMs - b.lapMs);
+    const mine = traced.slice(0, 12).map((l) => `
+      <div class="rvx-mylap">
+        <span class="rvx-mylap__no">L${l.lapNo}</span>
+        <b${l.clean && l.lapMs === s.stats.bestMs ? ' data-rank="session"' : ''}>${fmtLap(l.lapMs)}</b>
+        ${statusPill(l)}
+        <button type="button" class="rv-refbtn" data-ref="${esc(l.id || '')}" data-on="${String(!!refLap && refLap.id === l.id)}"
+                title="Compare every other lap against this one">vs</button>
+        <button type="button" class="rv-refbtn" data-open="${esc(l.id || '')}" title="Study this lap">Open</button>
+      </div>`).join('');
+    return `
+      <div class="rvx-compare">
+        <div class="rvx-compare__main">${boardCardHtml(false)}</div>
+        <section class="rv-card rvx-card rvx-compare__mine">
+          <div class="rvx-card__head"><h3>Your laps with telemetry</h3></div>
+          <p class="rv-card__note">Press vs on a lap here or a driver on the board, then open any lap: it is
+            laid over the one you picked, corner by corner. A driver's lap stays pinned to this circuit.</p>
+          ${mine || '<p class="rv-card__note">No lap in this session recorded telemetry.</p>'}
+        </section>
+      </div>`;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1108,8 +1490,6 @@
 
   /** Board pins by circuit, restored on init. */
   let pins = {};
-  /** Whether the session screen's leaderboard card is folded. Per machine. */
-  let boardFolded = false;
   /** Whether the lap view's fold-out board is open. Lasts the lap. */
   let lapBoardOpen = false;
   /**
@@ -1149,7 +1529,6 @@
       const raw = window.localStorage.getItem('apex.review.pins');
       const parsed = raw ? JSON.parse(raw) : null;
       pins = parsed && typeof parsed === 'object' ? parsed : {};
-      boardFolded = window.localStorage.getItem('apex.review.boardFolded') === '1';
       // Inputs is the default (Carl, 2026-09-14): the map is there to show
       // where the time went, and the pedals are where it goes.
       mapMode = window.localStorage.getItem('apex.review.mapMode') === 'pace' ? 'pace' : 'inputs';
@@ -1277,7 +1656,8 @@
   function refreshBoardCards() {
     if (!els.detail) return;
     for (const host of els.detail.querySelectorAll('[data-boardcard]')) {
-      host.outerHTML = boardCardHtml(host.getAttribute('data-boardcard') === 'lap');
+      const kind = host.getAttribute('data-boardcard');
+      host.outerHTML = kind === 'peek' ? boardPeekHtml() : boardCardHtml(kind === 'lap');
     }
   }
 
@@ -1327,7 +1707,6 @@
     const pin = pinFor(s);
     const note = boardNote();
     const title = `Leaderboard · ${esc([s && s.carClass, s && s.track].filter(Boolean).join(' at '))}`;
-    const folded = !inLap && boardFolded;
 
     let body = '';
     if (note) {
@@ -1386,18 +1765,16 @@
     }
 
     return `
-      <div class="rv-card rv-board" data-boardcard="${inLap ? 'lap' : 'session'}" data-folded="${String(folded)}">
+      <div class="rv-card rv-board" data-boardcard="${inLap ? 'lap' : 'session'}">
         <div class="rv-card__head">
           <span class="rv-card__title">${title}</span>
           ${inLap
             ? `<button type="button" class="btn btn--ghost btn--sm" data-lapboard title="Close">
                 <svg class="icon"><use href="#i-x" /></svg><span>Close</span>
               </button>`
-            : `<button type="button" class="btn btn--ghost btn--sm" data-boardtoggle aria-expanded="${String(!folded)}">
-                <span>${folded ? 'Show' : 'Hide'}</span>
-              </button>`}
+            : ''}
         </div>
-        ${folded ? '' : own + body}
+        ${own + body}
       </div>`;
   }
 
@@ -2310,6 +2687,10 @@
   function renderDetail() {
     if (!els.detail) return;
     if (chartOff) { chartOff(); chartOff = null; }
+    // The race log listens to the game only while its tab is drawn.
+    const raceDrawn = !lapView && !!RL
+      && (!!currentRace || (!!current && tabFor(current) === 'racelog'));
+    if (RL && !raceDrawn) RL.hidden();
     // The lap view is a cockpit that fills the window; the session view is a
     // page that scrolls. The CSS keys off this, hiding the tab's heading and
     // the career strip while a lap is open so the charts get the height.
@@ -2317,11 +2698,23 @@
 
     // Only when there is nothing already on screen: re-reading the list on
     // every visit must not blank a session the driver is still looking at.
-    if (loading && !current) {
+    if (loading && !current && !currentRace) {
       els.detail.innerHTML = emptyState('clock', 'Reading your laps…', 'One moment.');
       return;
     }
-    if (!summaries.length) {
+    // A race-only entry: the race log is all there is.
+    if (currentRace && RL) {
+      const race = raceOnly.find((r) => r.id === currentRace) || RL.races().find((r) => r.id === currentRace);
+      if (race) {
+        if (els.view) els.view.setAttribute('data-mode', 'session');
+        els.detail.innerHTML = `
+          ${raceHeaderHtml(race)}
+          <div class="rvx-body" data-tab="racelog"><div class="rvx-racelog"></div></div>`;
+        showRaceLog(race.id, true);
+        return;
+      }
+    }
+    if (!summaries.length && !raceOnly.length) {
       els.detail.innerHTML = emptyState(
         'flag',
         'No sessions yet',
@@ -2334,7 +2727,7 @@
       els.detail.innerHTML = emptyState(
         'list-ordered',
         'Pick a session',
-        'Choose one on the left to see its report, its lap times and every stint you drove.',
+        'Choose one on the left to see its report, its lap times, every stint you drove and, for a race, its race log.',
       );
       return;
     }
@@ -2359,88 +2752,31 @@
     }
 
     const s = current;
-    const wet = s.stints.some((st) => st.laps.some((l) => l.wet));
-    const tKey = typeKey(s.sessionType);
+    const tab = tabFor(s);
+    let body = '';
+    if (tab === 'laps') body = lapsTabHtml(s);
+    else if (tab === 'tyres') body = tyresTabHtml(s);
+    else if (tab === 'compare') body = compareTabHtml(s);
+    else if (tab === 'racelog') body = '<div class="rvx-racelog"></div>';
+    else body = overviewHtml(s);
 
     els.detail.innerHTML = `
-      <div class="rv-card">
-        <div class="rv-head">
-          <h2>${esc(s.track || 'Unknown circuit')}</h2>
-          <span class="rv-pill${tKey !== 'other' ? ` rv-pill--${tKey}` : ''}">${esc(typeName(s.sessionType))}</span>
-          ${wet ? '<span class="rv-pill rv-pill--wet">Wet</span>' : ''}
-          <span class="rv-head__sub">${esc([s.car, s.carClass].filter(Boolean).join(' · '))}</span>
-          <span class="rv-head__when">${esc(dayLabel(s.startedAt))} · ${esc(clockLabel(s.startedAt))}</span>
-          ${raceLogLink(s)}
-        </div>
-        ${reportHtml(s)}
-      </div>
-
-      ${refBarHtml()}
-
-      <div class="rv-cols">
-      <div class="rv-cols__main">
-      <div class="rv-card">
-        <div class="rv-card__head">
-          <span class="rv-card__title">Lap times</span>
-          <span class="rv-legend">
-            <span style="color:var(--rv-session-best)"><i></i>Session best</span>
-            <span style="color:var(--cyan)"><i></i>Clean</span>
-            <span style="color:var(--warn)"><i></i>Not clean</span>
-            <span style="color:var(--text-3)"><i></i>No time</span>
-          </span>
-        </div>
-        <div class="rv-chart rv-chart--laps"><canvas></canvas></div>
-      </div>
-
-      ${s.trend.length > 1 ? `
-      <div class="rv-card">
-        <div class="rv-card__head">
-          <span class="rv-card__title">Your best here, last 30 days</span>
-          <span class="rv-legend"><span>${esc(s.carClass || 'This class')} only</span></span>
-        </div>
-        <div class="rv-chart rv-chart--trend"><canvas></canvas></div>
-      </div>` : ''}
-
-      ${wearLaps(s) > 1 ? `
-      <div class="rv-card">
-        <div class="rv-card__head">
-          <span class="rv-card__title">Tyre wear, lap by lap</span>
-          <span class="rv-legend">
-            <span style="color:var(--cyan)"><i></i>FL</span>
-            <span style="color:var(--rv-session-best)"><i></i>FR</span>
-            <span style="color:var(--ok)"><i></i>RL</span>
-            <span style="color:var(--warn)"><i></i>RR</span>
-          </span>
-        </div>
-        <div class="rv-chart rv-chart--wear"><canvas></canvas></div>
-        <p class="rv-card__note">Percentage of the tyre used, so it climbs as the stint
-          goes on. The dashed rules are stint changes — the drop across one is a new set.</p>
-      </div>` : ''}
-      </div>
-      <div class="rv-cols__side">
-        ${boardCardHtml(false)}
-      </div>
-      </div>
-
-      <div class="rv-stints">${s.stints.map((st) => stintHtml(st, s)).join('')}</div>
+      ${headerHtml(s)}
+      ${tab === 'racelog' ? '' : refBarHtml()}
+      <div class="rvx-body" data-tab="${tab}">${body}</div>
     `;
 
-    paintCharts();
+    if (tab === 'racelog') showRaceLog(raceOf.get(s.id).id, false);
+    else paintCharts();
   }
 
-  /**
-   * "Race log" on a race session the game saved results for. The race lives
-   * on the Race log tab; this is the short way to it from here, and the
-   * click hands over to that tab with the race already open.
-   */
-  function raceLogLink(s) {
-    const race = RL ? RL.forSession(s) : null;
-    if (!race) return '';
-    return `
-      <button type="button" class="btn btn--ghost btn--sm" data-racelog="${esc(race.id)}"
-              title="Every contact, limits verdict and penalty in this race, in order">
-        <svg class="icon"><use href="#i-scroll-text" /></svg><span>Race log</span>
-      </button>`;
+  /** Hand the race log its element, and the race to paint into it. */
+  function showRaceLog(id, hero) {
+    const el = els.detail && els.detail.querySelector('.rvx-racelog');
+    if (!el || !RL) return;
+    // A car picked in the log changes what its card says: merge again.
+    RL.mount({ detail: el, hero, rerenderList: () => { mergeRaces(); renderList(); } });
+    if (visible) RL.show(id);
   }
 
   /**
@@ -2530,27 +2866,31 @@
     };
   }
 
-  /** Open the stint holding a lap and scroll its row into view. */
+  /** A point on the lap chart: that lap, picked, on Laps & stints. */
   function revealLap(lap) {
-    if (collapsed.has(lap.stintNo)) {
-      collapsed.delete(lap.stintNo);
-      const card = document.querySelector(`.rv-stint[data-stint="${lap.stintNo}"]`);
-      if (card) {
-        card.setAttribute('data-open', 'true');
-        const head = card.querySelector('.rv-stint__head');
-        if (head) head.setAttribute('aria-expanded', 'true');
-      }
+    selStint = lap.stintNo;
+    selLapNo = lap.lapNo;
+    lapFilter = 'all';
+    setTab('laps');
+    const row = els.detail && els.detail.querySelector(`.rvx-laptable tr[data-sellap="${lap.lapNo}"]`);
+    if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  /** Switch the session page's tab, and remember it. */
+  function setTab(id) {
+    subTab = id;
+    try { window.localStorage.setItem(TAB_KEY, id); } catch { /* the choice lasts the run */ }
+    renderDetail();
+  }
+
+  /** Pick a lap on Laps & stints, keeping the keyboard where it was. */
+  function pickLap(no, focus) {
+    selLapNo = no;
+    renderDetail();
+    if (focus && els.detail) {
+      const row = els.detail.querySelector(`.rvx-laptable tr[data-sellap="${no}"]`);
+      if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); }
     }
-    const row = document.querySelector(
-      `.rv-stint[data-stint="${lap.stintNo}"] tr[data-lap="${lap.lapNo}"]`,
-    );
-    if (!row) return;
-    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    // A one-shot flash rather than a persistent selection: the click was "show
-    // me that lap", not "I am now working on that lap".
-    row.style.transition = 'background 900ms ease';
-    row.style.background = 'rgba(38, 187, 244, 0.16)';
-    window.setTimeout(() => { row.style.background = ''; }, 900);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -2574,14 +2914,20 @@
     loading = true;
     renderDetail();
     const keep = currentId;
+    // The races alongside, from main's cache of the results files (after the
+    // first visit, a directory listing). No game call rides on it.
+    const racesRead = RL ? RL.load().catch(() => []) : Promise.resolve([]);
     try {
       const res = await window.apex.reviewSessions();
       summaries = (res && Array.isArray(res.sessions)) ? res.sessions : [];
+      outlines = res && res.outlines && typeof res.outlines === 'object' ? res.outlines : {};
       career = (res && res.career) || null;
     } catch {
       summaries = [];
       career = null;
     }
+    await racesRead;
+    mergeRaces();
     renderCareer();
     loadedOnce = true;
     loading = false;
@@ -2591,11 +2937,30 @@
       currentId = null;
       current = null;
     }
+    if (currentRace && !raceOnly.some((r) => r.id === currentRace)) currentRace = null;
     renderList();
-    // Land on the most recent session: it is what the driver just finished and
+    // Land on the most recent entry: it is what the driver just finished and
     // came here to look at. Anything else makes them click before they can read.
-    if (!currentId && summaries.length) await openSession(summaries[0].id);
-    else renderDetail();
+    if (!currentId && !currentRace) {
+      const first = entries()[0];
+      if (first && first.session) await openSession(first.session.id);
+      else if (first && first.race) openRace(first.race.id);
+      else renderDetail();
+    } else {
+      renderDetail();
+    }
+  }
+
+  /** A race-only entry: its header and its race log. */
+  function openRace(id) {
+    if (!id) return;
+    if (lapOff) { lapOff(); lapOff = null; }
+    lapView = null;
+    currentId = null;
+    current = null;
+    currentRace = id;
+    renderList();
+    renderDetail();
   }
 
   async function openSession(id) {
@@ -2604,12 +2969,12 @@
     if (lapOff) { lapOff(); lapOff = null; }
     lapView = null;
     currentId = id;
+    currentRace = null;
     current = null;
     // The session's own reference goes with the session; the circuit's pin
     // does not — that is the whole point of pinning.
     refLap = null;
     lapBoardOpen = false;
-    collapsed.clear();
     loading = true;
     renderList();
     renderDetail();
@@ -2620,12 +2985,11 @@
       current = null;
     }
     loading = false;
-    // Everything but the newest stint starts collapsed: a 40-lap session is
-    // several screens of sheet, and the stint a driver wants is the last one.
-    if (current && current.stints.length > 1) {
-      for (const st of current.stints) collapsed.add(st.no);
-      collapsed.delete(current.stints[current.stints.length - 1].no);
-    }
+    // Laps & stints opens on the newest stint — the one a driver came to read
+    // — with its best lap picked.
+    selStint = current && current.stints.length ? current.stints[current.stints.length - 1].no : null;
+    selLapNo = null;
+    lapFilter = 'all';
     renderDetail();
     // The leaderboard card fills in when the board arrives; it is a round
     // trip and the session is on disk, so the session is never made to wait.
@@ -2665,17 +3029,36 @@
     if (els.list) {
       els.list.addEventListener('click', (evt) => {
         const card = evt.target.closest('[data-session]');
-        if (card) void openSession(card.dataset.session);
+        if (card) { void openSession(card.dataset.session); return; }
+        const race = evt.target.closest('[data-race]');
+        if (race) openRace(race.dataset.race);
       });
     }
 
     if (els.detail) {
       els.detail.addEventListener('click', (evt) => {
-        // Over to the Race log tab, with this race open on arrival.
-        const toRace = evt.target.closest('[data-racelog]');
-        if (toRace) { window.apexRaceLog?.openRace(toRace.dataset.racelog); return; }
+        // Inside the race log, its own handler (review-racelog.js) has it.
+        if (evt.target.closest('.rvx-racelog')) return;
+        // A count on the race result: the race log, on those.
+        const raceCount = evt.target.closest('[data-rvrace]');
+        if (raceCount && current && RL) {
+          RL.setFilter(raceCount.dataset.rvrace);
+          setTab('racelog');
+          return;
+        }
         if (evt.target.closest('[data-lapback]')) {
           closeLap();
+          return;
+        }
+        const tabBtn = evt.target.closest('[data-rvtab]');
+        if (tabBtn && (current || currentRace) && !lapView) {
+          setTab(tabBtn.dataset.rvtab);
+          return;
+        }
+        const chipBtn = evt.target.closest('[data-lapfilter]');
+        if (chipBtn && current) {
+          lapFilter = chipBtn.dataset.lapfilter;
+          renderDetail();
           return;
         }
         if (evt.target.closest('[data-unpin]') && lapView) {
@@ -2799,14 +3182,6 @@
           }
           return;
         }
-        if (evt.target.closest('[data-boardtoggle]')) {
-          boardFolded = !boardFolded;
-          try { window.localStorage.setItem('apex.review.boardFolded', boardFolded ? '1' : '0'); } catch {
-            /* storage off: the fold lasts the run */
-          }
-          refreshBoardCards();
-          return;
-        }
 
         // The zoom controls and the micro-sector chips, both of which move
         // the shared window rather than re-rendering anything.
@@ -2834,7 +3209,14 @@
           return;
         }
 
-        const row = evt.target.closest('tr[data-open]');
+        // A lap in the breakdown, the timeline strip or the panel's Previous /
+        // Next: picked, not opened. Study this lap opens it.
+        const pick = evt.target.closest('[data-sellap]');
+        if (pick && current && !lapView) {
+          pickLap(Number(pick.dataset.sellap), pick.tagName === 'TR');
+          return;
+        }
+        const row = evt.target.closest('[data-open]');
         if (row && current) {
           const id = row.dataset.open;
           for (const stint of current.stints) {
@@ -2843,21 +3225,29 @@
           }
           return;
         }
-        const head = evt.target.closest('[data-toggle]');
-        if (!head) return;
-        const no = Number(head.dataset.toggle);
-        const card = head.closest('.rv-stint');
-        const open = collapsed.has(no);
-        if (open) collapsed.delete(no);
-        else collapsed.add(no);
-        if (card) card.setAttribute('data-open', String(open));
-        head.setAttribute('aria-expanded', String(open));
+      });
+      // The stint picker on Laps & stints.
+      els.detail.addEventListener('change', (evt) => {
+        const sel = evt.target.closest && evt.target.closest('[data-rvstint]');
+        if (!sel || !current) return;
+        selStint = Number(sel.value);
+        selLapNo = null;
+        renderDetail();
       });
     }
 
     // A sheet row is a button, so it answers to Enter and Space like one.
     if (els.detail) {
       els.detail.addEventListener('keydown', (evt) => {
+        const lapRow = evt.target.closest && evt.target.closest('.rvx-laptable tr[data-sellap]');
+        if (lapRow && current) {
+          const rows = [...lapRow.parentElement.children];
+          const k = rows.indexOf(lapRow);
+          const to = evt.key === 'ArrowDown' ? rows[k + 1] : evt.key === 'ArrowUp' ? rows[k - 1] : null;
+          if (to) { evt.preventDefault(); pickLap(Number(to.dataset.sellap), true); return; }
+          if (evt.key === 'Enter' || evt.key === ' ') { evt.preventDefault(); pickLap(Number(lapRow.dataset.sellap), true); }
+          return;
+        }
         if (evt.key !== 'Enter' && evt.key !== ' ') return;
         const row = evt.target.closest && evt.target.closest('tr[data-open]');
         if (!row || !current) return;
@@ -2909,21 +3299,8 @@
       // Always re-read. Sessions land while the driver is in the sim, not while
       // they are looking at this window, so arriving IS the refresh event — and
       // the whole lap log is a few hundred kilobytes, read in one pass.
+      // The races come with it (see readList).
       void loadList(true);
-      // The races too, in the background: main caches every results file by
-      // mtime, so after the first visit this is a directory listing. It is
-      // what puts the Race log button on a race session's header. No game
-      // call rides on it — those are the Race log tab's, and only while it
-      // is on screen.
-      if (RL) {
-        void RL.load().then(() => {
-          if (!visible) return;
-          if (!lapView && current && RL.forSession(current)
-              && els.detail && !els.detail.querySelector('[data-racelog]')) {
-            renderDetail();
-          }
-        });
-      }
     },
     /**
      * Open one of the driver's laps against a leaderboard row — the
@@ -2961,6 +3338,7 @@
     /** …and this on the way out. Nothing here runs while the tab is hidden. */
     hidden() {
       visible = false;
+      if (RL) RL.hidden();
       if (chartOff) { chartOff(); chartOff = null; }
       if (lapOff) { lapOff(); lapOff = null; }
     },

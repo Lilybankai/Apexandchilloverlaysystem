@@ -2,43 +2,53 @@
  * review-racelog.js — the race logs, painted.
  * -----------------------------------------------------------------------------
  * Phase 3 of docs/RACE-LOG-PLAN.md: every race LMU wrote a results file for,
- * as a list in a rail, and one race as a timeline — one line per event, race
- * time · lap · kind · what happened. Contacts, limits and penalties carry a
- * Replay button that loads the game's own replay of that race five seconds
- * before the moment (phase 4, `dist/server/lmuReplay.js`).
+ * as a list in a rail, and one race read back. Contacts, limits, damage and
+ * penalties can be replayed: the game's own replay of that race, loaded five
+ * seconds before the moment (phase 4, `dist/server/lmuReplay.js`).
  *
- * ## Why a list of its own, and not a view on a session
+ * ## The page (redesigned 2026-10-19 from Carl's two concepts)
+ * Top to bottom, the questions a driver asks after a race:
+ *
+ *   1. How did it go? — the circuit, the car, and four tiles: overall and
+ *      class place (grid to flag), laps and best lap, and the incident counts.
+ *   2. How did it unfold? — the race progression: overall and class place
+ *      lap by lap on one axis, with every incident sat on the line.
+ *   3. What happened? — the event timeline, opening on Key moments rather
+ *      than every lap, with a search; beside it, the event picked: what it
+ *      was, the lap before and after it, and the replay, which is where the
+ *      replay's progress is shown too.
+ *
+ * One event is always the selected one. The timeline row, the marker on the
+ * chart and the details card all follow it, and every way of moving it (a
+ * click on a row or a marker, ↑ ↓ / J K, Previous / Next) goes through
+ * `select()`.
+ *
+ * ## Where it lives: a tab of a race, inside Review
  * A race log is built from the game's results XML, not from our lap files.
- * Most of the 200-odd races on a driver's PC predate Apex, or were driven with
- * it closed, and so have no session in Review to hang off. So the races are a
- * tab of their own — the Race log tab, hosted by racelog-panel.js. (Until
- * 2026-09-30 they sat behind a Sessions | Races switch in Review's rail, where
- * drivers never found them.) A race session in Review that DOES have a log
- * gets a "Race log" button in its header, which hands over to that tab.
+ * From 2026-09-30 it had a rail tab of its own; on 2026-10-19 it moved back
+ * into Review (Carl, after a tester asked for one session list with the race
+ * log and the review as tabs of it). Review's list now holds every session
+ * AND every race: a race session Apex recorded carries a Race log tab beside
+ * Overview and the rest, and a race the game saved with Apex not running —
+ * most of the 200-odd on a driver's PC — is listed on its own, with the race
+ * log as its only tab. review-panel.js owns the list and the header; this
+ * file paints the race log into the element it is handed (`mount`), with the
+ * result tiles on top only for a race-only entry (a session shows them on
+ * its Overview instead).
  *
  * ## Going through a race's incidents
  * The job after an official race is a steward's: every contact, limit and
- * penalty, one after another. Once a replay is in the game the strip offers
- * Previous and Next incident, and the keys do the same without the mouse —
- * ↑ ↓ (or J K) move a row cursor, Enter replays that row, [ and ] step
- * through the incidents. The row being replayed is kept on screen.
+ * penalty, one after another. ↑ ↓ (or J K) move the selection, Enter replays
+ * it, [ and ] replay the incident before or after. Once this race's replay is
+ * in the game, Previous / Next in the details card jump the replay too.
  *
- * ## Why rows and not cards
- * A four-hour race is two hundred lines. It is read the way the lap sheet is
- * read — down a column of times — so it IS the lap sheet: the same table, the
- * same mono figures, the same purple and green. Colour is spent only where the
- * steward's eye needs to land: contacts and penalties in red, limits and
- * minor damage in amber, a lap's time in purple or green when it was a best.
+ * Nothing here polls: the replay status is a push, subscribed while a log is
+ * open and dropped the moment it is not. And nothing here reaches the game
+ * (replay status, availability, the push) unless the Race log tab is on
+ * screen — review-panel.js says when, through `shown()` / `hidden()`.
  *
- * racelog-panel.js owns the rail and the detail column and hands both to this
- * file. Nothing here polls: the replay status is a push, subscribed while a
- * log is open and dropped the moment it is not. And nothing here reaches the
- * game (replay status, availability, the push) unless the tab is on screen —
- * racelog-panel.js says when, through `shown()` / `hidden()` — so a panel
- * that reopens on the Race log tab costs nothing until it is looked at.
- *
- * The position-by-lap line is painted by review-charts.js
- * (`drawPositions`), for the hex reason below.
+ * The progression chart is painted by review-charts.js (`drawRaceProgress`),
+ * for the hex reason below.
  *
  * No hex colour literals in this file — test-panel-parity.js reads a quoted
  * hash-and-hex as an element id. Colours live in review-panel.css as tokens.
@@ -62,12 +72,16 @@
 
   /** `RaceLogSummary[]`, newest first, as `review:racelogs` returned them. */
   let races = [];
+  /** Circuit outlines by bundled key, `{ d, view }`: what `races[].mapKey` names. */
+  let outlines = {};
   let listState = 'idle'; // idle | loading | ok | error
   let listRead = null;
 
   /** The race on screen. */
   let openId = null;
   let log = null;
+  /** What the page works out once per log: see {@link indexLog}. */
+  let facts = null;
   let reading = false;
   let readError = '';
   /** Showing "Which car was yours?" over a log that already has a car. */
@@ -75,23 +89,26 @@
   let picking = false;
 
   /**
-   * The timeline's filter, remembered per viewer: a steward who always reads
-   * Incidents lands on Incidents. The key keeps its `review.` name from when
-   * the log lived in Review, so nobody's choice is lost to the move.
+   * The timeline's filter, remembered per viewer. Its own key since the
+   * 2026-10-19 redesign, so everyone lands on Key moments once rather than on
+   * whatever they last left the old page on.
    */
-  const FILTER_KEY = 'apex.review.racelogFilter';
-  let filter = 'all';
+  const FILTER_KEY = 'apex.racelog.filter';
+  let filter = 'key';
   try {
     const saved = window.localStorage.getItem(FILTER_KEY);
     if (saved) filter = saved;
   } catch {
-    /* storage off: All */
+    /* storage off: Key moments */
   }
+  /** The timeline's search, for this visit only. */
+  let query = '';
+  /** Which place the progression chart leads with: `overall` or `class`. */
+  let focusRow = 'overall';
 
   /**
-   * The keyboard's row: an index into `log.events`, or -1 for none yet.
-   * Moved by ↑ ↓ / J K, and by the incident steps, so Enter after a step
-   * replays the row the driver can see is marked.
+   * The selected event: an index into `log.events`, or -1 for none. The
+   * timeline marks it, the chart rings its marker, the details card is it.
    */
   let cursor = -1;
 
@@ -113,17 +130,25 @@
    */
   let busy = null;
   /**
-   * The tab is on screen with the rail on Races. Nothing asks the game
-   * anything while it is not: no availability check, no status, no push.
+   * The tab is on screen. Nothing asks the game anything while it is not:
+   * no availability check, no status, no push.
    */
   let active = false;
+  /** The race the game was last asked about while shown; cleared on hide. */
+  let askedFor = null;
   let unsub = null;
   let copiedTimer = null;
 
-  /** Set by racelog-panel.js: `{ detail, rerenderList }`. */
+  /**
+   * Set by review-panel.js through `mount()`: `{ detail, rerenderList, hero }`.
+   * `detail` is the element the log is painted into; `hero` puts the result
+   * tiles on top (a race with no Apex session, so no Overview to hold them).
+   */
   let host = null;
-  /** The position line's painters, when review-charts.js is on the page. */
+  /** The chart's painters, when review-charts.js is on the page. */
   const CHARTS = window.APEX_REVIEW_CHARTS || null;
+  /** The markers as last drawn, for a click on the chart: `[{ x, y, index }]`. */
+  let chartHits = [];
 
   /* ---------------------------------------------------------------------- */
   /*  Formatting                                                            */
@@ -147,19 +172,21 @@
     return (sec < 0 && t > 0 ? minus : '') + body;
   }
 
-  const DAY_FMT = { weekday: 'short', day: 'numeric', month: 'short' };
-  const TIME_FMT = { hour: '2-digit', minute: '2-digit' };
-
-  function dayLabel(unixS) {
-    const d = new Date(unixS * 1000);
-    if (Number.isNaN(d.getTime())) return 'Unknown date';
-    const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-    const days = Math.round((midnight(new Date()) - midnight(d)) / 86400000);
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    const opts = d.getFullYear() === new Date().getFullYear() ? DAY_FMT : { ...DAY_FMT, year: 'numeric' };
-    return d.toLocaleDateString(undefined, opts);
+  /** A lap time, `1:46.313`. */
+  function fmtLap(ms) {
+    if (!known(ms) || ms <= 0) return dash;
+    const m = Math.floor(ms / 60000);
+    const s = (ms - m * 60000) / 1000;
+    return m ? `${m}:${s.toFixed(3).padStart(6, '0')}` : s.toFixed(3);
   }
+
+  /** A gap in seconds with its sign, `+2.391`. */
+  function fmtGap(ms) {
+    if (!known(ms)) return '';
+    return `${ms < 0 ? '−' : '+'}${(Math.abs(ms) / 1000).toFixed(3)}`;
+  }
+
+  const TIME_FMT = { hour: '2-digit', minute: '2-digit' };
 
   const clockLabel = (unixS) => {
     const d = new Date(unixS * 1000);
@@ -171,18 +198,29 @@
 
   const pos = (p) => (known(p) ? `P${p}` : dash);
 
-  /** LMU's `FinishStatus`, in the words a driver would use. */
-  function statusWords(s) {
+  /** LMU's `FinishStatus`: `{ word, tone }`, or null for none. */
+  function statusOf(s) {
     const v = String(s || '').trim();
-    if (!v || /^none$/i.test(v)) return dash;
-    if (/^finished/i.test(v)) return 'Finished';
-    return v;
+    if (!v || /^none$/i.test(v)) return null;
+    if (/^finished/i.test(v)) return { word: 'Finished', tone: 'ok' };
+    if (/^dnf$/i.test(v)) return { word: 'DNF', tone: 'bad' };
+    if (/^dq$/i.test(v)) return { word: 'Disqualified', tone: 'bad' };
+    return { word: v, tone: '' };
   }
 
   function andList(names) {
     const n = names.filter(Boolean);
     if (n.length <= 1) return n.join('');
     return `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`;
+  }
+
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  /** A circuit's outline as inline SVG, or '' — the Schedule tab's drawing. */
+  function mapSvg(outline, cls) {
+    if (!outline || typeof outline.d !== 'string' || !outline.d) return '';
+    const view = Number(outline.view) || 100;
+    return `<svg class="rl-map ${cls || ''}" viewBox="-4 -4 ${view + 8} ${view + 8}" aria-hidden="true"><path d="${esc(outline.d)}"/></svg>`;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -195,41 +233,79 @@
     finish: 'Finish',
   };
 
-  /** The kinds a steward reads. Also what "Incidents" filters to. */
-  const INCIDENT = new Set(['contact', 'damage', 'limits', 'penalty', 'flag']);
-
   /** The kinds a Replay button goes on: things that happened to the car at a moment. */
   const REPLAYABLE = new Set(['contact', 'damage', 'limits', 'penalty']);
 
   /** A line with a moment the replay can be put at: what the steps walk. */
   const isIncident = (e) => !!e && REPLAYABLE.has(e.kind) && known(e.et);
 
+  /** A penalty line that closes one off rather than hands one out. */
+  const isServed = (e) => e.kind === 'penalty' && /^served\b/i.test(String(e.text || ''));
+
   /**
-   * One question at a time, so a segmented control rather than tick boxes —
-   * the same `.seg` every other tab filters with. A segment with nothing
-   * behind it in this race is not drawn.
+   * The race in a dozen lines rather than two hundred: the start and the
+   * flag, everything that happened to the car, the stops and swaps, a swing
+   * of two places or more, and the best lap. Not the flags, which a live
+   * recorder logs by the hundred, and not the laps one by one.
+   */
+  function isKey(e, i) {
+    switch (e.kind) {
+      case 'start':
+      case 'finish':
+      case 'contact':
+      case 'damage':
+      case 'limits':
+      case 'penalty':
+      case 'pit':
+      case 'driver':
+        return true;
+      case 'position': {
+        const d = e.detail || {};
+        return Math.abs(d.gained || 0) >= 2 || Math.abs(d.classGained || 0) >= 2;
+      }
+      case 'lap':
+        return !!facts && i === facts.bestIndex;
+      default:
+        return false;
+    }
+  }
+
+  const kinds = (...k) => { const s = new Set(k); return (e) => s.has(e.kind); };
+
+  /**
+   * One question at a time, so tabs rather than tick boxes. A tab with
+   * nothing behind it in this race is not drawn; Key moments and All always are.
+   * No "Incidents" tab since the redesign: Key moments is the steward's read
+   * now, and on a live-recorded race Incidents was mostly flags.
    */
   const FILTERS = [
-    { id: 'all', label: 'All', kinds: null },
-    { id: 'incidents', label: 'Incidents', kinds: INCIDENT },
-    { id: 'contacts', label: 'Contacts', kinds: new Set(['contact']) },
-    { id: 'penalties', label: 'Limits &amp; penalties', kinds: new Set(['limits', 'penalty']) },
-    { id: 'positions', label: 'Positions', kinds: new Set(['start', 'position', 'finish']) },
-    { id: 'laps', label: 'Laps', kinds: new Set(['lap']) },
-    { id: 'pit', label: 'Pit &amp; drivers', kinds: new Set(['pit', 'driver']) },
-    { id: 'flags', label: 'Flags', kinds: new Set(['flag']) },
+    { id: 'key', label: 'Key moments', test: isKey, always: true },
+    { id: 'all', label: 'All events', test: () => true, always: true },
+    { id: 'contacts', label: 'Contacts', test: kinds('contact'), dot: 'bad' },
+    { id: 'penalties', label: 'Limits &amp; penalties', test: kinds('limits', 'penalty'), dot: 'warn' },
+    { id: 'positions', label: 'Positions', test: kinds('start', 'position', 'finish'), dot: 'ok' },
+    { id: 'laps', label: 'Laps', test: kinds('lap') },
+    { id: 'pit', label: 'Pit &amp; drivers', test: kinds('pit', 'driver'), dot: 'pit' },
+    { id: 'flags', label: 'Flags', test: kinds('flag') },
   ];
 
   const filterOf = (id) => FILTERS.find((f) => f.id === id) || FILTERS[0];
 
-  function visibleEvents() {
-    if (!log || !Array.isArray(log.events)) return [];
-    const f = filterOf(filter);
-    return f.kinds ? log.events.filter((e) => f.kinds.has(e.kind)) : log.events;
+  function matchesQuery(e) {
+    if (!query) return true;
+    return `${KIND_WORD[e.kind] || e.kind} ${e.text} L${e.lap}`.toLowerCase().includes(query);
   }
 
-  /** A penalty line that closes one off rather than hands one out. */
-  const isServed = (e) => e.kind === 'penalty' && /^served\b/i.test(String(e.text || ''));
+  /** The rows on screen, as indexes into `log.events`, in race order. */
+  function visibleIndexes() {
+    if (!log || !Array.isArray(log.events)) return [];
+    const f = filterOf(filter);
+    const out = [];
+    log.events.forEach((e, i) => { if (f.test(e, i) && matchesQuery(e)) out.push(i); });
+    return out;
+  }
+
+  const visibleEvents = () => visibleIndexes().map((i) => log.events[i]);
 
   /**
    * How loud a row is: `bad`, `warn` or nothing. The game's own two contact
@@ -253,71 +329,91 @@
         return /no further action/i.test(String(d.verdict || '')) ? '' : 'warn';
       case 'flag':
         return 'warn';
+      case 'position':
+        return known(d.gained) && d.gained ? (d.gained > 0 ? 'ok' : 'bad') : '';
       default:
         return '';
     }
+  }
+
+  /**
+   * What the page needs from a log beyond its events, worked out once:
+   * lap times by lap number, the best valid lap, and the counts.
+   */
+  function indexLog(l) {
+    const laps = new Map();
+    let bestIndex = -1;
+    let bestMs = Infinity;
+    const count = { contact: 0, limits: 0, penalty: 0 };
+    (l.events || []).forEach((e, i) => {
+      const d = e.detail || {};
+      if (e.kind === 'lap' && e.lap > 0) {
+        laps.set(e.lap, { ms: d.lapMs, invalid: !!d.invalid, pb: !!d.personalBest, cb: !!d.classBest });
+        if (!d.invalid && known(d.lapMs) && d.lapMs < bestMs) { bestMs = d.lapMs; bestIndex = i; }
+      }
+      if (e.kind in count && !isServed(e)) count[e.kind] += 1;
+    });
+    return { laps, bestIndex, bestMs: Number.isFinite(bestMs) ? bestMs : null, count };
   }
 
   /* ---------------------------------------------------------------------- */
   /*  The rail                                                              */
   /* ---------------------------------------------------------------------- */
 
-  function matches(row, q) {
-    if (!q) return true;
-    return `${row.track} ${className(row.carClass)}`.toLowerCase().includes(q);
+  /** `P16 / P4`: the overall place, and the class place in a multiclass race. */
+  function placePair(overall, cls, multiclass) {
+    if (!known(overall)) return '';
+    return multiclass && known(cls) ? `P${overall} <em>/ P${cls}</em>` : `P${overall}`;
   }
 
-  /** The race rows for the rail, day-headed like the sessions above them. */
-  function listHtml(query) {
-    if (listState === 'loading' && !races.length) {
-      return '<p class="rv-empty" style="padding:20px 14px">Reading the game’s results…</p>';
-    }
-    const q = String(query || '').trim().toLowerCase();
-    const rows = races.filter((r) => matches(r, q));
-    if (!rows.length) {
-      return `<p class="rv-empty" style="padding:20px 14px">${
-        races.length ? 'No race matches that.' : 'No races yet.'
-      }</p>`;
-    }
-    let html = '';
-    let day = '';
-    for (const row of rows) {
-      const d = dayLabel(row.startedAt);
-      if (d !== day) {
-        day = d;
-        html += `<div class="rv__day">${esc(d)}</div>`;
-      }
-      const mine = row.slot !== null && row.slot !== undefined;
-      const cls = className(row.carClass);
-      const where = mine
-        ? `P${known(row.finishPosition) ? row.finishPosition : '?'}${
-          known(row.finishClassPosition) && row.finishClassPosition !== row.finishPosition && cls
-            ? ` · P${row.finishClassPosition} ${cls}` : ''}`
-        : 'Which car?';
-      const meta = mine
-        ? [
-          row.contacts ? `${row.contacts} contact${row.contacts === 1 ? '' : 's'}` : '',
-          row.penalties ? `${row.penalties} penalt${row.penalties === 1 ? 'y' : 'ies'}` : '',
-        ].filter(Boolean).join(' · ') || 'clean'
-        : '';
-      html += `
-        <button class="rv__card" type="button" data-race="${esc(row.id)}" data-type="race"
+  /** One race card: circuit, when, where it finished, and what it cost. */
+  function cardHtml(row, on) {
+    const mine = row.slot !== null && row.slot !== undefined;
+    const cls = className(row.carClass);
+    const multi = !!row.multiclass && cls;
+    const st = statusOf(row.finishStatus);
+    const clean = mine && !row.contacts && !row.limits && !row.penalties;
+    let badge = '';
+    if (row.provisional) badge = '<span class="rl-badge">Provisional</span>';
+    else if (mine && st && st.tone === 'bad') badge = `<span class="rl-badge" data-tone="bad">${esc(st.word)}</span>`;
+    else if (clean) badge = '<span class="rl-badge" data-tone="ok">Clean</span>';
+    const started = mine && known(row.gridPosition)
+      ? `Started P${row.gridPosition}${multi && known(row.gridClassPosition) ? ` / P${row.gridClassPosition}` : ''}` : '';
+    // Laps on a line of their own, then what the race cost, wrapping as it must.
+    const cost = mine
+      ? [
+        row.contacts ? plural(row.contacts, 'contact', 'contacts') : '',
+        row.limits ? plural(row.limits, 'limit', 'limits') : '',
+        row.penalties ? plural(row.penalties, 'penalty', 'penalties') : '',
+      ].filter(Boolean).join(' · ')
+      : '';
+    const place = placePair(row.finishPosition, row.finishClassPosition, multi);
+    return `
+        <button class="rv__card rl-rcard" type="button" data-race="${esc(row.id)}"
                 data-slot="${mine ? String(row.slot) : 'none'}"
-                data-active="${String(row.id === openId)}">
-          <b>${esc(row.track || 'Unknown circuit')}</b>
-          <i>${esc([cls, clockLabel(row.startedAt)].filter(Boolean).join(' · '))}${
-            row.provisional ? '<span class="rv-flag" data-why="provisional">provisional</span>' : ''}</i>
-          <span class="rv__cardfoot">
-            <span class="rv__cardtime" data-none="${String(!mine)}">${esc(where)}</span>
-            <span class="rv__cardmeta">${esc(meta)}</span>
+                data-active="${String(!!on)}">
+          <span class="rl-rcard__top">
+            ${mapSvg(outlines[row.mapKey], 'rl-map--card')}
+            <span class="rl-rcard__name">
+              <b>${esc(row.track || 'Unknown circuit')}</b>
+              <i>${esc([cls, clockLabel(row.startedAt)].filter(Boolean).join(' · '))}</i>
+            </span>
+            ${badge}
           </span>
+          ${mine ? `
+          <span class="rl-rcard__foot">
+            <span class="rl-rcard__pos">
+              <span class="rl-rcard__place"${place ? '' : ' data-none="true"'}>${place || 'No result'}</span>
+              ${started ? `<span class="rl-rcard__from">${esc(started)}</span>` : ''}
+            </span>
+            <span class="rl-rcard__meta">${row.laps ? `<b>${esc(plural(row.laps, 'lap', 'laps'))}</b>` : ''}${esc(cost)}</span>
+          </span>` : `
+          <span class="rl-rcard__foot"><span class="rl-rcard__which">Which car was yours?</span></span>`}
         </button>`;
-    }
-    return html;
   }
 
   /* ---------------------------------------------------------------------- */
-  /*  The log                                                               */
+  /*  The race: tiles                                                       */
   /* ---------------------------------------------------------------------- */
 
   function emptyState(icon, title, body) {
@@ -329,62 +425,59 @@
       </div>`;
   }
 
-  function headHtml(l, summary) {
-    const track = (l && l.track) || (summary && summary.track) || 'Unknown circuit';
-    const at = (l && l.startedAt) || (summary && summary.startedAt) || 0;
-    const sub = l && l.slot !== null ? [l.vehicle, className(l.carClass)].filter(Boolean).join(' · ') : '';
-    return `
-      <div class="rv-head">
-        <h2>${esc(track)}</h2>
-        <span class="rv-pill rv-pill--race">Race</span>
-        ${l && l.provisional ? '<span class="rv-pill">Provisional</span>' : ''}
-        ${sub ? `<span class="rv-head__sub">${esc(sub)}</span>` : ''}
-        <span class="rv-head__when">${esc(dayLabel(at))} · ${esc(clockLabel(at))}</span>
-      </div>`;
-  }
-
-  function fact(label, value, extra = '') {
-    return `<span class="rv-fact"><b>${esc(label)}</b><span data-none="${String(value === dash)}">${value}</span>${extra}</span>`;
-  }
-
-  /** `P12 → P8` and the places it came to, green or red. */
-  function gridToFinish(grid, finish) {
-    if (!known(finish)) return dash;
-    if (!known(grid)) return pos(finish);
-    const moved = grid - finish;
+  /** A place tile: where it finished, the places made, where it started. */
+  function placeTile(label, grid, finish) {
+    const moved = known(grid) && known(finish) ? grid - finish : null;
     const tag = moved
-      ? ` <i class="rv-log__moved" data-dir="${moved > 0 ? 'gain' : 'loss'}">${moved > 0 ? '+' : '−'}${Math.abs(moved)}</i>`
+      ? `<span class="rl-tile__delta" data-dir="${moved > 0 ? 'gain' : 'loss'}">${moved > 0 ? '▲' : '▼'} ${Math.abs(moved)}</span>`
       : '';
-    return `${pos(grid)} → ${pos(finish)}${tag}`;
-  }
-
-  const MATCHED = {
-    laplog: 'Matched to your lap log.',
-    name: 'Matched by your driver name.',
-    picked: 'You picked this car.',
-  };
-
-  function factsHtml(l) {
-    const count = (k) => l.events.filter((e) => e.kind === k && !isServed(e)).length;
-    const overall = gridToFinish(l.gridPosition, l.finishPosition);
-    const cls = className(l.carClass);
     return `
-      <div class="rv-log__facts">
-        ${fact(l.multiclass ? 'Overall' : 'Grid to finish', overall)}
-        ${l.multiclass && cls ? fact(cls, gridToFinish(l.gridClassPosition, l.finishClassPosition)) : ''}
-        ${fact('Laps', known(l.laps) ? String(l.laps) : dash)}
-        ${fact('Status', esc(statusWords(l.finishStatus)))}
-        ${fact('Contacts', String(count('contact')))}
-        ${fact('Limits', String(count('limits')))}
-        ${fact('Penalties', String(count('penalty')))}
+      <div class="rl-tile">
+        <span class="rl-tile__label">${esc(label)}</span>
+        <span class="rl-tile__big">${pos(finish)}${tag}</span>
+        <span class="rl-tile__sub">${known(grid) ? `Started ${pos(grid)}` : '&nbsp;'}</span>
       </div>`;
   }
+
+  /** The counts are buttons: each opens the timeline on that kind. */
+  function countHtml(n, word, tone, f) {
+    return `<button type="button" class="rl-count" data-rlfilter="${f}"${n ? ` data-tone="${tone}"` : ''}
+                    title="Show these in the timeline"><b>${n}</b><span>${esc(word)}</span></button>`;
+  }
+
+  function tilesHtml(l) {
+    const cls = className(l.carClass);
+    const c = facts.count;
+    const best = facts.bestMs;
+    return `
+      <div class="rl-tiles">
+        ${placeTile(l.multiclass ? 'Overall' : 'Position', l.gridPosition, l.finishPosition)}
+        ${l.multiclass && cls ? placeTile(`Class (${cls})`, l.gridClassPosition, l.finishClassPosition) : ''}
+        <div class="rl-tile">
+          <span class="rl-tile__label">Laps</span>
+          <span class="rl-tile__big">${known(l.laps) ? l.laps : dash}</span>
+          <span class="rl-tile__sub">${best ? `Best <b class="rl-tile__best">${fmtLap(best)}</b>` : '&nbsp;'}</span>
+        </div>
+        <div class="rl-tile rl-tile--counts">
+          <span class="rl-tile__label">Incidents</span>
+          <span class="rl-counts">
+            ${countHtml(c.contact, c.contact === 1 ? 'contact' : 'contacts', 'bad', 'contacts')}
+            ${countHtml(c.limits, 'track limits', 'warn', 'penalties')}
+            ${countHtml(c.penalty, c.penalty === 1 ? 'penalty' : 'penalties', 'text', 'penalties')}
+          </span>
+        </div>
+      </div>`;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  The race progression                                                  */
+  /* ---------------------------------------------------------------------- */
 
   /**
-   * Where the car ran, lap by lap: `{ laps, rows: [{ label, pos[] }] }`, one
-   * row overall and — in a multiclass race — one in class. `pos[n]` is the
-   * place at the end of lap n (0 is the grid). The log only says so when it
-   * CHANGED, so a place is held forward until the next line moves it, and
+   * Where the car ran, lap by lap: `{ laps, rows: [{ id, label, pos[] }] }`,
+   * one row overall and — in a multiclass race — one in class. `pos[n]` is
+   * the place at the end of lap n (0 is the grid). The log only says so when
+   * it CHANGED, so a place is held forward until the next line moves it, and
    * the finish is the classification, which a penalty can move after the
    * flag. Null when there is nothing to draw: no grid, or under two laps.
    */
@@ -402,320 +495,89 @@
         }
       }
       if (!at.has(0)) return null;
-      const pos = [];
+      const out = [];
       let held = at.get(0);
       for (let n = 0; n <= last; n += 1) {
         if (at.has(n)) held = at.get(n);
-        pos.push(held);
+        out.push(held);
       }
-      if (known(finish)) pos[last] = finish;
-      return pos;
+      if (known(finish)) out[last] = finish;
+      return out;
     };
     const overall = build('position', l.finishPosition);
     if (!overall) return null;
-    const rows = [{ label: l.multiclass ? 'Overall' : 'Position', pos: overall }];
+    const rows = [{ id: 'overall', label: l.multiclass ? 'Overall' : 'Position', pos: overall }];
     if (l.multiclass) {
       const cls = build('classPosition', l.finishClassPosition);
-      if (cls) rows.push({ label: className(l.carClass) || 'Class', pos: cls });
+      if (cls) rows.push({ id: 'class', label: className(l.carClass) || 'Class', pos: cls });
     }
     return { laps: last, rows };
   }
 
-  function positionHtml(l) {
-    const s = CHARTS && typeof CHARTS.drawPositions === 'function' ? positionSeries(l) : null;
+  /** The incidents and stops, as the chart's markers. */
+  function chartMarks(l) {
+    const out = [];
+    l.events.forEach((e, i) => {
+      if (isIncident(e) && e.kind !== 'limits') out.push({ lap: e.lap, tone: toneOf(e) || 'warn', index: i });
+      else if (e.kind === 'limits' && toneOf(e)) out.push({ lap: e.lap, tone: 'warn', index: i });
+      else if (e.kind === 'pit') out.push({ lap: e.lap, tone: 'pit', index: i });
+    });
+    return out;
+  }
+
+  function progressHtml(l) {
+    const s = CHARTS && typeof CHARTS.drawRaceProgress === 'function' ? positionSeries(l) : null;
     if (!s) return '';
-    return `<div class="rv-chart rv-chart--pos" data-bands="${s.rows.length}"
-                 role="img" aria-label="Position lap by lap"><canvas></canvas></div>`;
+    const two = s.rows.length > 1;
+    return `
+      <section class="rv-card rl-progress">
+        <div class="rl-card__head">
+          <h3>Race progression</h3>
+          <span class="rl-legend">
+            <span data-key="incident">Incident</span><span data-key="pit">Pit stop</span>
+          </span>
+          ${two ? `
+          <nav class="seg seg--sm" aria-label="Which place to follow">
+            ${s.rows.map((r) => `<button type="button" data-rlfocus="${r.id}" data-active="${String(r.id === focusRow)}">${esc(r.id === 'class' ? `Class (${r.label})` : r.label)}</button>`).join('')}
+          </nav>` : ''}
+        </div>
+        <div class="rl-chart" role="img" aria-label="Place lap by lap, with the race's incidents"><canvas></canvas></div>
+      </section>`;
   }
 
-  /** Paint the position line, if the log on screen has one. Cheap: a few dozen points. */
-  function paintPositions() {
+  /** Paint the progression, if the log on screen has one. Cheap: a few hundred points. */
+  function paintChart() {
+    chartHits = [];
     if (!host || !host.detail || !CHARTS || !log) return;
-    const canvas = host.detail.querySelector('.rv-chart--pos canvas');
+    const canvas = host.detail.querySelector('.rl-chart canvas');
     const s = canvas ? positionSeries(log) : null;
-    if (s) CHARTS.drawPositions(canvas, s);
+    if (!s) return;
+    chartHits = CHARTS.drawRaceProgress(canvas, {
+      ...s,
+      focus: focusRow,
+      marks: chartMarks(log),
+      selected: cursor,
+    }) || [];
   }
 
-  /** The quiet line under the facts: who drove, how we knew, and the replay. */
-  function noteHtml(l) {
-    const parts = [];
-    if (l.drivers && l.drivers.length) parts.push(`Driven by ${esc(andList(l.drivers))}.`);
-    if (l.provisional) {
-      parts.push('Provisional: the game did not save results for this race, so this is what Apex recorded live.');
-    } else if (l.matchedBy && MATCHED[l.matchedBy]) {
-      parts.push(MATCHED[l.matchedBy]);
+  /** The marker under a point on the chart, or -1. */
+  function hitAt(evt) {
+    const canvas = evt.target;
+    const box = canvas.getBoundingClientRect();
+    const x = evt.clientX - box.left;
+    const y = evt.clientY - box.top;
+    let best = -1;
+    let bestD = 10 * 10;
+    for (const h of chartHits) {
+      const d = (h.x - x) ** 2 + (h.y - y) ** 2;
+      if (d <= bestD) { bestD = d; best = h.index; }
     }
-    let replay = '';
-    if (avail.state === 'yes') {
-      replay = 'Replay opens the game’s own replay of this race, 5 s before the moment.';
-    } else if (avail.state === 'no') {
-      replay = avail.reason === 'game-offline'
-        ? 'Start Le Mans Ultimate to watch these in its replay.'
-        : 'Replay no longer kept by the game.';
-    }
-    return `
-      <p class="rv-card__note rv-log__note">
-        ${parts.join(' ')}
-        ${replay ? `<span class="rv-log__replaynote" data-state="${avail.state}">${esc(replay)}</span>` : ''}
-        ${avail.state === 'no' && avail.reason === 'game-offline'
-          ? '<button type="button" class="rv-refbtn" data-rlrecheck>Check again</button>' : ''}
-        ${!l.provisional && Array.isArray(l.cars) && l.cars.length
-          ? '<button type="button" class="rv-refbtn" data-rlrepick>Not your car?</button>' : ''}
-      </p>`;
-  }
-
-  /**
-   * The replay's progress, pinned to the top of the page while it matters —
-   * the button that started it may be two hundred rows down. Only for THIS
-   * race: a replay loading for another race is that race's business.
-   */
-  function replayHtml() {
-    const st = status;
-    if (!log) return '';
-    if (busy && busy.raceId === log.id) {
-      const p = st && st.phase === 'loading' && known(st.progress) ? Math.round(st.progress * 100) : null;
-      return `
-      <div class="rv-replay" data-phase="busy" role="status">
-        <span class="rv-replay__tag">Replay</span>
-        <span class="rv-replay__text">Another replay is loading${p !== null ? ` · ${p}%` : '.'}</span>
-        <span class="rv-replay__sub">Press Replay again once it is in the game.</span>
-      </div>`;
-    }
-    if (!st) return '';
-    const mine = st.raceId === log.id || (!st.raceId && asked && asked.raceId === log.id);
-    if (!mine) return '';
-    const at = asked && asked.raceId === log.id
-      ? `${KIND_WORD[asked.kind] ? `${KIND_WORD[asked.kind].toLowerCase()} ` : ''}at ${fmtRace(asked.raceS, longClock())}${asked.lap ? `, lap ${asked.lap}` : ''}`
-      : '';
-    let text = '';
-    let sub = '';
-    let bar = '';
-    let step = '';
-    switch (st.phase) {
-      case 'loading': {
-        // A step or a click while this race's replay is already in the game:
-        // a jump, a second or so, not a load — so no bar, and the steps stay
-        // where the hand is.
-        if (st.jump) {
-          text = at ? `Jumping to the ${at}…` : 'Jumping…';
-          step = stepHtml();
-          break;
-        }
-        const p = known(st.progress) ? Math.round(st.progress * 100) : null;
-        const closing = st.message && /^Closing/.test(st.message);
-        text = closing ? st.message : `Loading the replay in the game${p !== null ? ` · ${p}%` : '…'}`;
-        sub = 'Big replays take up to a minute.';
-        bar = `<div class="rv-bar rv-replay__bar"><span style="width:${Math.max(2, p || 0)}%"></span></div>`;
-        break;
-      }
-      case 'ready': {
-        text = at ? `In the game now: 5 s before the ${at}.` : 'In the game now.';
-        const list = incidentIndexes();
-        const k = asked && asked.raceId === log.id ? list.indexOf(asked.index) : -1;
-        sub = k >= 0
-          ? `Incident ${k + 1} of ${list.length}. Jumps within this race are instant.`
-          : 'Every other Replay in this race is a jump, not a reload.';
-        step = stepHtml();
-        break;
-      }
-      case 'blocked':
-        text = st.message || 'Leave your session to watch the replay.';
-        break;
-      case 'unavailable':
-        text = st.message || 'Replay no longer kept by the game.';
-        break;
-      case 'error':
-        text = st.message || 'The game did not open the replay.';
-        break;
-      case 'idle':
-        if (!st.message) return '';
-        text = st.message;
-        break;
-      default:
-        return '';
-    }
-    return `
-      <div class="rv-replay" data-phase="${esc(st.phase)}"${st.jump ? ' data-jump="true"' : ''} role="status">
-        <span class="rv-replay__tag">Replay</span>
-        <span class="rv-replay__text">${esc(text)}</span>
-        ${sub ? `<span class="rv-replay__sub">${esc(sub)}</span>` : ''}
-        ${step}
-        ${bar}
-      </div>`;
+    return best;
   }
 
   /* ---------------------------------------------------------------------- */
-  /*  Stepping through the incidents                                        */
+  /*  The timeline                                                          */
   /* ---------------------------------------------------------------------- */
-
-  /** Whether this log's Replay buttons can be pressed at all. */
-  function replayOk() {
-    return !!log && avail.state === 'yes' && log.slot !== null && !log.provisional;
-  }
-
-  /**
-   * The incidents under the filter on screen, as indexes into `log.events`,
-   * in race order. Under the filter because that is the steward's own
-   * question: on Contacts, Next means the next contact.
-   */
-  function incidentIndexes() {
-    if (!log) return [];
-    const all = log.events;
-    return visibleEvents().filter(isIncident).map((e) => all.indexOf(e));
-  }
-
-  /**
-   * The incident one step before or after (`dir` -1 or 1) the row the
-   * driver is on — the keyboard's row, else the one last replayed — or -1 at
-   * either end. From nothing, Next is the first and Previous the last.
-   */
-  function stepTarget(dir) {
-    const list = incidentIndexes();
-    if (!list.length) return -1;
-    const from = cursor >= 0 ? cursor : asked && log && asked.raceId === log.id ? asked.index : -1;
-    if (from < 0) return dir > 0 ? list[0] : list[list.length - 1];
-    if (dir > 0) {
-      const n = list.find((i) => i > from);
-      return n === undefined ? -1 : n;
-    }
-    for (let k = list.length - 1; k >= 0; k -= 1) if (list[k] < from) return list[k];
-    return -1;
-  }
-
-  function stepHtml() {
-    const prev = stepTarget(-1);
-    const next = stepTarget(1);
-    return `
-        <span class="rv-replay__step">
-          <button type="button" class="btn btn--ghost btn--sm" data-rlstep="-1"${prev < 0 ? ' disabled' : ''}
-                  title="Replay the incident before this one ( [ )">
-            <svg class="icon"><use href="#i-chevron-left" /></svg><span>Previous</span>
-          </button>
-          <button type="button" class="btn btn--ghost btn--sm" data-rlstep="1"${next < 0 ? ' disabled' : ''}
-                  title="Replay the next incident ( ] )">
-            <span>Next</span><svg class="icon"><use href="#i-chevron-right" /></svg>
-          </button>
-        </span>`;
-  }
-
-  /** Replay the incident a step away, and put the cursor on it. */
-  function stepIncident(dir) {
-    if (!replayOk()) return false;
-    const i = stepTarget(dir);
-    if (i < 0) return false;
-    cursor = i;
-    void replayAt(i);
-    return true;
-  }
-
-  /**
-   * Why a Replay button is greyed, or what it does. The same sentences the
-   * replay controller answers with, so the tooltip and the strip agree. A
-   * `blocked` race keeps its buttons live: nothing tells the panel when the
-   * driver leaves the session, and a greyed button would stay grey after.
-   */
-  function replayTitle() {
-    if (avail.state === 'checking') return 'Asking the game whether it still has this race’s replay…';
-    if (avail.state === 'no') {
-      if (avail.message) return avail.message;
-      return avail.reason === 'game-offline'
-        ? 'Le Mans Ultimate isn’t running, so its replays can’t be opened.'
-        : 'This race’s replay has been replaced by the game.';
-    }
-    if (log && status && status.phase === 'blocked' && status.raceId === log.id) {
-      return status.message || 'Leave your session to watch the replay.';
-    }
-    return 'Open the game’s replay 5 s before this';
-  }
-
-  /**
-   * Mark the row being replayed and the keyboard's row, in place — a status
-   * push or a key press must not rebuild two hundred rows.
-   */
-  function markRows() {
-    if (!host || !host.detail || !log) return;
-    const body = host.detail.querySelector('.rv-log__table tbody');
-    if (!body) return;
-    const on = asked && asked.raceId === log.id ? asked.index : -1;
-    for (const tr of body.children) {
-      const i = Number(tr.dataset.ev);
-      if (i === on) tr.setAttribute('data-asked', 'true');
-      else tr.removeAttribute('data-asked');
-      if (i === cursor) tr.setAttribute('data-cursor', 'true');
-      else tr.removeAttribute('data-cursor');
-    }
-  }
-
-  /**
-   * Bring a row into view below the sticky replay strip. `centre` for a step,
-   * which can land two hundred rows away; the least scroll that shows it for
-   * a cursor moving one row, so the page does not lurch on every key.
-   */
-  function reveal(i, centre) {
-    if (!host || !host.detail) return;
-    const tr = host.detail.querySelector(`.rv-log__table tr[data-ev="${i}"]`);
-    if (!tr) return;
-    const sc = tr.closest('.content');
-    if (!sc) {
-      tr.scrollIntoView({ block: centre ? 'center' : 'nearest' });
-      return;
-    }
-    const box = sc.getBoundingClientRect();
-    const strip = host.detail.querySelector('.rv-replay');
-    const top = Math.max(box.top, strip ? strip.getBoundingClientRect().bottom : box.top) + 8;
-    const bottom = box.bottom - 8;
-    const r = tr.getBoundingClientRect();
-    if (r.top >= top && r.bottom <= bottom) return;
-    if (centre) sc.scrollTop += r.top + r.height / 2 - (top + bottom) / 2;
-    else if (r.top < top) sc.scrollTop -= top - r.top;
-    else sc.scrollTop += r.bottom - bottom;
-  }
-
-  /** Move the keyboard's row through the rows on screen. */
-  function moveCursor(dir) {
-    if (!log) return false;
-    const all = log.events;
-    const rows = visibleEvents().map((e) => all.indexOf(e));
-    if (!rows.length) return false;
-    let k = rows.indexOf(cursor);
-    if (k < 0) {
-      // First press: start from the row being replayed, if it is showing.
-      const from = asked && asked.raceId === log.id ? rows.indexOf(asked.index) : -1;
-      k = from >= 0 ? from : dir > 0 ? -1 : rows.length;
-    }
-    k = Math.min(rows.length - 1, Math.max(0, k + dir));
-    cursor = rows[k];
-    markRows();
-    reveal(cursor, false);
-    return true;
-  }
-
-  /**
-   * The tab's keys, from racelog-panel.js's document listener (which has
-   * already made sure the tab is on screen and nothing is being typed in).
-   * Returns whether the key was taken.
-   */
-  function onDocKey(evt) {
-    if (!log || log.slot === null || repick || reading) return false;
-    if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
-    const k = evt.key;
-    let took = false;
-    if (k === 'ArrowDown' || k === 'j' || k === 'J') took = moveCursor(1);
-    else if (k === 'ArrowUp' || k === 'k' || k === 'K') took = moveCursor(-1);
-    else if (k === ']') took = stepIncident(1);
-    else if (k === '[') took = stepIncident(-1);
-    else if (k === 'Enter') {
-      const t = evt.target;
-      // A focused button answers Enter itself.
-      if (t && t.closest && t.closest('button, a, [role="button"]')) return false;
-      if (cursor >= 0 && replayOk() && isIncident(log.events[cursor])) {
-        void replayAt(cursor);
-        took = true;
-      }
-    }
-    if (took) evt.preventDefault();
-    return took;
-  }
 
   /** One width for the whole column: `h:mm:ss` once the race passes an hour. */
   function longClock() {
@@ -746,6 +608,12 @@
       rest ? ` <span class="rv-log__rest">${esc(rest)}</span>` : ''}`;
   }
 
+  /** The kind, as a pill (or, for a lap, as quiet text: laps are most of the log). */
+  function kindHtml(e) {
+    const tone = toneOf(e);
+    return `<span class="rl-kind" data-kind="${esc(e.kind)}"${tone ? ` data-tone="${tone}"` : ''}>${esc(KIND_WORD[e.kind] || e.kind)}</span>`;
+  }
+
   /**
    * One line. `replay` is `null` for a log that can never replay (no car,
    * or a provisional log with no results file behind it), else
@@ -753,64 +621,292 @@
    * its buttons, greyed with the reason, so the feature stays findable.
    */
   function rowHtml(e, i, long, replay) {
-    const tone = toneOf(e);
-    const d = e.detail || {};
-    const dir = e.kind === 'position' && known(d.gained) && d.gained
-      ? ` data-dir="${d.gained > 0 ? 'gain' : 'loss'}"` : '';
     const btn = replay && isIncident(e);
     const on = !!asked && asked.raceId === log.id && asked.index === i;
     return `
-      <tr data-ev="${i}" data-kind="${esc(e.kind)}"${tone ? ` data-tone="${tone}"` : ''}${dir}${
-        on ? ' data-asked="true"' : ''}${i === cursor ? ' data-cursor="true"' : ''}>
-        <td class="t">${fmtRace(e.raceS, long)}</td>
+      <tr data-ev="${i}" data-kind="${esc(e.kind)}"${on ? ' data-asked="true"' : ''}${i === cursor ? ' data-cursor="true"' : ''}>
         <td class="l">${e.lap > 0 ? `L${e.lap}` : dash}</td>
-        <td class="k">${esc(KIND_WORD[e.kind] || e.kind)}</td>
+        <td class="t">${fmtRace(e.raceS, long)}</td>
+        <td class="k">${kindHtml(e)}</td>
         <td class="x">${e.kind === 'lap' ? lapText(e) : esc(e.text)}</td>
         <td class="ref">${btn
-          ? `<button type="button" class="rv-refbtn" data-replay="${i}"${replay.ok ? '' : ' disabled'}
-                     title="${esc(replay.title)}">Replay</button>`
+          ? `<button type="button" class="rl-replaybtn" data-replay="${i}"${replay.ok ? '' : ' disabled'}
+                     title="${esc(replay.title)}" aria-label="Replay"><svg class="icon"><use href="#i-play" /></svg><span>Replay</span></button>`
           : ''}</td>
       </tr>`;
   }
 
-  function timelineHtml() {
+  /** The tabs, the table and the count: everything a filter or a search redraws. */
+  function timelineBodyHtml() {
     const all = log.events;
-    const shown = visibleEvents();
+    const idx = visibleIndexes();
     const long = longClock();
     const replay = log.slot !== null && !log.provisional ? { ok: replayOk(), title: replayTitle() } : null;
-    const keys = replayOk() && shown.some(isIncident);
-    const hasKind = (f) => !f.kinds || all.some((e) => f.kinds.has(e.kind));
-    const segs = FILTERS.filter((f) => f.id === 'all' || f.id === 'incidents' || hasKind(f));
-    const rows = shown.map((e) => rowHtml(e, all.indexOf(e), long, replay)).join('');
+    const tabs = FILTERS.map((f) => {
+      let n = 0;
+      all.forEach((e, i) => { if (f.test(e, i)) n += 1; });
+      return { f, n };
+    }).filter(({ f, n }) => f.always || n > 0);
+    const rows = idx.map((i) => rowHtml(all[i], i, long, replay)).join('');
     return `
-      <div class="rv-card rv-log">
-        <div class="rv-card__head">
-          <span class="rv-card__title">Timeline</span>
-          <span class="rv-legend">${keys
-            // The keys, said once and quietly, in the legend's own voice.
-            ? '<span class="rv-log__keys">↑ ↓ to move · Enter to replay · [ ] previous and next incident</span>'
-            : ''}<span>${shown.length === all.length
-            ? `${all.length} event${all.length === 1 ? '' : 's'}`
-            : `${shown.length} of ${all.length} events`}</span></span>
-        </div>
-        <div class="rv-log__bar">
-          <nav class="seg seg--sm" aria-label="Which events to show">
-            ${segs.map((f) => `<button type="button" data-rlfilter="${f.id}" data-active="${String(f.id === filter)}">${f.label}</button>`).join('')}
-          </nav>
+        <nav class="rl-tabs" aria-label="Which events to show">
+          ${tabs.map(({ f, n }) => `<button type="button" data-rlfilter="${f.id}" data-active="${String(f.id === filter)}">${
+            f.dot ? `<i data-dot="${f.dot}"></i>` : ''}${f.label}<span>${n}</span></button>`).join('')}
+        </nav>
+        ${idx.length ? `
+        <div class="rv-sheet__scroll rl-tl__scroll">
+          <table class="rv-sheet rv-log__table">
+            <thead><tr><th>Lap</th><th>Time</th><th>Type</th><th>Event</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>` : `<p class="rv-card__note rl-tl__none">${query ? 'Nothing in this race matches that.' : 'Nothing of that kind in this race.'}</p>`}`;
+  }
+
+  function timelineHtml() {
+    return `
+      <section class="rv-card rl-timeline">
+        <div class="rl-card__head">
+          <h3>Event timeline</h3>
+          <input class="rl-search" type="search" placeholder="Search events" aria-label="Search the timeline"
+                 value="${esc(query)}" data-rlquery />
           <button type="button" class="btn btn--ghost btn--sm" data-rlcopy
                   title="Copy the lines below as plain text, for a protest or a Discord post">
             <svg class="icon"><use href="#i-copy" /></svg><span data-rlcopylabel>Copy as text</span>
           </button>
         </div>
-        ${shown.length ? `
-        <div class="rv-sheet__scroll rv-log__scroll">
-          <table class="rv-sheet rv-log__table">
-            <thead><tr><th>Time</th><th>Lap</th><th>Kind</th><th>Event</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>` : '<p class="rv-card__note">Nothing of that kind in this race.</p>'}
+        <div class="rl-tl__body">${timelineBodyHtml()}</div>
+      </section>`;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  The event picked                                                      */
+  /* ---------------------------------------------------------------------- */
+
+  /** Whether this log's Replay buttons can be pressed at all. */
+  function replayOk() {
+    return !!log && avail.state === 'yes' && log.slot !== null && !log.provisional;
+  }
+
+  /**
+   * Why a Replay button is greyed, or what it does. The same sentences the
+   * replay controller answers with, so the tooltip and the card agree. A
+   * `blocked` race keeps its buttons live: nothing tells the panel when the
+   * driver leaves the session, and a greyed button would stay grey after.
+   */
+  function replayTitle() {
+    if (avail.state === 'checking') return 'Asking the game whether it still has this race’s replay…';
+    if (avail.state === 'no') {
+      if (avail.message) return avail.message;
+      return avail.reason === 'game-offline'
+        ? 'Le Mans Ultimate isn’t running, so its replays can’t be opened.'
+        : 'This race’s replay has been replaced by the game.';
+    }
+    if (log && status && status.phase === 'blocked' && status.raceId === log.id) {
+      return status.message || 'Leave your session to watch the replay.';
+    }
+    return 'Open the game’s replay 5 s before this';
+  }
+
+  /** `[label, value]` pairs that say more than the sentence does, per kind. */
+  function detailRows(e) {
+    const d = e.detail || {};
+    const rows = [];
+    switch (e.kind) {
+      case 'contact':
+        if (d.severity) rows.push(['Severity', d.severity === 'heavy' ? 'Heavy contact' : 'Light contact']);
+        if (d.otherName) rows.push(['Other car', `${d.otherName}${d.otherNumber ? ` (#${d.otherNumber})` : ''}`]);
+        else if (d.scenery) rows.push(['Hit', d.scenery]);
+        break;
+      case 'limits':
+        if (d.verdict) rows.push(['Verdict', d.verdict]);
+        if (known(d.warningPoints) && d.warningPoints > 0) {
+          rows.push(['Points', known(d.pointsLimit) ? `${d.warningPoints} of ${d.pointsLimit}` : String(d.warningPoints)]);
+        }
+        break;
+      case 'penalty':
+        if (d.penaltyKind) rows.push(['Penalty', d.penaltyKind]);
+        if (d.reason) rows.push(['Reason', d.reason]);
+        break;
+      case 'damage':
+        if (d.grade && d.grade !== 'none') rows.push(['Grade', d.grade[0].toUpperCase() + d.grade.slice(1)]);
+        if (Array.isArray(d.zones) && d.zones.length) rows.push(['Where', d.zones.join(', ')]);
+        break;
+      case 'position':
+      case 'start':
+      case 'finish':
+        if (known(d.position)) rows.push([log.multiclass ? 'Overall' : 'Place', pos(d.position)]);
+        if (log.multiclass && known(d.classPosition)) rows.push([className(log.carClass) || 'Class', pos(d.classPosition)]);
+        break;
+      case 'lap':
+        if (d.invalid) rows.push(['Status', 'Invalid lap']);
+        else if (d.classBest) rows.push(['Status', 'Fastest in class so far']);
+        else if (d.personalBest) rows.push(['Status', 'Personal best']);
+        if (known(d.excursions) && d.excursions) rows.push(['Off track', `${d.excursions}, no action`]);
+        break;
+      default:
+        break;
+    }
+    return rows;
+  }
+
+  /**
+   * The lap before, the lap it happened on, and the lap after: what a moment
+   * cost, which is usually the first thing anyone asks of a contact.
+   */
+  function lapContextHtml(e) {
+    if (!facts || !(e.lap > 0) || e.kind === 'start') return '';
+    const at = (n) => facts.laps.get(n);
+    const here = at(e.lap);
+    const cells = [
+      ['Lap before', at(e.lap - 1), null],
+      [e.kind === 'lap' ? 'This lap' : `Lap ${e.lap}`, here, at(e.lap - 1)],
+      ['Lap after', at(e.lap + 1), null],
+    ];
+    if (!cells.some(([, l]) => l && known(l.ms))) return '';
+    return `
+      <div class="rl-lapctx">
+        ${cells.map(([label, l, before]) => {
+          const ms = l && known(l.ms) ? l.ms : null;
+          const gap = ms !== null && before && known(before.ms) && !l.invalid && !before.invalid ? ms - before.ms : null;
+          return `
+          <div>
+            <span>${esc(label)}</span>
+            <b${l && l.invalid ? ' data-invalid="true"' : ''}>${ms !== null ? fmtLap(ms) : dash}</b>
+            ${gap !== null && Math.abs(gap) >= 1 ? `<i data-dir="${gap > 0 ? 'loss' : 'gain'}">${fmtGap(gap)}</i>` : ''}
+          </div>`;
+        }).join('')}
       </div>`;
   }
+
+  /** The replay, for the event picked: the button, or how far the game has got. */
+  function replayBlockHtml(e, i) {
+    if (!log || log.slot === null || log.provisional) {
+      return log && log.provisional
+        ? '<p class="rl-replay__why">No replay: the game did not save this race.</p>' : '';
+    }
+    if (!isIncident(e)) return '';
+    const mineNow = !!asked && asked.raceId === log.id && asked.index === i;
+    const st = status && (status.raceId === log.id || (!status.raceId && mineNow)) ? status : null;
+    let line = '';
+    if (busy && busy.raceId === log.id) {
+      const p = status && status.phase === 'loading' && known(status.progress) ? Math.round(status.progress * 100) : null;
+      line = `<p class="rl-replay__state" data-phase="busy">Another replay is loading${p !== null ? ` · ${p}%` : '.'} Press Replay again once it is in the game.</p>`;
+    } else if (st && mineNow) {
+      switch (st.phase) {
+        case 'loading': {
+          if (st.jump) { line = '<p class="rl-replay__state" data-phase="loading">Jumping…</p>'; break; }
+          const p = known(st.progress) ? Math.round(st.progress * 100) : null;
+          const closing = st.message && /^Closing/.test(st.message);
+          line = `<p class="rl-replay__state" data-phase="loading">${esc(closing ? st.message : `Loading the replay in the game${p !== null ? ` · ${p}%` : '…'}`)}</p>
+            ${closing ? '' : `<div class="rv-bar"><span style="width:${Math.max(2, p || 0)}%"></span></div>
+            <p class="rl-replay__why">Big replays take up to a minute.</p>`}`;
+          break;
+        }
+        case 'ready':
+          line = '<p class="rl-replay__state" data-phase="ready">In the game now, 5 s before this. Jumps within this race are instant.</p>';
+          break;
+        case 'blocked':
+        case 'unavailable':
+        case 'error':
+          line = `<p class="rl-replay__state" data-phase="${esc(st.phase)}">${esc(st.message || replayTitle())}</p>`;
+          break;
+        default:
+          line = st.message ? `<p class="rl-replay__state">${esc(st.message)}</p>` : '';
+      }
+    }
+    let why = '';
+    if (avail.state === 'no') {
+      why = `<p class="rl-replay__why">${esc(avail.reason === 'game-offline'
+        ? 'Start Le Mans Ultimate to watch this moment in its replay.'
+        : 'The game no longer keeps this race’s replay.')}${avail.reason === 'game-offline'
+        ? ' <button type="button" class="rv-refbtn" data-rlrecheck>Check again</button>' : ''}</p>`;
+    } else if (avail.state === 'checking') {
+      why = '<p class="rl-replay__why">Asking the game for this race’s replay…</p>';
+    }
+    return `
+      <div class="rl-replay">
+        <button type="button" class="btn btn--sm rl-replay__go" data-replay="${i}"${replayOk() ? '' : ' disabled'}
+                title="${esc(replayTitle())}">
+          <svg class="icon"><use href="#i-play" /></svg><span>${mineNow && st && st.phase === 'ready' ? 'Replay again' : 'Open game replay'}</span>
+        </button>
+        ${line}${why}
+      </div>`;
+  }
+
+  function eventHtml() {
+    if (!log) return '';
+    const vis = visibleIndexes();
+    const e = cursor >= 0 ? log.events[cursor] : null;
+    if (!e) {
+      const clean = !facts.count.contact && !facts.count.limits && !facts.count.penalty;
+      return `
+      <section class="rv-card rl-event" data-empty="true">
+        <h3>Event details</h3>
+        <p class="rv-card__note">${clean
+          ? 'A clean race: no contacts, no limits calls, no penalties. Pick any line in the timeline to see it here.'
+          : 'Pick a line in the timeline, or a marker on the chart, to see it here.'}</p>
+      </section>`;
+    }
+    const k = vis.indexOf(cursor);
+    const at = [e.lap > 0 ? `Lap ${e.lap}` : '', fmtRace(e.raceS, longClock()) !== dash ? `${fmtRace(e.raceS, longClock())} into the race` : '']
+      .filter(Boolean).join(' · ');
+    const rows = detailRows(e);
+    const prev = k > 0 ? vis[k - 1] : -1;
+    const next = k >= 0 && k < vis.length - 1 ? vis[k + 1] : -1;
+    const head = e.kind === 'lap' && e.detail && known(e.detail.lapMs)
+      ? `Lap ${e.lap} · ${fmtLap(e.detail.lapMs)}` : e.text;
+    return `
+      <section class="rv-card rl-event">
+        <div class="rl-event__top">
+          <h3>Event details</h3>
+          ${k >= 0 ? `<span class="rl-event__of">${k + 1} of ${vis.length}</span>` : ''}
+        </div>
+        ${kindHtml(e)}
+        <p class="rl-event__text">${esc(head)}</p>
+        ${at ? `<p class="rl-event__at">${esc(at)}</p>` : ''}
+        ${rows.length ? `<dl class="rl-event__rows">${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : ''}
+        ${lapContextHtml(e)}
+        ${replayBlockHtml(e, cursor)}
+        <div class="rl-event__nav">
+          <button type="button" class="btn btn--ghost btn--sm" data-rlnav="-1"${prev < 0 ? ' disabled' : ''} title="The line above ( ↑ )">
+            <svg class="icon"><use href="#i-chevron-left" /></svg><span>Previous</span>
+          </button>
+          <button type="button" class="btn btn--ghost btn--sm" data-rlnav="1"${next < 0 ? ' disabled' : ''} title="The line below ( ↓ )">
+            <span>Next</span><svg class="icon"><use href="#i-chevron-right" /></svg>
+          </button>
+        </div>
+      </section>`;
+  }
+
+  const MATCHED = {
+    laplog: 'Matched to your lap log.',
+    name: 'Matched by your driver name.',
+    picked: 'You picked this car.',
+  };
+
+  function sessionHtml(l) {
+    const rows = [];
+    if (l.drivers && l.drivers.length) rows.push([l.drivers.length > 1 ? 'Drivers' : 'Driver', andList(l.drivers)]);
+    if (l.vehicle) rows.push(['Car', l.vehicle]);
+    if (l.carClass) rows.push(['Class', className(l.carClass)]);
+    rows.push(['Track', l.track || dash]);
+    const how = l.provisional
+      ? 'Provisional: the game did not save results for this race, so this is what Apex recorded live.'
+      : (l.matchedBy && MATCHED[l.matchedBy]) || '';
+    return `
+      <section class="rv-card rl-session">
+        <h3>Session details</h3>
+        <dl class="rl-event__rows">${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>
+        ${how || (!l.provisional && Array.isArray(l.cars) && l.cars.length) ? `
+        <p class="rv-card__note rl-session__how">${esc(how)}
+          ${!l.provisional && Array.isArray(l.cars) && l.cars.length
+            ? '<button type="button" class="rv-refbtn" data-rlrepick>Not your car?</button>' : ''}</p>` : ''}
+      </section>`;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  Which car was yours                                                   */
+  /* ---------------------------------------------------------------------- */
 
   function pickerHtml(l) {
     const cars = (l.cars || []).slice().sort((a, b) =>
@@ -843,63 +939,226 @@
       </div>`;
   }
 
+  /* ---------------------------------------------------------------------- */
+  /*  Drawing                                                               */
+  /* ---------------------------------------------------------------------- */
+
   function render() {
     if (!host || !host.detail) return;
     const el = host.detail;
-    const summary = races.find((r) => r.id === openId) || null;
 
-    if (!openId) {
-      el.innerHTML = listState === 'loading'
-        ? emptyState('clock', 'Reading the game’s results…', 'The first time takes a moment: every race on this PC is read once, then remembered.')
-        : races.length
-          ? emptyState('flag', 'Pick a race', 'Choose one on the left to read it back, lap by lap and incident by incident.')
-          : emptyState('flag', 'No races yet',
-            'Le Mans Ultimate saves a results file after every race it finishes. Race online or offline and it lands here, '
-            + 'with every contact, limits verdict and penalty on your car.');
-      return;
-    }
-    if (reading && !log) {
-      el.innerHTML = `<div class="rv-card">${headHtml(null, summary)}</div>${emptyState('clock', 'Reading the race…', 'One moment.')}`;
+    if (!openId || (reading && !log)) {
+      el.innerHTML = emptyState('clock', 'Reading the race…', 'One moment.');
       return;
     }
     if (!log) {
-      el.innerHTML = `<div class="rv-card">${headHtml(null, summary)}</div>${emptyState('alert', 'This race could not be read',
-        esc(readError || 'The results file is missing or unreadable. The game may have removed it.'))}`;
+      el.innerHTML = emptyState('alert', 'This race could not be read',
+        esc(readError || 'The results file is missing or unreadable. The game may have removed it.'));
       return;
     }
     if (log.slot === null || repick) {
-      el.innerHTML = `<div class="rv-card">${headHtml(log, summary)}</div>${pickerHtml(log)}`;
+      el.innerHTML = pickerHtml(log);
       return;
     }
     el.innerHTML = `
-      <div class="rv-card">
-        ${headHtml(log, summary)}
-        ${factsHtml(log)}
-        ${positionHtml(log)}
-        ${noteHtml(log)}
-      </div>
-      ${replayHtml()}
-      ${timelineHtml()}`;
-    paintPositions();
+      ${host.hero ? `<section class="rv-card rl-hero">${tilesHtml(log)}</section>` : ''}
+      ${progressHtml(log)}
+      <div class="rl-split">
+        ${timelineHtml()}
+        <aside class="rl-side">
+          ${eventHtml()}
+          ${sessionHtml(log)}
+        </aside>
+      </div>`;
+    paintChart();
   }
 
-  /** Repaint only the status strip, so a progress push does not rebuild 200 rows. */
+  /** Redraw what a filter or a search changes: the tabs, the table, the card. */
+  function renderTimeline() {
+    if (!host || !host.detail || !log) return;
+    const body = host.detail.querySelector('.rl-tl__body');
+    if (!body) { render(); return; }
+    body.innerHTML = timelineBodyHtml();
+    renderSide();
+  }
+
+  /** Redraw the details card alone: a selection or a replay push. */
+  function renderSide() {
+    if (!host || !host.detail || !log || log.slot === null || repick) return;
+    const old = host.detail.querySelector('.rl-event');
+    if (old) old.outerHTML = eventHtml();
+  }
+
+  /** A replay push: the card, the buttons' tooltips and the marked rows, in place. */
   function renderStatus() {
     if (!host || !host.detail || !log || log.slot === null || repick) return;
-    const old = host.detail.querySelector('.rv-replay');
-    const html = replayHtml();
-    if (old && html) {
-      old.outerHTML = html;
-    } else if (old) {
-      old.remove();
-    } else if (html) {
-      const tl = host.detail.querySelector('.rv-log');
-      if (tl) tl.insertAdjacentHTML('beforebegin', html);
-    }
+    renderSide();
     // A blocked answer changes what the buttons' tooltips should say.
     const title = replayTitle();
-    for (const b of host.detail.querySelectorAll('[data-replay]')) b.title = title;
+    for (const b of host.detail.querySelectorAll('.rv-log__table [data-replay]')) b.title = title;
     markRows();
+  }
+
+  /**
+   * Mark the row being replayed and the selected row, in place — a status
+   * push or a key press must not rebuild two hundred rows.
+   */
+  function markRows() {
+    if (!host || !host.detail || !log) return;
+    const body = host.detail.querySelector('.rv-log__table tbody');
+    if (!body) return;
+    const on = asked && asked.raceId === log.id ? asked.index : -1;
+    for (const tr of body.children) {
+      const i = Number(tr.dataset.ev);
+      if (i === on) tr.setAttribute('data-asked', 'true');
+      else tr.removeAttribute('data-asked');
+      if (i === cursor) tr.setAttribute('data-cursor', 'true');
+      else tr.removeAttribute('data-cursor');
+    }
+  }
+
+  /**
+   * Bring a row into view. `centre` for a jump that can land two hundred
+   * rows away; the least scroll that shows it for a move of one row, so the
+   * page does not lurch on every key.
+   */
+  function reveal(i, centre) {
+    if (!host || !host.detail) return;
+    const tr = host.detail.querySelector(`.rv-log__table tr[data-ev="${i}"]`);
+    if (!tr) return;
+    const sc = tr.closest('.content');
+    if (!sc) {
+      tr.scrollIntoView({ block: centre ? 'center' : 'nearest' });
+      return;
+    }
+    const box = sc.getBoundingClientRect();
+    const head = tr.closest('table') && tr.closest('table').querySelector('thead');
+    const top = Math.max(box.top, head ? head.getBoundingClientRect().bottom : box.top) + 8;
+    const bottom = box.bottom - 8;
+    const r = tr.getBoundingClientRect();
+    if (r.top >= top && r.bottom <= bottom) return;
+    if (centre) sc.scrollTop += r.top + r.height / 2 - (top + bottom) / 2;
+    else if (r.top < top) sc.scrollTop -= top - r.top;
+    else sc.scrollTop += r.bottom - bottom;
+  }
+
+  /**
+   * Make one event the selected one, everywhere it shows. If the timeline's
+   * filter hides it (a marker clicked on the chart), the filter widens to
+   * Key moments, or to All events when even that would hide it.
+   */
+  function select(i, how = {}) {
+    if (!log || !log.events[i]) return;
+    cursor = i;
+    if (!visibleIndexes().includes(i)) {
+      query = '';
+      const input = host && host.detail && host.detail.querySelector('[data-rlquery]');
+      if (input) input.value = '';
+      filter = isKey(log.events[i], i) ? 'key' : 'all';
+      renderTimeline();
+    } else {
+      markRows();
+      renderSide();
+    }
+    paintChart();
+    if (how.reveal) reveal(i, !!how.centre);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  Stepping                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * The incidents under the filter on screen, as indexes into `log.events`,
+   * in race order. Under the filter because that is the steward's own
+   * question: on Contacts, Next means the next contact.
+   */
+  function incidentIndexes() {
+    if (!log) return [];
+    return visibleIndexes().filter((i) => isIncident(log.events[i]));
+  }
+
+  /**
+   * The incident one step before or after (`dir` -1 or 1) the selected row
+   * — else the one last replayed — or -1 at either end. From nothing, Next
+   * is the first and Previous the last.
+   */
+  function stepTarget(dir) {
+    const list = incidentIndexes();
+    if (!list.length) return -1;
+    const from = cursor >= 0 ? cursor : asked && log && asked.raceId === log.id ? asked.index : -1;
+    if (from < 0) return dir > 0 ? list[0] : list[list.length - 1];
+    if (dir > 0) {
+      const n = list.find((i) => i > from);
+      return n === undefined ? -1 : n;
+    }
+    for (let k = list.length - 1; k >= 0; k -= 1) if (list[k] < from) return list[k];
+    return -1;
+  }
+
+  /** Replay the incident a step away, and select it. */
+  function stepIncident(dir) {
+    if (!replayOk()) return false;
+    const i = stepTarget(dir);
+    if (i < 0) return false;
+    void replayAt(i);
+    return true;
+  }
+
+  /** Whether this race's replay is in the game, so a step can jump it too. */
+  const replayReady = () => !!log && !!status && status.phase === 'ready' && status.raceId === log.id && replayOk();
+
+  /**
+   * Move the selection through the rows on screen. With this race's replay
+   * in the game a step onto an incident jumps the replay there too: the
+   * Previous / Next of the old replay strip, kept.
+   */
+  function moveCursor(dir, centre = false) {
+    if (!log) return false;
+    const rows = visibleIndexes();
+    if (!rows.length) return false;
+    let k = rows.indexOf(cursor);
+    if (k < 0) {
+      // First press: start from the row being replayed, if it is showing.
+      const from = asked && asked.raceId === log.id ? rows.indexOf(asked.index) : -1;
+      k = from >= 0 ? from : dir > 0 ? -1 : rows.length;
+    }
+    k = Math.min(rows.length - 1, Math.max(0, k + dir));
+    const i = rows[k];
+    if (i === cursor) return true;
+    if (centre && replayReady() && isIncident(log.events[i])) {
+      void replayAt(i);
+      return true;
+    }
+    select(i, { reveal: true, centre });
+    return true;
+  }
+
+  /**
+   * The tab's keys, from racelog-panel.js's document listener (which has
+   * already made sure the tab is on screen and nothing is being typed in).
+   * Returns whether the key was taken.
+   */
+  function onDocKey(evt) {
+    if (!log || log.slot === null || repick || reading) return false;
+    if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+    const k = evt.key;
+    let took = false;
+    if (k === 'ArrowDown' || k === 'j' || k === 'J') took = moveCursor(1);
+    else if (k === 'ArrowUp' || k === 'k' || k === 'K') took = moveCursor(-1);
+    else if (k === ']') took = stepIncident(1);
+    else if (k === '[') took = stepIncident(-1);
+    else if (k === 'Enter') {
+      const t = evt.target;
+      // A focused button answers Enter itself.
+      if (t && t.closest && t.closest('button, a, [role="button"]')) return false;
+      if (cursor >= 0 && replayOk() && isIncident(log.events[cursor])) {
+        void replayAt(cursor);
+        took = true;
+      }
+    }
+    if (took) evt.preventDefault();
+    return took;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -967,6 +1226,7 @@
       try {
         const res = await window.apex.reviewRacelogs();
         races = res && Array.isArray(res.races) ? res.races : [];
+        outlines = res && res.outlines && typeof res.outlines === 'object' ? res.outlines : {};
         listState = res && res.ok === false ? 'error' : 'ok';
       } catch {
         races = [];
@@ -994,9 +1254,9 @@
   }
 
   /**
-   * Ask whether the game still has this race's replay. Repaints only when the
-   * answer changed: shown() asks again on every return to the tab, and a
-   * repaint of an unchanged log would throw away the driver's scroll.
+   * Ask whether the game still has this race's replay. Repaints only what
+   * the answer changes — the buttons and the card — so the driver's scroll
+   * and search survive a return to the tab.
    */
   async function checkReplay(id) {
     const before = avail;
@@ -1011,7 +1271,16 @@
     }
     if (id !== openId) return;
     avail = next;
-    if (before.state !== next.state || before.reason !== next.reason) render();
+    if (before.state !== next.state || before.reason !== next.reason) {
+      if (host && host.detail && host.detail.querySelector('.rl-tl__body')) renderTimeline();
+      else render();
+    }
+  }
+
+  /** The row a race opens on: its first incident, else nothing. */
+  function firstSelection() {
+    const inc = incidentIndexes();
+    return inc.length ? inc[0] : -1;
   }
 
   async function open(id) {
@@ -1019,9 +1288,11 @@
     window.APEX_FEATURE_CATALOG?.note('action:review.racelog');
     openId = id;
     log = null;
+    facts = null;
     readError = '';
     repick = false;
     cursor = -1;
+    query = '';
     // A pick still in flight belongs to the race being left (pick() drops
     // its reply), so the new race's picker is not "Saving…".
     picking = false;
@@ -1041,6 +1312,11 @@
       readError = String((err && err.message) || '');
     }
     reading = false;
+    if (log) {
+      facts = indexLog(log);
+      if (!log.multiclass) focusRow = 'overall';
+      cursor = firstSelection();
+    }
     render();
     // Hidden while it read (the driver left the tab): shown() asks the game
     // on the way back instead.
@@ -1052,15 +1328,15 @@
    * load started from this race before the driver clicked away and back is
    * still that race's load) and whether the game still has this race's
    * replay. Only while the tab is on screen: these are the calls that reach
-   * the game, and a panel that merely remembers the Races rail must not make
-   * them at every launch.
+   * the game, and a panel that merely remembers the tab must not make them
+   * at every launch.
    */
   async function askGame(id) {
     try {
       const res = await window.apex.reviewReplayStatus();
       if (id === openId && res && res.status) status = res.status;
     } catch {
-      /* no status: the strip stays away until a push */
+      /* no status: the card says nothing of it until a push */
     }
     if (id !== openId || !log || !active) return;
     renderStatus();
@@ -1081,13 +1357,17 @@
     } catch {
       /* the picker stays up; a second click tries again */
     }
-    // The rail's row now has a finish position and counts to show, whichever
+    // The rail's card now has a finish position and counts to show, whichever
     // race is open now.
     void load();
     if (id !== openId) return;
     picking = false;
     repick = false;
-    if (picked) log = picked;
+    if (picked) {
+      log = picked;
+      facts = indexLog(log);
+      cursor = firstSelection();
+    }
     render();
     if (log && log.slot !== null && active) await checkReplay(id);
   }
@@ -1100,15 +1380,14 @@
     const id = log.id;
     const wasAsked = asked;
     asked = { raceId: id, et: e.et, raceS: e.raceS, lap: e.lap, kind: e.kind, index };
-    cursor = index;
     busy = null;
     // Something on screen straight away: the answer can take a second, and a
     // click that does nothing visible gets clicked again. With this race's
     // replay already in the game it is a jump, not a load.
     const jump = !!status && status.phase === 'ready' && status.raceId === id;
     status = { phase: 'loading', raceId: id, progress: null, message: null, ...(jump ? { jump: true } : {}) };
+    select(index, { reveal: true, centre: true });
     renderStatus();
-    reveal(index, true);
     try {
       const res = await window.apex.reviewReplayOpen({ raceId: id, slot: log.slot, et: e.et });
       if (res && res.status && res.status.busy) {
@@ -1139,7 +1418,20 @@
     if (seg) {
       filter = seg.dataset.rlfilter;
       try { window.localStorage.setItem(FILTER_KEY, filter); } catch { /* the choice lasts the run */ }
-      render();
+      // The selection stays if the new filter shows it; otherwise the first
+      // incident on screen, else nothing.
+      if (!visibleIndexes().includes(cursor)) cursor = incidentIndexes()[0] ?? -1;
+      renderTimeline();
+      paintChart();
+      const tl = host.detail.querySelector('.rl-timeline');
+      if (seg.closest('.rl-tiles') && tl) tl.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      return;
+    }
+    const focus = t.closest('[data-rlfocus]');
+    if (focus) {
+      focusRow = focus.dataset.rlfocus;
+      for (const b of host.detail.querySelectorAll('[data-rlfocus]')) b.dataset.active = String(b === focus);
+      paintChart();
       return;
     }
     const rep = t.closest('[data-replay]');
@@ -1147,9 +1439,9 @@
       if (!rep.disabled) void replayAt(Number(rep.dataset.replay));
       return;
     }
-    const stepBtn = t.closest('[data-rlstep]');
-    if (stepBtn) {
-      if (!stepBtn.disabled) stepIncident(Number(stepBtn.dataset.rlstep));
+    const nav = t.closest('[data-rlnav]');
+    if (nav) {
+      if (!nav.disabled) moveCursor(Number(nav.dataset.rlnav), true);
       return;
     }
     const copy = t.closest('[data-rlcopy]');
@@ -1159,7 +1451,7 @@
     }
     if (t.closest('[data-rlrecheck]') && log) {
       avail = { state: 'checking', reason: '', message: '' };
-      render();
+      renderSide();
       void checkReplay(log.id);
       return;
     }
@@ -1178,7 +1470,15 @@
       const slot = Number(pickRow.dataset.pick);
       if (log && repick && slot === log.slot) { repick = false; render(); return; }
       void pick(slot);
+      return;
     }
+    if (t.closest('.rl-chart canvas')) {
+      const i = hitAt(evt);
+      if (i >= 0) select(i, { reveal: true, centre: true });
+      return;
+    }
+    const row = t.closest('.rv-log__table tr[data-ev]');
+    if (row) select(Number(row.dataset.ev));
   }
 
   /** A picker row is a button, so it answers to Enter and Space like one. */
@@ -1190,11 +1490,51 @@
     void pick(Number(row.dataset.pick));
   }
 
+  /** The timeline's search, as it is typed. */
+  function onInput(evt) {
+    const t = evt.target;
+    if (!t || !t.matches || !t.matches('[data-rlquery]')) return;
+    query = String(t.value || '').trim().toLowerCase();
+    if (!visibleIndexes().includes(cursor)) cursor = visibleIndexes()[0] ?? -1;
+    renderTimeline();
+    paintChart();
+  }
+
+  /** Nothing is being typed and nothing is open over the page. */
+  function keysAreOurs(evt) {
+    const t = evt.target;
+    if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return false;
+    return !document.querySelector(
+      '.su-guide:not([hidden]), .sheet:not([hidden]), .su-pop:not([hidden]), .tour:not([hidden])',
+    );
+  }
+
+  /** The log is on screen: mounted, attached, and the tab says it is shown. */
+  const onScreen = () => active && !!host && !!host.detail && host.detail.isConnected;
+
+  // The timeline's keys: ↑ ↓ / J K, Enter, [ and ]. On the document, so they
+  // work wherever focus is, and only while the Race log tab is on screen.
+  document.addEventListener('keydown', (evt) => {
+    if (!onScreen() || evt.defaultPrevented || !keysAreOurs(evt)) return;
+    onDocKey(evt);
+  });
+  window.addEventListener('resize', () => { if (onScreen()) paintChart(); });
+
+  /** A pointer over a chart marker says it can be clicked. */
+  function onMove(evt) {
+    const t = evt.target;
+    if (!t || !t.matches || !t.matches('.rl-chart canvas')) return;
+    t.style.cursor = hitAt(evt) >= 0 ? 'pointer' : '';
+  }
+
   /**
-   * The race log for a lap-log session, if the game saved one: a race that
-   * started inside the session's span. Our laps and the results file are
-   * written on the same PC, so the clocks agree to the second; twenty minutes
-   * of slack covers a formation lap and a late first timed lap.
+   * The race log for a lap-log session, if the game saved one: the race whose
+   * span overlaps the session's most. Our laps and the results file are
+   * written on the same PC, so the clocks agree to the second. An overlap,
+   * not "started near the session": a driver who takes over mid-race starts
+   * their session an hour or more after the race began (2026-10-19). A race
+   * with no end on record (a list from before 1.3.12) falls back to that old
+   * rule — started at most twenty minutes before the session, or during it.
    */
   function forSession(s) {
     if (!s || !races.length) return null;
@@ -1204,34 +1544,68 @@
     const to = Date.parse(s.endedAt || s.startedAt) / 1000;
     if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
     let best = null;
+    let bestScore = 0;
     for (const r of races) {
-      if (r.startedAt < from - 1200 || r.startedAt > to) continue;
-      if (!best || Math.abs(r.startedAt - from) < Math.abs(best.startedAt - from)) best = r;
+      let score = 0;
+      if (known(r.endedAt) && r.endedAt > r.startedAt) {
+        // Seconds of the session inside the race, plus one so a session of a
+        // single lap at the very end still counts.
+        const both = Math.min(to, r.endedAt) - Math.max(from, r.startedAt - 1200);
+        score = both >= 0 ? both + 1 : 0;
+      } else if (r.startedAt >= from - 1200 && r.startedAt <= to) {
+        score = 1 / (1 + Math.abs(r.startedAt - from));
+      }
+      // The game's own file over the recorder's provisional copy of the same
+      // race: the file has the whole field, the penalties and the replay.
+      if (r.provisional) score *= 0.25;
+      if (score > bestScore) { best = r; bestScore = score; }
     }
     return best;
   }
 
   window.APEX_REVIEW_RACELOG = {
-    /** racelog-panel.js hands over its detail column and a way to redraw the rail. */
-    mount(h) { host = h; },
+    /**
+     * review-panel.js hands over the element to paint into — a fresh one each
+     * time it draws the Race log tab — with `hero` and a way to redraw its
+     * list. The element's own listeners are wired once per element.
+     */
+    mount(h) {
+      host = h;
+      const el = h && h.detail;
+      if (el && !el.dataset.rlWired) {
+        el.dataset.rlWired = '1';
+        el.addEventListener('click', onClick);
+        // The picker's rows are buttons, so they answer Enter and Space.
+        el.addEventListener('keydown', onKey);
+        el.addEventListener('input', onInput);
+        el.addEventListener('mousemove', onMove);
+      }
+    },
     load,
     open,
     render,
-    listHtml,
-    onClick,
-    onKey,
-    onDocKey,
-    /** The position line re-fitted to its box, for a window resize. */
-    repaint: paintPositions,
+    /** One race's card for Review's list. */
+    cardHtml: (row, on) => cardHtml(row, on),
+    /** Circuit outlines by key, as the list returned them. */
+    outlines: () => outlines,
+    /** Open the timeline on a tab before (or after) the log is painted. */
+    setFilter(id) {
+      if (!FILTERS.some((f) => f.id === id)) return;
+      filter = id;
+      try { window.localStorage.setItem(FILTER_KEY, filter); } catch { /* the choice lasts the run */ }
+      if (log && !visibleIndexes().includes(cursor)) cursor = incidentIndexes()[0] ?? -1;
+    },
+    /** The chart re-fitted to its box, for a window resize. */
+    repaint: paintChart,
     /** Review asks this to put a "Race log" button on a race session. */
     forSession,
     races: () => races,
     openId: () => openId,
     loading: () => listState === 'loading',
     /**
-     * The Race log tab is on screen. The push feed resumes while a log is
-     * open, and the game is asked afresh: pushes stopped while hidden, and
-     * the game may have started or quit since.
+     * The Race log tab is on screen (review-panel.js says so). The push feed
+     * resumes while a log is open, and the game is asked afresh: pushes
+     * stopped while hidden, and the game may have started or quit since.
      */
     shown() {
       active = true;
@@ -1239,9 +1613,26 @@
       subscribe();
       if (log && !reading) void askGame(openId);
     },
-    /** Off the tab: nothing listens while nothing is shown. */
+    /**
+     * Review drew its Race log tab for race `id` into the element last
+     * mounted: paint it, opening it first if it is another race. The game is
+     * asked about the replay once per showing, not on every redraw of the page
+     * around it (a lap list re-read, say).
+     */
+    show(id) {
+      if (!id) return;
+      const fresh = !active || askedFor !== id;
+      active = true;
+      askedFor = id;
+      if (openId !== id) { void open(id); return; }
+      render();
+      subscribe();
+      if (fresh && log && !reading) void askGame(id);
+    },
+    /** Off the tab, or off Review: nothing listens while nothing is shown. */
     hidden() {
       active = false;
+      askedFor = null;
       unsubscribe();
     },
     // The pure halves, for poking at from a console or a harness.

@@ -34,7 +34,6 @@ const onboarding = require('../electron/control-panel/onboarding.js');
 const teamGuide = require('../electron/control-panel/team-guide.js');
 const reviewGuide = require('../electron/control-panel/review-guide.js');
 const vrGuide = require('../electron/control-panel/vr-guide.js');
-const raceLogGuide = require('../electron/control-panel/racelog-guide.js');
 
 const PANEL = path.join(__dirname, '..', 'electron', 'control-panel');
 const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8');
@@ -362,28 +361,23 @@ check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
 }
 
 {
-  // The Race log tab, out of Review's rail since 2026-09-30. Its tour and its
-  // walkthrough carry the facts a driver cannot see until a click fails —
-  // where the races come from, and what the replay needs — and the keys,
-  // which are invisible unless someone says so.
-  check('a tour covers the race log', !!tour.tourById('racelog'));
-  const t = inTour('racelog');
-  check('the race log tour says the races are the game’s own', /results file/.test(t));
+  // The race log: its own rail tab from 2026-09-30, a tab of a race inside
+  // Review since 2026-10-19. The facts a driver cannot see until a click
+  // fails — where the races come from, and what the replay needs — and the
+  // keys, which are invisible unless someone says so, moved with it into
+  // Review's tour and walkthrough.
+  check('no tour of its own any more', !tour.tourById('racelog'));
+  const t = inTour('review');
+  check('the Review tour says the races are the game’s own', /results file/.test(t));
   check('and include races from before Apex', /before apex/.test(t));
-  check('the race log tour says Replay needs the main menu', /main menu/.test(t));
-  check('the race log tour names the keys', /enter to replay/.test(t) && /\[ and \]/.test(t));
-  check('the Review tour no longer walks the races', !/race control|replay/.test(inTour('review')));
+  check('the Review tour says Replay needs the main menu', /main menu/.test(t));
+  check('the Review tour names the keys', /enter to replay/.test(t) && /\[ and \]/.test(t));
   check('and points at nothing that has gone', !JSON.stringify(tour.tourById('review')).includes('rv-mode'));
 
-  const guide = raceLogGuide.STEPS
+  const guide = reviewGuide.STEPS
     .map((s) => `${s.title} ${s.lead} ${s.points.join(' ')}`)
     .join('\n')
     .toLowerCase();
-  check('the Race log guide has steps', raceLogGuide.STEPS.length >= 4, raceLogGuide.STEPS.length);
-  check('no duplicate Race log guide step ids',
-    new Set(raceLogGuide.STEPS.map((s) => s.id)).size === raceLogGuide.STEPS.length);
-  check('every Race log guide step says something',
-    raceLogGuide.STEPS.every((s) => s.lead && s.points.length));
   check('the guide says the races are the game’s saved results', /results file/.test(guide));
   check('including races from before Apex', /before apex/.test(guide));
   check('the guide asks "Which car was yours?"', /which car was yours\?/.test(guide));
@@ -396,22 +390,12 @@ check('nothing being uploaded is stated', /uploaded/.test(inTour('review')));
   check('the guide names every key',
     /↑ and ↓/.test(guide) && /j and k/.test(guide) && /enter replays/.test(guide) && /\[ and \]/.test(guide));
   check('the guide explains Copy as text', /copy as text/.test(guide));
-  check('the Review guide has let the races go',
-    !reviewGuide.STEPS.some((s) => /replay|results file/i.test(`${s.lead} ${s.points.join(' ')}`)));
-  check('the Race log tab is in the rail', /data-tab="racelog"/.test(html));
-  check('directly under Review',
-    /data-tab="review"[\s\S]*?<\/button>\s*(<!--[\s\S]*?-->\s*)?<button class="tab" type="button" data-tab="racelog"/.test(html));
-  check('the Race log guide is in the page', /id="racelog-guide"/.test(html));
-  check('and starts hidden', /id="racelog-guide"[^>]*\shidden/.test(html));
-  check('its script is loaded', html.includes('src="racelog-guide.js"'));
-  check('and its host', html.includes('src="racelog-panel.js"'));
-  check('"How it works" can reopen it', /id="racelog-guide-open"/.test(html));
-  check('the router offers it on arrival', /APEX_RACELOG_GUIDE\?\.maybeAutoOpen/.test(panelJs));
-  check('and cancels it on the way out', /APEX_RACELOG_GUIDE\?\.cancelAutoOpen/.test(panelJs));
-  check('the router starts the tab on arrival', /apexRaceLog\?\.shown\(\)/.test(panelJs));
-  check('and stops it on the way out', /apexRaceLog\?\.hidden\(\)/.test(panelJs));
-  // Moved, not copied: the Sessions | Races switch is gone from Review.
-  check('Review has no Sessions | Races switch any more', !/id="rv-mode"|data-rail=/.test(html));
+  check('the Race log tab is gone from the rail', !/data-tab="racelog"/.test(html));
+  check('and so is its page', !/data-view="racelog"/.test(html) && !/id="racelog-guide"/.test(html));
+  check('its host and guide are not loaded', !html.includes('racelog-panel.js') && !html.includes('racelog-guide.js'));
+  check('the router has nothing left of it', !/apexRaceLog|APEX_RACELOG_GUIDE/.test(panelJs));
+  check('a saved Race log tab lands on Review', /restored === 'racelog'\) restored = 'review'/.test(panelJs));
+  check('Review has no Sessions | Races switch', !/id="rv-mode"|data-rail=/.test(html));
 }
 
 console.log('\nThe checklist and the tours agree');
