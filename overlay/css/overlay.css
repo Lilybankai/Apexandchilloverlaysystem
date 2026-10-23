@@ -429,6 +429,38 @@
   font-family: var(--font-ui);
   text-overflow: ellipsis;
 }
+/* Outstanding-penalty badge ("DT", "SG", "PEN", "SG×2"). Floated to the right
+   edge of the driver cell rather than given a column of its own: penalties are
+   rare, and a column reserved on every row for them would come straight out of
+   the driver names all race. Floated rather than appended so the name keeps its
+   start on every row and ellipsises SHORT of the badge — appended, a long name
+   pushed it out of the clipped cell, the one part that must never be cut.
+   Red, the stewards' colour the Track Limits widget's PENALTY chip already
+   uses, on its own opaque square like the pit flag so it survives the panel's
+   background slider; sized off the type tokens so it rides the Text size
+   slider. No `display` here: `hidden` must win (and in-game, ingame.css's
+   `[hidden]` catch-all is what keeps a cleared badge from holding space).
+   One rule for both tables: the relative panel draws the same badge for the
+   same car, and the two must never look different. */
+.standings__pen,
+.relative__pen {
+  float: right;
+  margin: 1px 0 0 4px;
+  padding: 0 4px;
+  height: calc(var(--fs-body) * 1.15);
+  line-height: calc(var(--fs-body) * 1.15);
+  border-radius: 3px;
+  background: rgba(8, 10, 17, 0.82);
+  color: var(--pos-loss);
+  box-shadow: inset 0 0 0 1px var(--pos-loss);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+  /* The panel's translucent-mode text shadow muddies a coloured glyph on its
+     own dark square — same reason as .pit-flag. */
+  text-shadow: none;
+}
 /* Virtual-energy cell: a % readout over a thin fill bar. */
 .standings__ve {
   position: relative;
@@ -581,6 +613,18 @@
 .relative__rank + span {
   margin-left: 2px;
 }
+/* The same trap as .relative__class[hidden] below, for the three badge images:
+   their `display: inline-block` outranks the browser's own `[hidden]` rule, so
+   on the OBS / browser pages (widget.html, index.html) every row drew an empty
+   image box for each badge it had no artwork for — two white squares per row in
+   an offline session. The in-game layer never showed it because ingame.css
+   carries an !important `[hidden]` catch-all, so this changes nothing there. */
+.standings__badge[hidden],
+.relative__badge[hidden],
+.standings__srbadge[hidden],
+.relative__srbadge[hidden],
+.standings__rank[hidden],
+.relative__rank[hidden] { display: none; }
 /* Pit flag — one rule for both tables, because the two are the same fact drawn
    the same way: a car that is in the pit lane and therefore not on the road.
    Amber, matching the caution sense the palette already gives --warn, on its own

@@ -1,0 +1,20 @@
+{
+  "session": { "type": "race", "phase": "green", "flag": "green", "track": "Fixture", "numCars": 6, "currentLap": 14, "totalLaps": 30 },
+  "player": { "slotId": 4, "lap": { "current": 61.2, "last": 127.402, "best": 126.98, "delta": -0.31, "sector": 2 } },
+  "standings": [
+    { "slotId": 1, "position": 1, "driverName": "Alex Turner", "carNumber": "7", "carClass": "HYPERCAR", "classPosition": 1, "gapToLeaderSec": 0, "gapToAheadSec": 0, "lapsBehind": 0, "bestLapSec": 117.9, "lastLapSec": 118.4, "lapsCompleted": 14, "inPit": false, "isPlayer": false },
+    { "slotId": 2, "position": 2, "driverName": "Cara Mills", "carNumber": "33", "carClass": "GT3", "classPosition": 1, "gapToLeaderSec": 44.1, "gapToAheadSec": 44.1, "lapsBehind": 0, "bestLapSec": 126.5, "lastLapSec": 127.0, "lapsCompleted": 14, "inPit": false, "isPlayer": false, "penalties": 1, "penaltyKind": "drive-through" },
+    { "slotId": 3, "position": 3, "driverName": "Maximilian Featherstonehaugh-Worthington", "carNumber": "8", "carClass": "GT3", "classPosition": 2, "gapToLeaderSec": 47.0, "gapToAheadSec": 2.9, "lapsBehind": 0, "bestLapSec": 126.7, "lastLapSec": 127.2, "lapsCompleted": 14, "inPit": false, "isPlayer": false, "penalties": 2 },
+    { "slotId": 4, "position": 4, "driverName": "Dan Vega", "carNumber": "51", "carClass": "GT3", "classPosition": 3, "gapToLeaderSec": 49.9, "gapToAheadSec": 2.9, "lapsBehind": 0, "bestLapSec": 126.98, "lastLapSec": 127.4, "lapsCompleted": 14, "inPit": false, "isPlayer": true, "isOwn": true, "penalties": 1, "penaltyKind": "stop-go" },
+    { "slotId": 5, "position": 5, "driverName": "Elena Petrova", "carNumber": "92", "carClass": "GT3", "classPosition": 4, "gapToLeaderSec": 52.3, "gapToAheadSec": 2.4, "lapsBehind": 0, "bestLapSec": 127.1, "lastLapSec": 127.66, "lapsCompleted": 14, "inPit": false, "isPlayer": false },
+    { "slotId": 6, "position": 6, "driverName": "Felix Grant", "carNumber": "77", "carClass": "GT3", "classPosition": 5, "gapToLeaderSec": 58.0, "gapToAheadSec": 5.7, "lapsBehind": 0, "bestLapSec": 127.4, "lastLapSec": 128.1, "lapsCompleted": 14, "inPit": true, "isPlayer": false, "penalties": 2, "penaltyKind": "stop-go" }
+  ],
+  "relative": [
+    { "slotId": 2, "position": 2, "classPosition": 1, "driverName": "Cara Mills", "carNumber": "33", "carClass": "GT3", "relativeGapSec": 5.8, "lapsDifference": 0, "inPit": false, "isPlayer": false, "penalties": 1, "penaltyKind": "drive-through" },
+    { "slotId": 3, "position": 3, "classPosition": 2, "driverName": "Maximilian Featherstonehaugh-Worthington", "carNumber": "8", "carClass": "GT3", "relativeGapSec": 2.9, "lapsDifference": 0, "inPit": false, "isPlayer": false, "penalties": 2 },
+    { "slotId": 4, "position": 4, "classPosition": 3, "driverName": "Dan Vega", "carNumber": "51", "carClass": "GT3", "relativeGapSec": 0, "lapsDifference": 0, "inPit": false, "isPlayer": true, "penalties": 1, "penaltyKind": "stop-go" },
+    { "slotId": 1, "position": 1, "classPosition": 1, "driverName": "Alex Turner", "carNumber": "7", "carClass": "HYPERCAR", "relativeGapSec": -1.6, "lapsDifference": 1, "inPit": false, "isPlayer": false },
+    { "slotId": 5, "position": 5, "classPosition": 4, "driverName": "Elena Petrova", "carNumber": "92", "carClass": "GT3", "relativeGapSec": -2.4, "lapsDifference": 0, "inPit": false, "isPlayer": false },
+    { "slotId": 6, "position": 6, "classPosition": 5, "driverName": "Felix Grant", "carNumber": "77", "carClass": "GT3", "relativeGapSec": -8.1, "lapsDifference": 0, "inPit": true, "isPlayer": false, "penalties": 2, "penaltyKind": "stop-go" }
+  ]
+}

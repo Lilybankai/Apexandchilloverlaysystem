@@ -58,7 +58,7 @@ function liveFrame() {
       pedals: { throttle: 1, brake: 0, clutch: 0 }, // pruned — 30 Hz noise
     },
     standings: [
-      { slotId: 3, position: 1, driverName: 'Leader', isPlayer: false },
+      { slotId: 3, position: 1, driverName: 'Leader', isPlayer: false, penalties: 1, penaltyKind: 'stop-go' },
       {
         slotId: 7, position: 12, classPosition: 4, driverName: 'Carl',
         carNumber: '87', carClass: 'LMGT3', lapsCompleted: 41, inPit: false,
@@ -111,6 +111,15 @@ function liveFrame() {
   check('sentinels survive untouched (renderer owns them)', s.car.pit.elapsedSec === -1);
   check('standings carried for the timing sheet', s.standings.length === 2
     && s.standings[1].avg5Sec === undefined && s.standings[0].driverName === 'Leader');
+  // The sheet's penalty badge reads these two, and the relay publishes this
+  // object verbatim (relay_publish → driver_relay/team_relay jsonb), so the
+  // web pit wall has them too. A clear car carries neither — once serialised,
+  // the relay payload grows only by the cars actually owing one.
+  check('penalty count + kind carried for the sheet badge', s.standings[0].penalties === 1
+    && s.standings[0].penaltyKind === 'stop-go');
+  const wire = JSON.parse(JSON.stringify(s));
+  check('a clear car adds no penalty keys to the relay payload',
+    !('penalties' in wire.standings[1]) && !('penaltyKind' in wire.standings[1]));
 }
 
 // ── Frames the feed actually produces must not throw ───────────────────────

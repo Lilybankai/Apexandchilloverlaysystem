@@ -146,6 +146,20 @@ const SRC = fs.readFileSync(
 );
 
 /**
+ * The shared runtime's penalty-badge helpers (client.js `penaltyBadge` /
+ * `penaltyBadgeTitle`), run from the real source between its markers rather
+ * than copied here — the tower and the relative panel both draw from them.
+ */
+const BADGE = (() => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'js', 'client.js'), 'utf8');
+  const a = src.indexOf('/* penalty-badge:begin');
+  const b = src.indexOf('/* penalty-badge:end */');
+  if (a < 0 || b < a) throw new Error('client.js lost its penalty-badge markers');
+  return new Function(`${src.slice(a, b)}
+return { penaltyBadge, penaltyBadgeTitle };`)();
+})();
+
+/**
  * Mount the tower. `search` pins the view the way an OBS source would;
  * `push` delivers one through the appearance channel, the way the app does.
  */
@@ -205,6 +219,8 @@ function mount(search) {
     update: (standings) =>
       widget.update({ standings, session: {}, player: {} }, {
         fmt,
+        penaltyBadge: BADGE.penaltyBadge,
+        penaltyBadgeTitle: BADGE.penaltyBadgeTitle,
         // Faithful copies of client.js's badge helpers, so rows carrying
         // driverBadge / driverRank fields render instead of throwing — and so
         // an assertion can read the src the widget actually wrote.
@@ -1076,6 +1092,89 @@ console.log('\nAVG trend — green when the last-5 mean comes down, red when it 
   check('no mean, no colour', trend() === 'plain', trend());
 }
 
+
+/* -------------------------------------------------------------------------- */
+console.log('\nPenalty badges — any car still owing one, cleared when served');
+/* -------------------------------------------------------------------------- */
+
+/* A car in front with a stop still to make is race information. The badge sits
+   in the driver cell (floated to its right edge, see .standings__pen), says
+   "DT"/"SG" only where the frame names the kind, "PEN" where it does not, and
+   "×N" for more than one. It is on by default and has an off switch. */
+{
+  const w = mount();
+  /** The penalty badge in each drawn row, in tower order — "" for none. */
+  const badges = () =>
+    w.withClass('standings__pen').map((b) => (b.hidden ? '' : b.textContent));
+  /** The badge on the row for car `num`, or null. */
+  const badgeOf = (num) => {
+    const cells = w.withClass('standings__cell standings__driver');
+    for (const td of cells) {
+      const name = td.children.find((c) => /^#\d+ /.test(c.textContent || ''));
+      if (name && name.textContent.startsWith('#' + num + ' ')) {
+        return td.children.find((c) => c.className === 'standings__pen') || null;
+      }
+    }
+    return null;
+  };
+  const penField = (over) =>
+    field().map((r) => (over[r.carNumber] ? { ...r, ...over[r.carNumber] } : r));
+
+  w.update(field());
+  check('a clean field draws no badge at all', badges().every((b) => b === ''), badges().join('|'));
+  check('a hidden badge carries no text into the name cell', w.names()[0] === '#7 D 7', w.names()[0]);
+
+  w.update(penField({
+    '11': { penalties: 1 },
+    '3': { penalties: 1, penaltyKind: 'drive-through' },
+    '43': { penalties: 1, penaltyKind: 'stop-go' },
+    '19': { penalties: 2, penaltyKind: 'stop-go' },
+    '55': { penalties: 3 },
+  }));
+  check('a rival with an unnamed kind: PEN', badgeOf('11').textContent === 'PEN' && !badgeOf('11').hidden);
+  check('a named drive-through: DT', badgeOf('3').textContent === 'DT');
+  check('a named stop/go: SG', badgeOf('43').textContent === 'SG');
+  check('two stop/gos on the player: SG×2', badgeOf('19').textContent === 'SG×2', badgeOf('19').textContent);
+  check('three unnamed: PEN×3', badgeOf('55').textContent === 'PEN×3');
+  check('clear cars stay clear', badgeOf('7').hidden && badgeOf('39').hidden);
+  check('the tooltip spells the kind out', badgeOf('3').title === 'Drive-through to serve', badgeOf('3').title);
+  check('…and admits when it cannot', /does not say which kind/.test(badgeOf('11').title), badgeOf('11').title);
+  check('the kind is on the element for the CSS', badgeOf('43').getAttribute('data-kind') === 'stop-go');
+  check('the name is still drawn whole beside the badge', w.names().includes('DT#3 D 3'), w.names().join('|'));
+  check('the player keeps their row mark with a badge on it', w.player().join() === '19', w.player().join());
+
+  // Served: the count drops and the badge goes on the same frame.
+  w.update(penField({ '11': { penalties: 0 }, '19': { penalties: 1, penaltyKind: 'stop-go' } }));
+  check('served → cleared', badgeOf('11').hidden && badgeOf('11').textContent === '');
+  check('one of two served → SG', badgeOf('19').textContent === 'SG');
+  check('a car whose field vanished is cleared too', badgeOf('3').hidden && badgeOf('55').hidden);
+
+  // A non-number, a negative, a retired car: no claim.
+  w.update(penField({ '11': { penalties: '1' }, '3': { penalties: -1 }, '43': { penalties: 1, retired: true } }));
+  check('a string count is not a penalty', badgeOf('11').hidden);
+  check('a negative count is not a penalty', badgeOf('3').hidden);
+  check('a retired car is not badged', badgeOf('43').hidden);
+
+  // The off switch, through the appearance channel…
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', pen: 'off' });
+  w.update(penField({ '11': { penalties: 1 } }));
+  check('pen: off hides every badge', badges().every((b) => b === ''));
+  w.push({ limit: 'all', scope: 'class', top: 0, ahead: 0, behind: 0, gap: 'leader', fastest: 'class', pen: 'on' });
+  w.update(penField({ '11': { penalties: 1 } }));
+  check('…and pen: on brings them back', badgeOf('11').textContent === 'PEN');
+}
+{
+  // …and pinned from a URL, for an OBS source.
+  const w = mount('?standings=all,pen=off');
+  w.update(field().map((r) => (r.carNumber === '11' ? { ...r, penalties: 1 } : r)));
+  check('?standings=pen=off pins the badges off', w.withClass('standings__pen').every((b) => b.hidden));
+  const w2 = mount('?standings=all');
+  w2.update(field().map((r) => (r.carNumber === '11' ? { ...r, penalties: 1 } : r)));
+  check(
+    'a pinned view without the key keeps them on',
+    w2.withClass('standings__pen').some((b) => !b.hidden && b.textContent === 'PEN'),
+  );
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -387,6 +387,27 @@
   var standings = null;
   var standingsListeners = [];
 
+  /**
+   * The relative panel's view settings (today only the penalty badge). Same
+   * contract as `standings`: null until something has said, then delivered to
+   * subscribers only when it actually changed.
+   */
+  var relativeView = null;
+  var relativeListeners = [];
+
+  function applyRelative(next) {
+    if (!next || typeof next !== "object") return;
+    if (relativeView && JSON.stringify(relativeView) === JSON.stringify(next)) return;
+    relativeView = next;
+    for (var i = 0; i < relativeListeners.length; i++) {
+      try {
+        relativeListeners[i](relativeView);
+      } catch (e) {
+        /* one bad subscriber must not stop the rest */
+      }
+    }
+  }
+
   function applyStandings(next) {
     if (!next || typeof next !== "object") return;
     if (standings && JSON.stringify(standings) === JSON.stringify(next)) return;
@@ -521,6 +542,11 @@
       standingsListeners.push(cb);
       if (standings) cb(standings);
     },
+    /** Subscribe to the relative panel's view settings — as onStandings. */
+    onRelative: function (cb) {
+      relativeListeners.push(cb);
+      if (relativeView) cb(relativeView);
+    },
     /** Current speed unit, and a subscription to it changing. */
     speedUnit: function () {
       return speedUnit;
@@ -649,6 +675,7 @@
       if (!audioPinned) applyAudio(appearance);
       applyModes(appearance.widgetModes);
       applyStandings(appearance.standings);
+      applyRelative(appearance.relative);
       if (!unitPinned) applySpeedUnit(appearance.speedUnit);
       if (!tempPinned) applyTempUnit(appearance.tempUnit);
       applyMfdFade(appearance.mfdAutoFade);
@@ -675,6 +702,7 @@
         if (!audioPinned) applyAudio(cfg);
         applyModes(cfg.widgetModes);
         applyStandings(cfg.standings);
+        applyRelative(cfg.relative);
         if (!unitPinned) applySpeedUnit(cfg.speedUnit);
         if (!tempPinned) applyTempUnit(cfg.tempUnit);
         applyMfdFade(cfg.mfdAutoFade);

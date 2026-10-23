@@ -23,6 +23,10 @@
  *     a thin fill bar behind it.
  *   - P  a flag on cars in the pit lane (`inPit`), at the right edge of the row
  *     rather than appended to the name — see createRow.
+ *   - a penalty badge on any car with a penalty still to serve (`penalties`):
+ *     "DT" / "SG" where the sim names the kind (`penaltyKind`), "PEN" where it
+ *     does not, "×2" beside it for more than one. Gone the frame it is served.
+ *     On by default; the PENALTIES setting or `?standings=pen=off` turns it off.
  * GAP counts either the cumulative gap to the class leader (the default) or the
  * interval to the car directly in front — an operator setting, because a
  * broadcast tower wants the first and a driver usually wants the second.
@@ -215,6 +219,15 @@
       drRank.hidden = true;
     };
     var nameSpan = document.createElement("span");
+    // Outstanding-penalty badge. FIRST in the cell but floated to its right
+    // edge (see .standings__pen): the name's start stays exactly where every
+    // other row's does, and a long name ellipsises short of the badge rather
+    // than pushing it out of the clipped cell — the one thing in this cell that
+    // must never be the part that gets cut off. Hidden until a car owes one.
+    var penChip = document.createElement("span");
+    penChip.className = "standings__pen";
+    penChip.hidden = true;
+    driverTd.appendChild(penChip);
     driverTd.appendChild(classDot);
     driverTd.appendChild(badge);
     driverTd.appendChild(drRank);
@@ -300,6 +313,7 @@
       srBadge: srBadge,
       drRank: drRank,
       nameSpan: nameSpan,
+      penChip: penChip,
       veTd: veTd,
       veBar: veBar,
       veText: veText,
@@ -371,6 +385,7 @@
     decimals: 3,
     names: "full",
     avg: "off",
+    pen: "on",
   };
   var viewPinned = false;
 
@@ -391,6 +406,7 @@
    * `?standings=all,gap=ahead,fastest=overall` is the whole field with intervals
    * and a single fastest lap. `decimals=1|2|3` sets how precisely that column is
    * read, and `names=full|surname|forename` how the driver names are written.
+   * `pen=off` hides the outstanding-penalty badges.
    *
    * One more key rides this same param and is NOT read here: `pos=class` puts
    * the driver's class position in the panel HEADER rather than their place in
@@ -413,6 +429,7 @@
         decimals: 3,
         names: "full",
         avg: "off",
+        pen: "on",
       };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
@@ -436,6 +453,10 @@
           // `avg=on` (also accepted: `5`, `last5`) adds the last-5-average
           // column for an OBS source, e.g. `?standings=all,avg=on`.
           next.avg = val === "on" || val === "5" || val === "last5" ? "on" : "off";
+        } else if (key === "pen") {
+          // `pen=off` drops the penalty badges for an OBS source that wants a
+          // plain timing tower. Anything else keeps them — they are on by default.
+          next.pen = val === "off" || val === "0" || val === "no" ? "off" : "on";
         } else if (key === "top" || key === "ahead" || key === "behind") {
           var n = parseInt(val, 10);
           if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
@@ -1276,6 +1297,9 @@
     if (e.carNumber) full = "#" + e.carNumber + " " + full;
     set(row, "nameTitle", row.driverTd, "title", full);
 
+    // Outstanding penalties (see createRow for where the badge sits).
+    renderPenalty(row, e, ctx);
+
     // Pit state, flagged in the right-hand column (see createRow).
     var inPit = !!e.inPit;
     if (row.cache.inPit !== inPit) {
@@ -1398,6 +1422,23 @@
     // Reorder: keep the node in standings order — see placeNext for why this
     // must not be an unconditional appendChild.
     placeNext(row.tr);
+  }
+
+  /**
+   * Show, update or clear one row's penalty badge. The text and its tooltip
+   * come from the shared runtime (client.js `penaltyBadge`), which the relative
+   * panel draws from too. Cached on the text, so a field with no penalties
+   * (nearly every frame of every race) costs one string compare per row and no
+   * DOM writes at all.
+   */
+  function renderPenalty(row, e, ctx) {
+    var txt = view && view.pen === "off" ? "" : ctx.penaltyBadge(e);
+    if (row.cache.pen === txt) return;
+    row.cache.pen = txt;
+    row.penChip.textContent = txt;
+    row.penChip.hidden = !txt;
+    row.penChip.title = txt ? ctx.penaltyBadgeTitle(e) : "";
+    row.penChip.setAttribute("data-kind", txt ? e.penaltyKind || "unknown" : "");
   }
 
   /** Paint the AVG cell green ("better"), red ("worse") or neither (""). */
