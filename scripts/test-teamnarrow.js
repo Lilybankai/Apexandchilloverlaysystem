@@ -61,6 +61,16 @@ function cols(tag) {
   check('no column is named twice', new Set(th).size === th.length);
 }
 
+// ── The penalty badge rides the driver cell, which never folds ────────────
+{
+  check('the sheet draws a penalty badge inside the driver cell',
+    JS.includes('<td class="team-t__driver" data-col="driver">${penaltyBadge(r)}'));
+  check('the badge has a style, floated so the name ellipsises short of it',
+    /\.team-t__pen\s*\{[^}]*float:\s*right/.test(CSS));
+  check('the badge is never folded with a column',
+    !/team-t__pen[^{]*\{[^}]*display:\s*none/.test(CSS));
+}
+
 // ── What the stylesheet folds, and what it must never fold ────────────────
 {
   const folded = new Set();

@@ -61,7 +61,7 @@ import {
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
-import { penaltyCount, penaltyFields } from './penalties';
+import { penaltyCount, penaltyFields, copyPenalties } from './penalties';
 import type { ServerConfig } from '../server/config';
 import {
   assignClassPositions,
@@ -649,6 +649,8 @@ export class RF2Provider implements TelemetryProvider {
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
+    // …and its penalty badge, from the same rows (telemetry/penalties.ts).
+    copyPenalties(standings, relative);
     const radar = this.buildRadarBlips(telem, telemVehicles, playerTelemOff, playerId, standings);
     const trackMap = this.buildTrackMap(
       scoring,

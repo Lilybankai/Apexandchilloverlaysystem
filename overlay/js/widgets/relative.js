@@ -21,6 +21,15 @@
  * sits on every row naming which count the number belongs to, and a driver who
  * has to go and find a checkbox before the column means something is a driver
  * who reads the wrong number for the first stint.
+ *
+ * ## Penalty badges
+ * A car that still owes a penalty carries the same badge the standings tower
+ * draws — "DT" / "SG" where the sim names the kind, "PEN" where it does not,
+ * "×N" for more than one, gone the frame it is served (`penalties` /
+ * `penaltyKind`, copied server-side from the standings row; the text comes from
+ * the shared runtime's `penaltyBadge`). Next to you on track it answers "is the
+ * car I am fighting about to drop out to serve one?". On by default; the
+ * relative card's PENALTY setting or `?relative=pen=off` turns it off.
  */
 (function () {
   "use strict";
@@ -30,6 +39,38 @@
   var stripCache = {};
   var alertCache = {};
   var rows = new Map();
+
+  /**
+   * The panel's view settings: today only the penalty badge. `?relative=pen=off`
+   * pins it for one OBS source (and is then deaf to the app, like the tower's
+   * `?standings=`); otherwise it follows the relative card via the appearance
+   * channel.
+   */
+  var view = { pen: "on" };
+  var viewPinned = false;
+
+  function initView(params) {
+    var raw = (params.get("relative") || "").trim().toLowerCase();
+    if (raw) {
+      viewPinned = true;
+      var next = { pen: "on" };
+      var parts = raw.split(",");
+      for (var i = 0; i < parts.length; i++) {
+        var kv = parts[i].split("=");
+        var key = (kv[0] || "").trim();
+        var val = (kv[1] || "").trim();
+        if (key === "pen") next.pen = val === "off" || val === "0" || val === "no" ? "off" : "on";
+      }
+      view = next;
+      return;
+    }
+    if (window.ApexAppearance && window.ApexAppearance.onRelative) {
+      window.ApexAppearance.onRelative(function (next) {
+        if (viewPinned || !next) return;
+        view = { pen: next.pen === "off" ? "off" : "on" };
+      });
+    }
+  }
 
   /**
    * Once the alert has fired for a car it stays up for this long even if the
@@ -146,6 +187,13 @@
     ghostWrap.title = "Backmarker ahead — you are catching this car";
     ghostWrap.appendChild(ghostSvg());
     var nameSpan = document.createElement("span");
+    // Outstanding-penalty badge — first in the cell but floated to its right
+    // edge, exactly as in the standings tower (see .standings__pen): the class
+    // tag and the name keep their x, and a long name is cut short of it.
+    var penChip = document.createElement("span");
+    penChip.className = "relative__pen";
+    penChip.hidden = true;
+    driverTd.appendChild(penChip);
     driverTd.appendChild(classTag);
     driverTd.appendChild(badge);
     driverTd.appendChild(drRank);
@@ -183,6 +231,7 @@
       srRank: srRank,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
+      penChip: penChip,
       deltaTd: deltaTd,
       pitFlag: pitFlag,
       cache: {},
@@ -196,6 +245,7 @@
   }
 
   function init(root) {
+    initView(new URLSearchParams(window.location.search));
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -466,6 +516,17 @@
 
       var gapText = e.isPlayer ? "—" : fmt.relGap(e.relativeGapSec);
       set(row, "delta", row.deltaTd, "textContent", gapText);
+
+      // Outstanding penalties. Cached on the badge text, so a clean field costs
+      // one string compare per row and no DOM writes.
+      var pen = view.pen === "off" ? "" : ctx.penaltyBadge(e);
+      if (row.cache.pen !== pen) {
+        row.cache.pen = pen;
+        row.penChip.textContent = pen;
+        row.penChip.hidden = !pen;
+        row.penChip.title = pen ? ctx.penaltyBadgeTitle(e) : "";
+        row.penChip.setAttribute("data-kind", pen ? e.penaltyKind || "unknown" : "");
+      }
 
       // Pit state, flagged past the gap (see createRow).
       var inPit = !!e.inPit;

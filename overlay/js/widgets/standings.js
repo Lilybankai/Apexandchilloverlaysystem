@@ -1298,7 +1298,7 @@
     set(row, "nameTitle", row.driverTd, "title", full);
 
     // Outstanding penalties (see createRow for where the badge sits).
-    renderPenalty(row, e);
+    renderPenalty(row, e, ctx);
 
     // Pit state, flagged in the right-hand column (see createRow).
     var inPit = !!e.inPit;
@@ -1425,43 +1425,19 @@
   }
 
   /**
-   * The penalty badge's text for a row, or "" for none: "DT" / "SG" where the
-   * frame names the kind, "PEN" where it does not, and "×N" beside it when the
-   * car owes more than one. The kind only ever arrives when it covers every
-   * penalty the car owes (telemetry/penalties.ts), so "SG×2" is two stop/gos —
-   * never one stop/go and something unnamed.
+   * Show, update or clear one row's penalty badge. The text and its tooltip
+   * come from the shared runtime (client.js `penaltyBadge`), which the relative
+   * panel draws from too. Cached on the text, so a field with no penalties
+   * (nearly every frame of every race) costs one string compare per row and no
+   * DOM writes at all.
    */
-  function penaltyBadge(e) {
-    var n = e && typeof e.penalties === "number" && isFinite(e.penalties) ? Math.floor(e.penalties) : 0;
-    if (n <= 0 || e.retired) return "";
-    var kind = e.penaltyKind === "drive-through" ? "DT" : e.penaltyKind === "stop-go" ? "SG" : "PEN";
-    return n > 1 ? kind + "×" + n : kind;
-  }
-
-  /** Spelled out for the badge's tooltip (and a screen reader). */
-  function penaltyTitle(e) {
-    var n = Math.floor(e.penalties);
-    if (e.penaltyKind === "drive-through") {
-      return n > 1 ? n + " drive-throughs to serve" : "Drive-through to serve";
-    }
-    if (e.penaltyKind === "stop-go") {
-      return n > 1 ? n + " stop/go penalties to serve" : "Stop/go penalty to serve";
-    }
-    return (n > 1 ? n + " penalties" : "A penalty") + " to serve — the sim does not say which kind";
-  }
-
-  /**
-   * Show, update or clear one row's penalty badge. Cached on the text, so a
-   * field with no penalties (nearly every frame of every race) costs one string
-   * compare per row and no DOM writes at all.
-   */
-  function renderPenalty(row, e) {
-    var txt = view && view.pen === "off" ? "" : penaltyBadge(e);
+  function renderPenalty(row, e, ctx) {
+    var txt = view && view.pen === "off" ? "" : ctx.penaltyBadge(e);
     if (row.cache.pen === txt) return;
     row.cache.pen = txt;
     row.penChip.textContent = txt;
     row.penChip.hidden = !txt;
-    row.penChip.title = txt ? penaltyTitle(e) : "";
+    row.penChip.title = txt ? ctx.penaltyBadgeTitle(e) : "";
     row.penChip.setAttribute("data-kind", txt ? e.penaltyKind || "unknown" : "");
   }
 

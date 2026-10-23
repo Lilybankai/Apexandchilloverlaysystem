@@ -48,7 +48,7 @@ import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
 import { TrackLimitsTracker } from './trackLimits';
-import { penaltyFields } from './penalties';
+import { penaltyFields, copyPenalties } from './penalties';
 import { getPublishedTrackMap, setPublishedTrackMap, type TrackMapPath } from './trackMap';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
@@ -784,6 +784,8 @@ export class SimulatorProvider implements TelemetryProvider {
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
+    // …and its penalty badge, from the same rows (telemetry/penalties.ts).
+    copyPenalties(standings, relative);
     const radar = this.buildRadarBlips(player);
     const trackMap = this.buildTrackMap(player);
     const fuel = this.buildFuel(player);

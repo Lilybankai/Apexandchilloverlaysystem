@@ -260,6 +260,27 @@
   };
 
   /**
+   * A car's outstanding-penalty badge, for the DRIVER cell — the same text and
+   * rules as the overlay's standings tower and relative panel (overlay/js/
+   * client.js `penaltyBadge`): "DT" / "SG" where the sim names the kind, "PEN"
+   * where it does not, "×N" for more than one, nothing for a clear or retired
+   * car. In the driver cell rather than the Pit column because Pit is one of
+   * the columns a phone folds away (team-panel.css), and the driver cell never
+   * is. Floated right so the name keeps its start and ellipsises short of it.
+   */
+  const penaltyBadge = (r) => {
+    const n = typeof r.penalties === 'number' && Number.isFinite(r.penalties) ? Math.floor(r.penalties) : 0;
+    if (n <= 0 || r.retired) return '';
+    const kind = r.penaltyKind === 'drive-through' ? 'DT' : r.penaltyKind === 'stop-go' ? 'SG' : 'PEN';
+    const title = r.penaltyKind === 'drive-through'
+      ? (n > 1 ? `${n} drive-throughs to serve` : 'Drive-through to serve')
+      : r.penaltyKind === 'stop-go'
+        ? (n > 1 ? `${n} stop/go penalties to serve` : 'Stop/go penalty to serve')
+        : `${n > 1 ? `${n} penalties` : 'A penalty'} to serve — the sim does not say which kind`;
+    return `<span class="team-t__pen" title="${title}">${kind}${n > 1 ? `×${n}` : ''}</span>`;
+  };
+
+  /**
    * A car's progress as one continuous number of laps, or `null` when the sim
    * placed no car on the track. The only scale on which two cars can honestly
    * be compared — see `classLapsBehindExact` on the server.
@@ -398,7 +419,7 @@
           <td data-col="p">${fmt0(r.classPosition)}</td>
           <td class="team-t__dim" data-col="ovr">${fmt0(r.position)}</td>
           <td class="team-t__num" data-col="num">${r.carNumber != null ? esc(String(r.carNumber)) : ''}</td>
-          <td class="team-t__driver" data-col="driver">${esc(r.driverName || '')}</td>
+          <td class="team-t__driver" data-col="driver">${penaltyBadge(r)}${esc(r.driverName || '')}</td>
           <td data-col="pit">${pitCell(r)}</td>
           <td data-col="stops">${fmt0(r.pitStops)}</td>
           <td data-col="last">${fmtLap(r.lastLapSec)}</td>

@@ -119,6 +119,7 @@ import {
   type ReplayMetrics,
 } from './replayFeed';
 import {
+  copyPenalties,
   penaltyCount,
   penaltyFields,
   penaltyKindFromType,
@@ -2092,6 +2093,8 @@ export class LmuRestProvider implements TelemetryProvider {
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
+    // …and its penalty badge, from the same rows (telemetry/penalties.ts).
+    copyPenalties(standings, relative);
     const session = this.buildSession(
       cars,
       si,

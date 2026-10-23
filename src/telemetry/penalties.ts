@@ -44,6 +44,8 @@
  * that kind.
  */
 
+import type { RelativeEntry, StandingEntry } from './types';
+
 /** The two kinds of outstanding penalty a car serves in the pit lane. */
 export type PenaltyKind = 'drive-through' | 'stop-go';
 
@@ -120,4 +122,46 @@ export function penaltyFields(
 ): PenaltyFields {
   if (retired || count === undefined || count <= 0) return {};
   return kind ? { penalties: count, penaltyKind: kind } : { penalties: count };
+}
+
+/**
+ * Give each relative row its car's penalty fields from the standings, the way
+ * `copyClassPositions` gives it the class position: one source of truth, so
+ * the tower and the relative panel cannot badge the same car differently.
+ *
+ * Runs every frame, so it allocates nothing: a field with no penalties (nearly
+ * every frame of every race) is one pass over the standings and, at most, a
+ * `delete` on a relative row that carried a badge last frame. Otherwise a
+ * linear search per relative row — a handful of rows against a field of ~40.
+ */
+export function copyPenalties(
+  standings: readonly StandingEntry[],
+  relative: RelativeEntry[],
+): void {
+  let any = false;
+  for (let i = 0; i < standings.length; i++) {
+    if (standings[i]!.penalties !== undefined) {
+      any = true;
+      break;
+    }
+  }
+  for (const row of relative) {
+    let src: StandingEntry | undefined;
+    if (any) {
+      for (let i = 0; i < standings.length; i++) {
+        if (standings[i]!.slotId === row.slotId) {
+          src = standings[i];
+          break;
+        }
+      }
+    }
+    if (src && src.penalties !== undefined) {
+      row.penalties = src.penalties;
+      if (src.penaltyKind) row.penaltyKind = src.penaltyKind;
+      else delete row.penaltyKind;
+    } else if (row.penalties !== undefined || row.penaltyKind !== undefined) {
+      delete row.penalties;
+      delete row.penaltyKind;
+    }
+  }
 }

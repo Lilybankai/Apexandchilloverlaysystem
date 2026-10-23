@@ -146,6 +146,20 @@ const SRC = fs.readFileSync(
 );
 
 /**
+ * The shared runtime's penalty-badge helpers (client.js `penaltyBadge` /
+ * `penaltyBadgeTitle`), run from the real source between its markers rather
+ * than copied here — the tower and the relative panel both draw from them.
+ */
+const BADGE = (() => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'overlay', 'js', 'client.js'), 'utf8');
+  const a = src.indexOf('/* penalty-badge:begin');
+  const b = src.indexOf('/* penalty-badge:end */');
+  if (a < 0 || b < a) throw new Error('client.js lost its penalty-badge markers');
+  return new Function(`${src.slice(a, b)}
+return { penaltyBadge, penaltyBadgeTitle };`)();
+})();
+
+/**
  * Mount the tower. `search` pins the view the way an OBS source would;
  * `push` delivers one through the appearance channel, the way the app does.
  */
@@ -205,6 +219,8 @@ function mount(search) {
     update: (standings) =>
       widget.update({ standings, session: {}, player: {} }, {
         fmt,
+        penaltyBadge: BADGE.penaltyBadge,
+        penaltyBadgeTitle: BADGE.penaltyBadgeTitle,
         // Faithful copies of client.js's badge helpers, so rows carrying
         // driverBadge / driverRank fields render instead of throwing — and so
         // an assertion can read the src the widget actually wrote.

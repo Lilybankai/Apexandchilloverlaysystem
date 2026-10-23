@@ -640,6 +640,16 @@ function defaultSettings() {
       // information. 'off' for a plain timing tower.
       pen: 'on', // 'on' | 'off'
     },
+    /*
+     * The relative panel's one view setting: the outstanding-penalty badge,
+     * the same badge and the same rules as the standings tower's `pen`. Its
+     * own object rather than a key on `standings`, because the two panels are
+     * set separately on their own cards (and an OBS source pins it with
+     * `?relative=pen=off`).
+     */
+    relative: {
+      pen: 'on', // 'on' | 'off'
+    },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
     // A `delta` action can take two buttons (an encoder's two directions); a
@@ -915,6 +925,7 @@ function loadSettings() {
     speedUnit: stored.speedUnit === 'mph' ? 'mph' : defaults.speedUnit,
     tempUnit: stored.tempUnit === 'f' ? 'f' : defaults.tempUnit,
     standings: normalizeStandings(stored),
+    relative: normalizeRelative(stored),
     wheelBindings: normalizeWheelBindings(stored),
     launchOnStartup:
       typeof stored.launchOnStartup === 'boolean'
@@ -988,6 +999,15 @@ function normalizeStandings(stored) {
     decimals: from.decimals === 1 || from.decimals === 2 ? from.decimals : d.decimals,
     names: from.names === 'surname' || from.names === 'forename' ? from.names : d.names,
     avg: from.avg === 'on' ? 'on' : d.avg,
+    pen: from.pen === 'off' ? 'off' : d.pen,
+  };
+}
+
+/** Validate the relative panel's view settings — see `relative` in the defaults. */
+function normalizeRelative(stored) {
+  const d = defaultSettings().relative;
+  const from = stored && typeof stored.relative === 'object' && stored.relative ? stored.relative : {};
+  return {
     pen: from.pen === 'off' ? 'off' : d.pen,
   };
 }
@@ -2004,6 +2024,7 @@ function appearancePayload(s) {
     widgetModes: s.widgetModes || {},
     widgetOpacity: s.widgetOpacity || {},
     standings: s.standings || defaultSettings().standings,
+    relative: s.relative || defaultSettings().relative,
     speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
     tempUnit: s.tempUnit === 'f' ? 'f' : 'c',
   };
@@ -2038,6 +2059,7 @@ function applySettings(partial) {
     partial.widgetModes !== undefined ||
     partial.widgetOpacity !== undefined ||
     partial.standings !== undefined ||
+    partial.relative !== undefined ||
     partial.speedUnit !== undefined ||
     partial.tempUnit !== undefined
   ) {
@@ -2505,6 +2527,8 @@ function overlaysForUi() {
     // Sent on every overlay so the card builder stays a plain map over the
     // catalog rather than a special case that has to know which id it is on.
     view: o.id === 'standings' ? settings.standings : undefined,
+    // The relative panel's counterpart — just the penalty badge switch.
+    relativeView: o.id === 'relative' ? settings.relative : undefined,
     // The selected design for widgets that declare `designs` in the catalog —
     // absent from settings means the first (default) entry.
     design: o.designs ? settings.widgetModes[o.id] || o.designs[0].id : undefined,
@@ -3898,6 +3922,11 @@ function registerIpc() {
           standings: { ...current.standings, ...partial.standings },
         });
       }
+      if (partial.relative && typeof partial.relative === 'object') {
+        next.relative = normalizeRelative({
+          relative: { ...current.relative, ...partial.relative },
+        });
+      }
       if (partial.speedUnit === 'kph' || partial.speedUnit === 'mph') {
         next.speedUnit = partial.speedUnit;
       }
@@ -3979,6 +4008,7 @@ function registerIpc() {
       JSON.stringify(next.widgetOpacity) !== JSON.stringify(current.widgetOpacity) ||
       JSON.stringify(next.widgetModes) !== JSON.stringify(current.widgetModes) ||
       JSON.stringify(next.standings) !== JSON.stringify(current.standings) ||
+      JSON.stringify(next.relative) !== JSON.stringify(current.relative) ||
       next.speedUnit !== current.speedUnit ||
       next.tempUnit !== current.tempUnit
     ) {

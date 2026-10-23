@@ -170,5 +170,49 @@ console.log('\nReplay — LiveStandings rows (real Road Atlanta capture, penalti
   check('the rest of the field stays clear', rows.filter((x) => x.penalties).length === 3);
 }
 
+/* -------------------------------------------------------------------------- */
+console.log('\ncopyPenalties — the relative panel badges what the tower badges');
+{
+  const standings = [
+    { slotId: 1, penalties: 1, penaltyKind: 'drive-through' },
+    { slotId: 2 },
+    { slotId: 3, penalties: 2 },
+  ];
+  const rel = [{ slotId: 3 }, { slotId: 2 }, { slotId: 1 }, { slotId: 9 }];
+  pen.copyPenalties(standings, rel);
+  check('count + kind copied by slot', rel[2].penalties === 1 && rel[2].penaltyKind === 'drive-through');
+  check('count without a kind stays kindless', rel[0].penalties === 2 && rel[0].penaltyKind === undefined);
+  check('a clear car stays clear', !('penalties' in rel[1]));
+  check('a car missing from the standings gets nothing', !('penalties' in rel[3]));
+
+  // Rows reused across frames: a served penalty must come OFF the row.
+  standings[0] = { slotId: 1 };
+  standings[2] = { slotId: 3, penalties: 1, penaltyKind: 'stop-go' };
+  pen.copyPenalties(standings, rel);
+  check('served → the copied fields are removed', !('penalties' in rel[2]) && !('penaltyKind' in rel[2]));
+  check('the kind follows when it becomes known', rel[0].penalties === 1 && rel[0].penaltyKind === 'stop-go');
+  pen.copyPenalties([{ slotId: 3 }], rel);
+  check('a whole clean field clears every relative row', rel.every((r) => !('penalties' in r) && !('penaltyKind' in r)));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\nDemo provider — the relative panel carries the same badge as the tower');
+{
+  const { SimulatorProvider } = require(path.join(dist, 'simulatorProvider.js'));
+  const sim = new SimulatorProvider();
+  // Force the demo's own track-limits penalty onto the player and read a frame.
+  sim.demoPenalties = 1;
+  const f = sim.poll ? sim.poll(Date.now(), 50) : null;
+  if (f && Array.isArray(f.standings) && Array.isArray(f.relative)) {
+    const me = f.standings.find((r) => r.isPlayer);
+    const meRel = f.relative.find((r) => r.isPlayer);
+    check('the demo player row carries the penalty', me && me.penalties === 1, show(me && me.penalties));
+    check('…and so does its relative row', meRel && meRel.penalties === 1, show(meRel && meRel.penalties));
+    check('nobody else in the relative is badged', f.relative.filter((r) => r.penalties).length === 1);
+  } else {
+    check('the simulator produced a frame to read', false, 'no poll()');
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1541,6 +1541,13 @@ export interface RelativeEntry {
   closingRateSec?: number;
   /** Whether the car is in the pit lane. */
   inPit: boolean;
+  /**
+   * The same car's outstanding penalties and their kind, copied from its
+   * standings row ({@link StandingEntry.penalties} / {@link StandingEntry.penaltyKind})
+   * by `copyPenalties` so the two panels can never disagree. Omitted when clear.
+   */
+  penalties?: number;
+  penaltyKind?: 'drive-through' | 'stop-go';
   /** `true` for the player's own row. */
   isPlayer: boolean;
 }

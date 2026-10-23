@@ -870,6 +870,51 @@
   }
 
   /**
+   * The relative card's one view control: the outstanding-penalty badge, the
+   * same switch (and the same wording) as the standings card's PENALTY row, so
+   * a driver who has set one already knows the other. Persisted as
+   * `settings.relative.pen`; an OBS source pins it with `?relative=pen=off`.
+   */
+  function relativeRow(o) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ovcard__view';
+    const v = o.relativeView || {};
+
+    const penLabel = document.createElement('span');
+    penLabel.className = 'ovcard__bg-label';
+    penLabel.textContent = 'PENALTY';
+
+    const pen = document.createElement('select');
+    pen.className = 'field__input field__input--inline';
+    pen.id = 'relative-pen';
+    for (const [value, text] of [
+      ['on', 'Badge cars that owe one'],
+      ['off', 'Hidden'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      pen.appendChild(opt);
+    }
+    pen.value = v.pen === 'off' ? 'off' : 'on';
+    pen.title =
+      'Marks any car near you with a penalty still to serve, at the end of its ' +
+      'name: DT (drive-through) or SG (stop/go) where the game says which, PEN ' +
+      'where it does not, and ×2 when a car owes more than one. It clears the ' +
+      'moment the penalty is served';
+    pen.addEventListener('change', () => {
+      void window.apex.updateSettings({ relative: { pen: pen.value } });
+    });
+
+    const penHead = document.createElement('div');
+    penHead.className = 'ovcard__view-head';
+    penHead.appendChild(penLabel);
+    penHead.appendChild(pen);
+    wrap.appendChild(penHead);
+    return wrap;
+  }
+
+  /**
    * The design dropdown, for widgets whose catalog entry declares `designs`
    * (today: the speedo cluster's Apex / LMP2 skins). Entirely data-driven — the
    * options come off the catalog entry and the choice is stored per widget id in
@@ -1206,6 +1251,7 @@
       li.appendChild(opacityRow(o));
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
+      if (o.relativeView) li.appendChild(relativeRow(o));
       li.appendChild(foot);
       li.appendChild(resetBtn);
       const mount =
