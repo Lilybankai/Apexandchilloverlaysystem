@@ -607,6 +607,9 @@ function describeFetchError(err) {
  */
 const PLAYER_SIDECAR = 'voice-player.ps1';
 const RECOGNIZER_SIDECAR = 'voice-recognizer.ps1';
+// The Engineer tab's device scan and mic test (one-shot, on demand). Both it
+// and the recognizer dot-source mic-input.ps1, which owns the device choice.
+const MICS_SIDECAR = 'voice-mics.ps1';
 
 /**
  * The grammar, run over TEXT: when the dictation grammar out-competes the
@@ -979,12 +982,29 @@ function radioNoise(text, spoken) {
   return null;
 }
 
-function spawnPs(scriptPath, env) {
+/**
+ * @param {string} scriptPath
+ * @param {object} [env]
+ * @param {{onStderr?: (line: string) => void}} [opts]  read stderr line by
+ *        line instead of discarding it — the listener's last words are the
+ *        only record of why it stopped
+ */
+function spawnPs(scriptPath, env, opts) {
+  const onStderr = opts && opts.onStderr;
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
-    stdio: ['pipe', 'pipe', 'ignore'],
+    stdio: ['pipe', 'pipe', onStderr ? 'pipe' : 'ignore'],
     env: { ...process.env, ...(env || {}) },
     windowsHide: true,
   });
+  if (onStderr && child.stderr) {
+    child.stderr.on('error', () => {});
+    require('node:readline')
+      .createInterface({ input: child.stderr })
+      .on('line', (line) => {
+        const t = line.trim();
+        if (t) onStderr(t);
+      });
+  }
   // A sidecar that can't start (or dies mid-write) must never take the app
   // down with it — antivirus blocking is a live possibility for everything
   // this module spawns, and an unhandled 'error' event kills the main
@@ -994,12 +1014,58 @@ function spawnPs(scriptPath, env) {
   return child;
 }
 
+/**
+ * Fold voice-mics.ps1's test-mode lines into a result. `add(line)` returns
+ * the level to show for a LEVEL line, else null; `result(runError)` is the
+ * verdict. Pure, so the protocol is tested without a microphone.
+ */
+function foldMicTest() {
+  let peak = 0;
+  let speech = false;
+  let picked = null;
+  let problem = null;
+  const clamp = (v) => Math.max(0, Math.min(100, Number(v) || 0));
+  return {
+    add(line) {
+      const [kind, a, b, c] = String(line).split('\t');
+      if (kind === 'LEVEL') {
+        const n = clamp(a);
+        peak = Math.max(peak, n);
+        return n;
+      }
+      if (kind === 'SPEECH') speech = true;
+      else if (kind === 'MIC') picked = { source: a || 'default', name: b || '', why: c || '' };
+      else if (kind === 'NOMIC' || kind === 'MICERR') problem = a || 'the microphone would not open';
+      else if (kind === 'DONE') {
+        peak = Math.max(peak, clamp(a));
+        speech = speech || b === '1';
+      }
+      return null;
+    },
+    result(runError) {
+      if (problem) return { ok: false, error: problem };
+      if (!picked) return { ok: false, error: runError || 'the test did not start' };
+      return { ok: true, peak, speech, ...picked };
+    },
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /*  The service                                                                */
 /* -------------------------------------------------------------------------- */
 
 const LISTEN_WINDOW_SEC = 6;
 const MIN_CONFIDENCE = 0.82;
+
+/** The device scan is a sub-second PowerShell; past this it is wedged. */
+const MIC_SCAN_TIMEOUT_MS = 15_000;
+/** How long "Test mic" listens. Long enough for "radio check, one two". */
+const MIC_TEST_SECONDS = 4;
+/**
+ * Said over the radio when a press finds no working microphone — the driver
+ * is in the car, not looking at the panel. Short, and points at the fix.
+ */
+const MIC_DOWN_LINE = "Can't hear you. Check the microphone on the Engineer tab.";
 
 /**
  * How a push-to-talk press ENDED — one counter per outcome, through the app's
@@ -1025,6 +1091,10 @@ const MIN_CONFIDENCE = 0.82;
  *   budget          the month's free-form allotment is spent
  *   no-telemetry    no live frame to put a question against
  *   not-ready       pressed while the engineer or microphone was down
+ *   no-mic          the listener was up but no microphone would open
+ *                   (privacy switch, device gone, exclusive mode) — split
+ *                   out of not-ready on 2026-10-23 so the field can say how
+ *                   often "no microphone" is really happening
  * Markers, counted alongside a terminal outcome:
  *   rejected              SAPI rejected the utterance but kept its audio
  *   rejected-transcribed  …and whisper made words of it
@@ -1044,6 +1114,7 @@ const ENGINEER_OUTCOMES = [
   'budget',
   'no-telemetry',
   'not-ready',
+  'no-mic',
   'rejected',
   'rejected-transcribed',
   'no-dictation',
@@ -1058,6 +1129,9 @@ const OUTCOME_SLUG_PREFIX = 'action:engineer.outcome.';
 const ECHO_WINDOW_MS = 20_000;
 
 /** Requires a compiled module from dist/, or null when unavailable. */
+// The microphone rules the panel also runs (ids, scan parsing, wording).
+const MIC = require('./control-panel/mic-picker');
+
 function tryRequire(rel) {
   try {
     return require(path.join(__dirname, '..', 'dist', rel));
@@ -1094,6 +1168,11 @@ class EngineerService {
     this.cloudBudget = opts.cloudBudget || null;
     this.cloudRate = opts.cloudRate || null;
     this.noteUsage = opts.noteUsage || null;
+    // One line per microphone event into the app's diagnostics log (main
+    // injects stalls.log — the log "Report a problem" attaches).
+    this.log = opts.log || (() => {});
+    // Live input level while "Test mic" runs: { level } … { level: 0, done }.
+    this.onMicLevel = opts.onMicLevel || (() => {});
     this.radioFx = require('./radio-fx');
     this.commandsMod = tryRequire('telemetry/engineerCommands.js');
     this.triggersMod = tryRequire('telemetry/triggers.js');
@@ -1119,6 +1198,14 @@ class EngineerService {
     this.player = null;
     this.recognizer = null;
     this.recognizerReady = false;
+    this.recognizerExited = false; // the listener process died under us
+    // Which microphone the listener has, from its MIC / NOMIC / MICERR lines.
+    // state: off (not running) | starting | ok | none (no mic would open).
+    this.mic = { state: 'off', source: null, name: '', why: '', problem: null };
+    this.listenerMicId = ''; // the choice the running listener was given
+    this.lastScan = null; // the latest device scan (mic-picker parseScan)
+    this.scanning = null; // in-flight scan promise — one at a time
+    this.testing = null; // in-flight mic test promise — one at a time
     // The last question-and-answer, whichever tier answered it — sent with the
     // next Tier-2 ask (when recent) so "and on energy?" resolves as a follow-up.
     this.lastExchange = null; // { question, answer, atMs }
@@ -1380,6 +1467,19 @@ class EngineerService {
     if (this.triggers?.setPracticePaceLapInterval) {
       this.triggers.setPracticePaceLapInterval(this.practicePaceReminderLaps());
     }
+    // A new microphone needs only the listener restarted, not the voice.
+    if (this.running && this.micChoice().id !== this.listenerMicId) this.restartListener();
+  }
+
+  /**
+   * The saved microphone: `{ id, name }`, id '' = System default. The id is
+   * re-validated here as well as in sanitizeEngineer — it ends up in SAPI.
+   */
+  micChoice() {
+    const settings = this.loadSettings();
+    const e = (settings && settings.engineer) || {};
+    const id = MIC.isMicId(e.micId) ? e.micId : '';
+    return { id, name: id ? MIC.cleanName(e.micName) : '' };
   }
 
   /** Radio volume 0–100, safe against settings written by older versions. */
@@ -1419,7 +1519,13 @@ class EngineerService {
       selectedInstalled: this.voiceInstalled(selected),
       busy: this.busy,
       lastError: this.lastError,
-      micAvailable: this.recognizer ? this.recognizerReady : null, // null = not started yet
+      // true/false once the listener has said which mic it has; null while
+      // it is still starting (it used to read false then, and the panel
+      // said "no microphone was found" for the first second of every start).
+      micAvailable: this.recognizer ? (this.mic.state === 'ok' ? true : this.mic.state === 'none' ? false : null) : null,
+      mic: { ...this.mic, savedId: this.micChoice().id, savedName: this.micChoice().name },
+      micScan: this.lastScan,
+      micTesting: !!this.testing,
       sttInstalled: stt.installed(this.sttRoots()),
       sttSmallInstalled: stt.smallInstalled(this.sttRoots()),
       sttSmallSizeMb: stt.SMALL_MODEL_MB,
@@ -1725,26 +1831,9 @@ class EngineerService {
       }
     });
 
-    // Ears: resident but deaf until a LISTEN command (push-to-talk). Dictation
-    // is re-learned from THIS sidecar's DICTOK line, never carried over.
-    this.freeFormLive = false;
+    // Ears: resident but deaf until a LISTEN command (push-to-talk).
     this.notedNoDictation = false;
-    this.recognizer = spawnPs(path.join(this.sidecarsDir, RECOGNIZER_SIDECAR), {
-      APEX_ENGINEER_GRAMMAR: this.grammarPath,
-      APEX_ENGINEER_WAVDIR: this.wavDir,
-    });
-    const recognizerChild = this.recognizer;
-    this.recognizer.on('error', (err) => this.recognizer === recognizerChild && this.onChildError('listener', err));
-    require('node:readline')
-      .createInterface({ input: this.recognizer.stdout })
-      .on('line', (line) => this.onRecognizerLine(line));
-    // Same guard as the engine: the replaced listener's exit must not mark
-    // the new listener's microphone "not ready" after its READY line landed.
-    const recognizer = this.recognizer;
-    recognizer.on('exit', () => {
-      if (this.recognizer !== recognizer) return;
-      this.recognizerReady = false;
-    });
+    this.spawnListener();
 
     // A short "channel open" chirp for the press, generated once: two quick
     // square-ish beeps, run through the same radio channel as everything else.
@@ -1760,6 +1849,76 @@ class EngineerService {
     stt.warm(this.sttRoots());
   }
 
+  /**
+   * Spawn the listener sidecar on the saved microphone. Dictation is
+   * re-learned from THIS sidecar's DICTOK line, never carried over.
+   */
+  spawnListener() {
+    const { id } = this.micChoice();
+    this.listenerMicId = id;
+    this.freeFormLive = false;
+    this.recognizerReady = false;
+    this.recognizerExited = false;
+    this.mic = { state: 'starting', source: null, name: '', why: '', problem: null };
+    const stderrTail = [];
+    const child = spawnPs(
+      path.join(this.sidecarsDir, RECOGNIZER_SIDECAR),
+      {
+        APEX_ENGINEER_GRAMMAR: this.grammarPath,
+        APEX_ENGINEER_WAVDIR: this.wavDir,
+        APEX_ENGINEER_MIC: id,
+      },
+      {
+        onStderr: (line) => {
+          stderrTail.push(line);
+          if (stderrTail.length > 6) stderrTail.shift();
+        },
+      },
+    );
+    this.recognizer = child;
+    child.on('error', (err) => this.recognizer === child && this.onChildError('listener', err));
+    require('node:readline')
+      .createInterface({ input: child.stdout })
+      .on('line', (line) => this.recognizer === child && this.onRecognizerLine(line));
+    // Same guard as the engine: a replaced listener's exit must not mark the
+    // new listener's microphone "not ready" after its READY line landed.
+    child.on('exit', (code) => {
+      if (this.recognizer !== child) return;
+      this.recognizerReady = false;
+      this.recognizerExited = true;
+      if (!this.running) return;
+      // It no longer exits over a microphone, so this is news: keep its last
+      // words (PowerShell's stderr) for the log, and free a waiting press.
+      this.log(`listener exited code=${code}${stderrTail.length ? ` stderr: ${stderrTail.join(' / ')}` : ''}`);
+      this.mic = { ...this.mic, state: 'none', problem: this.mic.problem || 'the listener stopped' };
+      if (this.pendingListen) {
+        const resolve = this.pendingListen;
+        this.pendingListen = null;
+        resolve({ kind: 'MICERR', error: this.mic.problem });
+      }
+      this.pushStatus();
+    });
+  }
+
+  /**
+   * Replace the listener — a new microphone was picked, or the old process
+   * died. The voice and the player keep running; a press in flight ends now.
+   */
+  restartListener() {
+    if (!this.running) return;
+    const old = this.recognizer;
+    if (this.pendingListen) {
+      const resolve = this.pendingListen;
+      this.pendingListen = null;
+      resolve({ kind: 'NONE' });
+    }
+    this.spawnListener();
+    try {
+      if (old) old.kill();
+    } catch {}
+    this.pushStatus();
+  }
+
   stop() {
     this.running = false;
     for (const p of [this.piper, this.player, this.recognizer]) {
@@ -1769,6 +1928,8 @@ class EngineerService {
     }
     this.piper = this.player = this.recognizer = null;
     this.recognizerReady = false;
+    this.recognizerExited = false;
+    this.mic = { state: 'off', source: null, name: '', why: '', problem: null };
     if (this.ws) {
       try {
         this.ws.close();
@@ -1868,9 +2029,42 @@ class EngineerService {
       return;
     }
     if (kind === 'ERROR') {
+      // The grammar would not load — the one failure the listener still
+      // exits on. Microphone trouble arrives as NOMIC / MICERR instead.
       this.recognizerReady = false;
-      this.lastError = `Microphone: ${a}`;
+      this.lastError = `The listener couldn't start: ${a}`;
+      this.log(`listener error: ${a}`);
       this.pushStatus();
+      return;
+    }
+    if (kind === 'MIC') {
+      // MIC<tab>picked|default|fallback<tab>device name<tab>why (fallback)
+      const next = { state: 'ok', source: a || 'default', name: b || '', why: c || '', problem: null };
+      if (this.mic.state !== 'ok' || this.mic.source !== next.source || this.mic.name !== next.name) {
+        const saved = this.micChoice();
+        this.log(
+          `mic ${next.source} "${next.name}"` +
+            (next.source === 'fallback'
+              ? ` — saved "${saved.name}" ${next.why === 'missing' ? 'not connected' : next.why}`
+              : ''),
+        );
+      }
+      this.mic = next;
+      this.pushStatus();
+      return;
+    }
+    if (kind === 'NOMIC' || kind === 'MICERR') {
+      // No microphone would open. The listener stays up and tries again on
+      // the next press; MICERR is also that press's answer.
+      const problem = a || 'the microphone would not open';
+      if (this.mic.state !== 'none' || this.mic.problem !== problem) this.log(`mic unavailable: ${problem}`);
+      this.mic = { state: 'none', source: null, name: '', why: '', problem };
+      this.pushStatus();
+      if (kind === 'MICERR' && this.pendingListen) {
+        const resolve = this.pendingListen;
+        this.pendingListen = null;
+        resolve({ kind: 'MICERR', error: problem });
+      }
       return;
     }
     if (this.pendingListen) {
@@ -2147,6 +2341,119 @@ class EngineerService {
     } catch {}
   }
 
+  /* ---- microphones ---------------------------------------------------------- */
+
+  /**
+   * Run voice-mics.ps1 once and collect its stdout lines. Never rejects:
+   * resolves `{ lines, error }`, killing the child at `timeoutMs`. Off the
+   * main thread by construction — a slow device slows the child, not the app.
+   * Split out so tests can stand in for PowerShell.
+   */
+  runMicsSidecar(env, timeoutMs, onLine) {
+    return new Promise((resolve) => {
+      const lines = [];
+      let done = false;
+      let timer = null;
+      const finish = (error) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve({ lines, error: error || null });
+      };
+      let child;
+      try {
+        child = spawnPs(path.join(this.sidecarsDir, MICS_SIDECAR), env);
+      } catch (err) {
+        finish(err && err.message ? err.message : String(err));
+        return;
+      }
+      timer = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {}
+        finish('the device scan timed out');
+      }, timeoutMs);
+      child.on('error', (err) => finish(`couldn't run the device scan (${(err && (err.code || err.message)) || 'error'})`));
+      require('node:readline')
+        .createInterface({ input: child.stdout })
+        .on('line', (line) => {
+          lines.push(line);
+          if (onLine) {
+            try {
+              onLine(line);
+            } catch {}
+          }
+        });
+      child.on('close', () => finish(null));
+      try {
+        child.stdin.end();
+      } catch {}
+    });
+  }
+
+  /**
+   * "Scan for devices": every input SAPI can open, Windows' privacy
+   * switches, and what "System default" is right now. One scan at a time;
+   * the result is kept for status() so a re-rendered panel still has it.
+   */
+  scanMics() {
+    if (this.scanning) return this.scanning;
+    this.scanning = this.runMicsSidecar({ APEX_MIC_MODE: 'list' }, MIC_SCAN_TIMEOUT_MS)
+      .then(({ lines, error }) => {
+        const scan = error ? { ok: false, error, devices: [] } : MIC.parseScan(lines.join('\n'));
+        scan.at = Date.now();
+        this.lastScan = scan;
+        const p = scan.privacy || {};
+        this.log(
+          scan.ok
+            ? `mic scan: ${scan.devices.length} inputs, default "${scan.defaultName}", ` +
+                `privacy device=${p.device} user=${p.user} desktop=${p.desktop}`
+            : `mic scan failed: ${scan.error}`,
+        );
+        this.pushStatus();
+        return scan;
+      })
+      .finally(() => {
+        this.scanning = null;
+      });
+    return this.scanning;
+  }
+
+  /**
+   * "Test mic": listen on `id` ('' = System default) for a few seconds the
+   * way a press would, streaming the input level to onMicLevel. Resolves
+   * `{ ok, peak, speech, source, name, why }` or `{ ok: false, error }`.
+   */
+  testMic(id) {
+    if (this.testing) return this.testing;
+    const micId = id === '' || MIC.isMicId(id) ? id : this.micChoice().id;
+    const seen = foldMicTest();
+    this.testing = this.runMicsSidecar(
+      { APEX_MIC_MODE: 'test', APEX_MIC_ID: micId, APEX_MIC_SECONDS: String(MIC_TEST_SECONDS) },
+      (MIC_TEST_SECONDS + 12) * 1000,
+      (line) => {
+        const level = seen.add(line);
+        if (level !== null) this.onMicLevel({ level });
+      },
+    )
+      .then(({ error }) => {
+        this.onMicLevel({ level: 0, done: true });
+        const res = seen.result(error);
+        this.log(
+          res.ok
+            ? `mic test ${res.source} "${res.name}": peak=${res.peak} speech=${res.speech}`
+            : `mic test failed: ${res.error}`,
+        );
+        return res;
+      })
+      .finally(() => {
+        this.testing = null;
+        this.pushStatus();
+      });
+    this.pushStatus();
+    return this.testing;
+  }
+
   /* ---- the button ----------------------------------------------------------- */
 
   /**
@@ -2187,6 +2494,12 @@ class EngineerService {
     }
     if (!this.recognizerReady) {
       this.noteOutcome('not-ready');
+      // A listener that died is brought back here rather than left for an
+      // app restart; this press is lost, the next one listens.
+      if (this.recognizerExited) {
+        this.restartListener();
+        return { ok: false, error: 'The listener had stopped — restarted it. Press again.' };
+      }
       return { ok: false, error: 'Microphone not ready' };
     }
     if (this.asking) return { ok: true };
@@ -2212,6 +2525,17 @@ class EngineerService {
           }
         }, (LISTEN_WINDOW_SEC + 3) * 1000);
       });
+
+      // No microphone would open for this press. Said over the radio, since
+      // that is where the driver is; the panel shows the why.
+      if (heard.kind === 'MICERR') {
+        this.speak(MIC_DOWN_LINE);
+        return {
+          ok: false,
+          error: `Microphone: ${MIC.plainMicError(heard.error)}`,
+          outcome: this.noteOutcome('no-mic'),
+        };
+      }
 
       // Fast path: SAPI's closed grammar, CONFIDENT. Kept because it answers
       // the instant the phrase ends, and a month of field use shows its
@@ -2516,6 +2840,8 @@ class EngineerService {
 
 module.exports = {
   EngineerService,
+  foldMicTest,
+  MIC_DOWN_LINE,
   VOICES,
   GRAMMAR,
   ENGINEER_CALLOUTS,

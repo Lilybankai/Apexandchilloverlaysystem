@@ -22,17 +22,37 @@
 # Recognize() returns, writes the wav and prints REJECTED. NONE now means
 # what it says: no usable speech in the window at all.
 #
-# Lines out: READY, DICTOK, ERROR<tab>msg, and exactly one per LISTEN —
+# Which microphone: APEX_ENGINEER_MIC carries a SAPI audio-input token id
+# ('' = System default, Windows' default recording device); mic-input.ps1
+# owns the choice and the fallback when that device is gone.
+#
+# A missing or broken microphone never kills the listener (field report
+# 2026-10-23: "no microphone" with a headset plugged in). It used to: the
+# input was set once at start and an exception there exited the script, and
+# an exception inside Recognize() - the device would not open: privacy
+# switch, exclusive mode, a headset that reconnected - was uncaught, so the
+# process died with its reason on a stderr nobody read and the panel said "no
+# microphone was found" until the app restarted. Now the mic is retried on
+# every LISTEN and a failure is a MICERR line for THAT press.
+#
+# Lines out: MIC/NOMIC (which device, see mic-input.ps1) before READY and
+# again whenever the input is re-chosen; READY, DICTOK, ERROR<tab>msg (the
+# grammar would not load - the only fatal one); and exactly one per LISTEN -
 #   HEARD<tab>intent<tab>conf<tab>wav<tab>text
 #   FREE<tab>wav<tab>conf<tab>text
 #   REJECTED<tab>wav<tab>conf<tab>text      (text is SAPI's low-grade guess)
+#   MICERR<tab>message                       (no microphone would open)
 #   NONE
 #
 # Ships as a plain signed script in the app's resources (extraResources) and is
 # run with `-File` — never as an encoded command (antivirus-heuristic tell).
 
 $ErrorActionPreference = 'Stop'
+# Device names are not all ASCII ("Mikrofon (Realtek(R) Audio)"); the app
+# reads UTF-8, and a BOM-less encoder keeps the first line clean.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Speech
+. (Join-Path $PSScriptRoot 'mic-input.ps1')
 try {
   $defs = Get-Content -Raw -LiteralPath $env:APEX_ENGINEER_GRAMMAR | ConvertFrom-Json
   $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine
@@ -68,7 +88,6 @@ try {
   $rec.BabbleTimeout = [TimeSpan]::Zero
   $null = Register-ObjectEvent -InputObject $rec -EventName SpeechRecognitionRejected -SourceIdentifier 'apexRejected'
   $null = Register-ObjectEvent -InputObject $rec -EventName SpeechDetected -SourceIdentifier 'apexDetected'
-  $rec.SetInputToDefaultAudioDevice()
 } catch {
   [Console]::Out.WriteLine("ERROR`t" + $_.Exception.Message); [Console]::Out.Flush()
   exit 1
@@ -117,6 +136,20 @@ function Get-RejectedLine {
   }
 }
 
+# Choose the input now and on any LISTEN after a failure. $micOk false means
+# the next press tries again: a headset switched on after the app started
+# works on its first press, not after a restart.
+$micId = [string]$env:APEX_ENGINEER_MIC
+$micOk = $false
+$micWhy = ''
+function Connect-Mic {
+  $r = Set-MicInput $rec $micId
+  $script:micOk = [bool]$r.ok
+  $script:micWhy = [string]$r.why
+  [Console]::Out.WriteLine((Format-MicLine $r)); [Console]::Out.Flush()
+}
+Connect-Mic
+
 [Console]::Out.WriteLine('READY'); [Console]::Out.Flush()
 if ($null -ne $dict) { [Console]::Out.WriteLine('DICTOK'); [Console]::Out.Flush() }
 while ($true) {
@@ -125,8 +158,25 @@ while ($true) {
   if ($cmd -notmatch '^LISTEN') { continue }
   $secs = 6
   if ($cmd -match 'LISTEN (\d+)') { $secs = [int]$Matches[1] }
-  Clear-Queued
-  $r = $rec.Recognize([TimeSpan]::FromSeconds($secs))
+  if (-not $micOk) { Connect-Mic }
+  if (-not $micOk) {
+    [Console]::Out.WriteLine("MICERR`t" + (Format-MicText $micWhy)); [Console]::Out.Flush()
+    continue
+  }
+  try {
+    Clear-Queued
+    $r = $rec.Recognize([TimeSpan]::FromSeconds($secs))
+  } catch {
+    # The device would not open (or vanished mid-listen). Say so for this
+    # press and choose again on the next one.
+    $e = $_.Exception
+    while ($null -ne $e.InnerException) { $e = $e.InnerException }
+    $micOk = $false
+    $micWhy = Format-MicText $e.Message
+    Clear-Queued
+    [Console]::Out.WriteLine("MICERR`t" + $micWhy); [Console]::Out.Flush()
+    continue
+  }
   if ($null -eq $r) {
     [Console]::Out.WriteLine((Get-RejectedLine)); [Console]::Out.Flush()
     continue

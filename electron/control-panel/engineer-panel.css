@@ -42,6 +42,37 @@
 }
 .eng-ptt-chip--bound { color: var(--text); border-color: var(--line-2); }
 
+/* Microphone: Scan / Test under the picker, and a short level meter that
+   only shows while a test runs. Same thin bar as the download progress.
+   Device names run long ("Headset Microphone (Arctis Nova 7)"), so the
+   picker takes the column's full width rather than --wide's 260 px. */
+#eng-mic { max-width: 100%; }
+.eng-mic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.eng-mic-meter {
+  flex: 1 1 80px;
+  min-width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.eng-mic-meter > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.08s linear;
+}
+#eng-mic-status:empty { display: none; }
+#eng-mic-status { margin-top: 8px; }
+#eng-mic-privacy { margin-top: 6px; align-self: flex-start; }
+
 /* ---- What you can ask ------------------------------------------------------
    Full-width reference card under the two rails. Groups flow into CSS columns
    (masonry without script); each group is the design system's uppercase

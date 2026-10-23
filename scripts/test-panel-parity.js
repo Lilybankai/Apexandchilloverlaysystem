@@ -144,6 +144,16 @@ const PANEL_CONTRACT = {
   // Mature radio (2026-10-08): off by default, so an unwired picker would
   // look fine — and quietly leave a driver who chose Savage on clean.
   'eng-tone': 'select',
+  // The microphone picker (2026-10-23). An unwired dropdown would leave the
+  // engineer on a device the driver thinks they changed — "no microphone"
+  // with the headset plugged in is the report that built it.
+  'eng-mic': 'select',
+  'eng-mic-scan': 'button',
+  'eng-mic-test': 'button',
+  'eng-mic-meter': 'span',
+  'eng-mic-meter-fill': 'span',
+  'eng-mic-status': 'p',
+  'eng-mic-privacy': 'button',
 
   // What's new — the release-notes sheet (v0.56.0). Contracted because it is
   // shown automatically exactly once per update: if the close controls stop

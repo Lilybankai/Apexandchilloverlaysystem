@@ -116,6 +116,8 @@
     // Race engineer.
     { slug: 'action:engineer.ask', tab: 'engineer', label: 'Asked the engineer a question' },
     { slug: 'action:engineer.voice', tab: 'engineer', label: 'Changed the engineer voice' },
+    { slug: 'action:engineer.mic', tab: 'engineer', label: 'Picked the engineer microphone' },
+    { slug: 'action:engineer.mic-test', tab: 'engineer', label: 'Tested the engineer microphone' },
 
     // How each push-to-talk press ENDED (electron/engineer.js
     // ENGINEER_OUTCOMES — test:engineer-queue holds the two lists together).
@@ -134,6 +136,7 @@
     { slug: 'action:engineer.outcome.budget', tab: 'engineer', outcome: true, label: 'Engineer: free-form allotment used up' },
     { slug: 'action:engineer.outcome.no-telemetry', tab: 'engineer', outcome: true, label: 'Engineer: free-form asked with no telemetry' },
     { slug: 'action:engineer.outcome.not-ready', tab: 'engineer', outcome: true, label: 'Engineer: pressed while engineer/mic was down' },
+    { slug: 'action:engineer.outcome.no-mic', tab: 'engineer', outcome: true, label: 'Engineer: pressed, but no microphone would open' },
     { slug: 'action:engineer.outcome.rejected', tab: 'engineer', outcome: true, label: 'Engineer: speech off the phrase list (rejected)' },
     { slug: 'action:engineer.outcome.rejected-transcribed', tab: 'engineer', outcome: true, label: 'Engineer: rejected speech rescued by whisper' },
     { slug: 'action:engineer.outcome.no-dictation', tab: 'engineer', outcome: true, label: 'Engineer: PC has no Windows dictation (per session)' },
