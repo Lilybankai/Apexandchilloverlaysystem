@@ -48,6 +48,7 @@ import { ChassisTracker } from './chassis';
 import type { RawCorner, RawCornerSet } from './chassis';
 import { decodeDamage } from './damage';
 import { TrackLimitsTracker } from './trackLimits';
+import { penaltyFields, copyPenalties } from './penalties';
 import { getPublishedTrackMap, setPublishedTrackMap, type TrackMapPath } from './trackMap';
 import { shouldWarnTraffic, shouldYield } from './yieldAlert';
 
@@ -783,6 +784,8 @@ export class SimulatorProvider implements TelemetryProvider {
     // The relative panel quotes the standings' own class positions rather than
     // counting its own — see copyClassPositions.
     copyClassPositions(standings, relative);
+    // …and its penalty badge, from the same rows (telemetry/penalties.ts).
+    copyPenalties(standings, relative);
     const radar = this.buildRadarBlips(player);
     const trackMap = this.buildTrackMap(player);
     const fuel = this.buildFuel(player);
@@ -2059,6 +2062,10 @@ export class SimulatorProvider implements TelemetryProvider {
         // maths gets the same exact laps-down count the sims give it.
         lapFraction: Math.round(clamp(car.progress, 0, 1) * 10000) / 10000,
         inPit: car.inPit,
+        // The demo's own track-limits penalty (buildTrackLimits), on the
+        // player's row so the tower's badge is exercised in demo too. No kind:
+        // the demo limits block names none, and the tower must agree with it.
+        ...penaltyFields(car.slotId === playerId ? this.demoPenalties : undefined, undefined),
         pitStops: car.pitStops,
         tyreCompound: 'Medium',
         isPlayer: car.slotId === playerId,

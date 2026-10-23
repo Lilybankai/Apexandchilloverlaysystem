@@ -627,6 +627,9 @@
     penaltyCount: penaltyCount,
     penaltyText: penaltyText,
     penaltyLabel: penaltyLabel,
+    // The per-car badge the standings tower and the relative panel both draw.
+    penaltyBadge: penaltyBadge,
+    penaltyBadgeTitle: penaltyBadgeTitle,
   };
 
   /* ------------------------------------------------------------------ */
@@ -769,6 +772,39 @@
     if (!kind) return penaltyText(n);
     return n > 1 ? n + "× " + kind : kind;
   }
+
+  /* penalty-badge:begin — read verbatim by scripts/test-standings.js and
+     scripts/test-relative.js, so the tests run THIS code, not a copy. */
+  /**
+   * A row's outstanding-penalty badge text, or "" for none: "DT" / "SG" where
+   * the frame names the kind, "PEN" where it does not, and "×N" beside it when
+   * the car owes more than one. Shared by the standings tower and the relative
+   * panel so the same car can never wear two different badges.
+   *
+   * The kind only ever arrives when it covers every penalty the car owes
+   * (telemetry/penalties.ts on the server), so "SG×2" is two stop/gos — never
+   * one stop/go and something unnamed. A retired or disqualified car owes
+   * nothing, whatever its count still says.
+   */
+  function penaltyBadge(e) {
+    var n = e && typeof e.penalties === "number" && isFinite(e.penalties) ? Math.floor(e.penalties) : 0;
+    if (n <= 0 || e.retired) return "";
+    var kind = e.penaltyKind === "drive-through" ? "DT" : e.penaltyKind === "stop-go" ? "SG" : "PEN";
+    return n > 1 ? kind + "×" + n : kind;
+  }
+
+  /** The badge spelled out, for its tooltip (and a screen reader). */
+  function penaltyBadgeTitle(e) {
+    var n = e && typeof e.penalties === "number" ? Math.floor(e.penalties) : 0;
+    if (e && e.penaltyKind === "drive-through") {
+      return n > 1 ? n + " drive-throughs to serve" : "Drive-through to serve";
+    }
+    if (e && e.penaltyKind === "stop-go") {
+      return n > 1 ? n + " stop/go penalties to serve" : "Stop/go penalty to serve";
+    }
+    return (n > 1 ? n + " penalties" : "A penalty") + " to serve — the sim does not say which kind";
+  }
+  /* penalty-badge:end */
 
   /**
    * Short session names for the pre-session headers. Kept here rather than in a

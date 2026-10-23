@@ -164,6 +164,23 @@
   font: 700 10px var(--font-display);
   letter-spacing: 0.06em;
 }
+/* Outstanding-penalty badge in the driver cell ("DT" / "SG" / "PEN" / "SG×2"),
+   the overlay tower's badge in this sheet's chip language (the PIT/OUT chips
+   above). Floated right so the name keeps its start and the cell's ellipsis
+   lands short of it — the driver column is the one a phone never folds, so the
+   badge survives every width the sheet goes down to. */
+.team-t__pen {
+  float: right;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 70%, transparent);
+  color: var(--bad);
+  font: 700 10px var(--font-display);
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+}
 
 /* Tyres: four corners laid out as the car stands. */
 .team-tyres {

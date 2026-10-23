@@ -138,6 +138,31 @@ function chooseReference(choice, rows) {
   return best.is_you === true ? { kind: 'own', reason: 'you-lead' } : { kind: 'board', row: best };
 }
 
+/** The board columns migration 0043 added, copied as they came. */
+const CONDITION_FIELDS = [
+  'session_type',
+  'track_temp_c',
+  'air_temp_c',
+  'fuel_start_l',
+  'fuel_capacity_l',
+  've_start_pct',
+  'compound',
+];
+
+/**
+ * A board row's lap conditions for the Chase list, or null when it has none —
+ * which is every row from a server without 0043. Copied, not interpreted: the
+ * panel's board-conditions.js owns the plausibility rules for every surface.
+ */
+function boardConditionFields(row) {
+  if (!row) return null;
+  const out = {};
+  for (const k of CONDITION_FIELDS) {
+    if (row[k] !== undefined && row[k] !== null) out[k] = row[k];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /** "John Smith" → "J. Smith"; a single name stays as it is. */
 function shortName(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -303,6 +328,10 @@ class TrainingReference {
         rank: r.rank,
         hasLine: r.has_line === true,
         isYou: r.is_you === true,
+        // What the lap was set in (migration 0043), as the board returned it —
+        // the panel's board-conditions.js validates and draws it. Absent
+        // columns (a server without 0043) come through as nothing at all.
+        cond: boardConditionFields(r),
       })),
     };
   }
@@ -653,5 +682,6 @@ module.exports = {
   refLabel,
   refIdOf,
   traceMatchesRow,
+  boardConditionFields,
   BOARD_TTL_MS,
 };

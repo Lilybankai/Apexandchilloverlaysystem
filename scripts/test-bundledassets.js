@@ -51,7 +51,7 @@ const engineerSrc = fs.readFileSync(path.join(__dirname, '..', 'electron', 'engi
 check('engineer.js never uses -EncodedCommand', !engineerSrc.includes("'-EncodedCommand'"));
 check('engineer.js never shells out to curl', !engineerSrc.includes("'curl.exe'"));
 const sidecarsDir = path.join(__dirname, '..', 'electron', 'sidecars');
-for (const f of ['voice-player.ps1', 'voice-recognizer.ps1']) {
+for (const f of ['voice-player.ps1', 'voice-recognizer.ps1', 'voice-mics.ps1', 'mic-input.ps1']) {
   check(`sidecar ${f} exists in the repo`, fs.existsSync(path.join(sidecarsDir, f)));
 }
 check(

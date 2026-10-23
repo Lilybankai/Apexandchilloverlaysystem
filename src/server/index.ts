@@ -182,6 +182,8 @@ export interface Appearance {
    * (URL override -> in-game push -> 1 s poll for OBS) is already solved.
    */
   standings: StandingsView;
+  /** The relative panel's view settings — see {@link RelativeView}. */
+  relative: RelativeView;
   /**
    * Unit for every speed readout: `'kph'` (the sim's own) or `'mph'`.
    *
@@ -239,6 +241,19 @@ export interface StandingsView {
    * identifies a driver is a fact about the grid, not about the software.
    */
   names: 'full' | 'surname' | 'forename';
+  /** The optional last-5-lap AVG column: `'off'` (the default) or `'on'`. */
+  avg: 'off' | 'on';
+  /**
+   * The outstanding-penalty badge on each row ("DT" / "SG" / "PEN"): `'on'`
+   * (the default) or `'off'` for a plain timing tower.
+   */
+  pen: 'on' | 'off';
+}
+
+/** @see Appearance.relative */
+export interface RelativeView {
+  /** The outstanding-penalty badge, as the tower's {@link StandingsView.pen}. */
+  pen: 'on' | 'off';
 }
 
 /** URL the overlays read their appearance from. */
@@ -273,7 +288,10 @@ const appearance: Appearance = {
     pos: 'overall',
     decimals: 3,
     names: 'full',
+    avg: 'off',
+    pen: 'on',
   },
+  relative: { pen: 'on' },
   speedUnit: 'kph',
   tempUnit: 'c',
 };
@@ -285,6 +303,7 @@ export function getAppearance(): Appearance {
     widgetModes: { ...appearance.widgetModes },
     widgetOpacity: { ...appearance.widgetOpacity },
     standings: { ...appearance.standings },
+    relative: { ...appearance.relative },
   };
 }
 
@@ -392,6 +411,16 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
         v.names === 'full' || v.names === 'surname' || v.names === 'forename'
           ? v.names
           : appearance.standings.names,
+      // The same trap again, for the AVG column (sent by the app since it was
+      // added, dropped here until now) and the penalty badge.
+      avg: v.avg === 'on' || v.avg === 'off' ? v.avg : appearance.standings.avg,
+      pen: v.pen === 'on' || v.pen === 'off' ? v.pen : appearance.standings.pen,
+    };
+  }
+  if (next?.relative && typeof next.relative === 'object') {
+    const r = next.relative as Partial<RelativeView>;
+    appearance.relative = {
+      pen: r.pen === 'on' || r.pen === 'off' ? r.pen : appearance.relative.pen,
     };
   }
   return getAppearance();

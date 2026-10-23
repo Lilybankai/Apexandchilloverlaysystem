@@ -411,6 +411,8 @@
     if (webRelayToggle) webRelayToggle.checked = settings.webRelay !== false;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     if (tempUnit) tempUnit.value = settings.tempUnit === 'f' ? 'f' : 'c';
+    // The board's conditions card quotes temperatures in the same unit.
+    window.APEX_BOARD_CONDITIONS?.setTempUnit(settings.tempUnit);
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
     audioEcho.textContent = settings.audioVolume;
@@ -824,14 +826,93 @@
     avgHead.appendChild(avgLabel);
     avgHead.appendChild(avg);
 
+    // The outstanding-penalty badge. On by default; its own row like AVG.
+    // "PENALTY", not "PENALTIES": the label column's 58px floor is sized for
+    // eight characters (see DECIMALS above).
+    const penLabel = document.createElement('span');
+    penLabel.className = 'ovcard__bg-label';
+    penLabel.textContent = 'PENALTY';
+
+    const pen = document.createElement('select');
+    pen.className = 'field__input field__input--inline';
+    pen.id = 'standings-pen';
+    for (const [value, text] of [
+      ['on', 'Badge cars that owe one'],
+      ['off', 'Hidden'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      pen.appendChild(opt);
+    }
+    // Defensive default, same idiom as AVG: an older config has no `pen`.
+    pen.value = v.pen === 'off' ? 'off' : 'on';
+    pen.title =
+      'Marks any car with a penalty still to serve, at the end of its name: ' +
+      'DT (drive-through) or SG (stop/go) where the game says which, PEN where ' +
+      'it does not, and ×2 when a car owes more than one. It clears the moment ' +
+      'the penalty is served';
+    pen.addEventListener('change', () => void send({ pen: pen.value }));
+
+    const penHead = document.createElement('div');
+    penHead.className = 'ovcard__view-head';
+    penHead.appendChild(penLabel);
+    penHead.appendChild(pen);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
     wrap.appendChild(dpHead);
     wrap.appendChild(nmHead);
     wrap.appendChild(avgHead);
+    wrap.appendChild(penHead);
     wrap.appendChild(flHead);
     wrap.appendChild(posHead);
+    return wrap;
+  }
+
+  /**
+   * The relative card's one view control: the outstanding-penalty badge, the
+   * same switch (and the same wording) as the standings card's PENALTY row, so
+   * a driver who has set one already knows the other. Persisted as
+   * `settings.relative.pen`; an OBS source pins it with `?relative=pen=off`.
+   */
+  function relativeRow(o) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ovcard__view';
+    const v = o.relativeView || {};
+
+    const penLabel = document.createElement('span');
+    penLabel.className = 'ovcard__bg-label';
+    penLabel.textContent = 'PENALTY';
+
+    const pen = document.createElement('select');
+    pen.className = 'field__input field__input--inline';
+    pen.id = 'relative-pen';
+    for (const [value, text] of [
+      ['on', 'Badge cars that owe one'],
+      ['off', 'Hidden'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      pen.appendChild(opt);
+    }
+    pen.value = v.pen === 'off' ? 'off' : 'on';
+    pen.title =
+      'Marks any car near you with a penalty still to serve, at the end of its ' +
+      'name: DT (drive-through) or SG (stop/go) where the game says which, PEN ' +
+      'where it does not, and ×2 when a car owes more than one. It clears the ' +
+      'moment the penalty is served';
+    pen.addEventListener('change', () => {
+      void window.apex.updateSettings({ relative: { pen: pen.value } });
+    });
+
+    const penHead = document.createElement('div');
+    penHead.className = 'ovcard__view-head';
+    penHead.appendChild(penLabel);
+    penHead.appendChild(pen);
+    wrap.appendChild(penHead);
     return wrap;
   }
 
@@ -1172,6 +1253,7 @@
       li.appendChild(opacityRow(o));
       if (Array.isArray(o.designs) && o.designs.length) li.appendChild(designRow(o));
       if (o.view) li.appendChild(standingsRow(o));
+      if (o.relativeView) li.appendChild(relativeRow(o));
       li.appendChild(foot);
       li.appendChild(resetBtn);
       const mount =
@@ -2396,6 +2478,10 @@
       // set, which is the one place that highlight means anything.
       if (row.rank === 1) lap.setAttribute('data-fastest', 'true');
       lap.textContent = formatLapTime(row.lap_ms);
+      // The conditions it was set in (migration 0043): a session letter
+      // beside the time, and the card on hover/focus. A server without 0043
+      // returns none, and the time is left exactly as it was.
+      window.APEX_BOARD_CONDITIONS?.decorate(lap, row, lap.textContent);
 
       const gap = document.createElement('span');
       gap.className = 'lbrow__gap';
@@ -6898,6 +6984,9 @@
       void loadAdmin();
     }
     if (target === 'schedule') window.apexSchedule?.shown();
+    // The microphone list is scanned on the first visit (a PowerShell child,
+    // so never at launch for drivers who never open the tab).
+    if (target === 'engineer') window.apexEngineer?.shown();
     // Training ▸ Chase: mounted on first visit, re-read on each one after — the
     // board moves while the driver is in the sim, not while they are here.
     if (target === 'training') showTrainingChase();

@@ -25,6 +25,17 @@ window.apexTrainingRef = (function () {
     String(s ?? '').replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+  /**
+   * A Chase row's time, marked with the session it was set in and carrying
+   * the conditions card on hover (board-conditions.js, migration 0043). Not a
+   * focus stop: the time sits inside the row's button, and a focusable span
+   * nested in a button is invalid — the button's own focus is the stop.
+   */
+  const timeHtml = (r) => {
+    const bc = window.APEX_BOARD_CONDITIONS;
+    return bc && r.cond ? bc.timeHtml(r.cond, r.time, { focusable: false }) : esc(r.time);
+  };
+
   /* ---------------------------------------------------------------- copy */
 
   const OWN_REASON = {
@@ -95,7 +106,7 @@ window.apexTrainingRef = (function () {
             <span class="tref__name">${esc(r.name)}${r.isYou ? ' <span class="tref__tag">you</span>' : ''}${
               autoPick ? ' <span class="tref__tag" data-tone="cyan">auto</span>' : ''
             }</span>
-            <span class="tref__time">${esc(r.time)}</span>
+            <span class="tref__time">${timeHtml(r)}</span>
             <span class="tref__car" title="${esc(r.car)}">${esc(r.car)}</span>
           </button>
         </li>`;

@@ -158,6 +158,17 @@
     return `${m}:${s.toFixed(3).padStart(6, '0')}`;
   }
 
+  /**
+   * A LEADERBOARD row's time, already escaped: marked with the session it was
+   * set in and carrying the conditions card on hover (board-conditions.js,
+   * migration 0043). Plain when the row has none, or the module is absent.
+   */
+  function boardTime(row) {
+    const text = fmtLap(row && row.lap_ms);
+    const bc = window.APEX_BOARD_CONDITIONS;
+    return bc ? bc.timeHtml(row, text) : esc(text);
+  }
+
   /** A sector: seconds unless it is genuinely over a minute (Le Mans S1 is). */
   function fmtSector(ms) {
     if (!known(ms) || ms <= 0) return dash;
@@ -811,7 +822,7 @@
               <td class="num">P${row.rank}</td>
               <td class="who">${esc(row.is_you ? 'You' : row.display_name || 'Driver')}</td>
               <td class="car">${esc(row.car || '')}</td>
-              <td class="lap">${fmtLap(row.lap_ms)}</td>
+              <td class="lap">${boardTime(row)}</td>
             </tr>`).join('')}</tbody>
         </table>`;
     }
@@ -1758,7 +1769,7 @@
             <td class="num">P${row.rank}</td>
             <td class="who">${esc(row.is_you ? 'You' : row.display_name || 'Driver')}</td>
             <td class="car">${esc(row.car || '')}</td>
-            <td class="lap">${fmtLap(row.lap_ms)}</td>
+            <td class="lap">${boardTime(row)}</td>
             <td class="gapc">${gap}</td>
             <td class="ref">${action}</td>
           </tr>`;

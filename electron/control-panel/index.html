@@ -1851,6 +1851,31 @@
                   </span>
                 </div>
 
+                <!-- Which microphone the engineer listens on (2026-10-23). The
+                     list is SAPI's audio inputs, scanned by a short-lived
+                     sidecar on the first visit and on demand. -->
+                <div class="field">
+                  <span class="field__label">Microphone</span>
+                  <select class="field__input field__input--wide" id="eng-mic">
+                    <option value="">System default</option>
+                  </select>
+                  <div class="eng-mic-row">
+                    <button class="btn btn--ghost btn--sm" id="eng-mic-scan" type="button"
+                            title="Look for microphones again — after plugging a headset in, for example.">Scan for devices</button>
+                    <button class="btn btn--ghost btn--sm" id="eng-mic-test" type="button"
+                            title="Listen for a few seconds on the chosen microphone and show the level.">Test mic</button>
+                    <span class="eng-mic-meter" id="eng-mic-meter" hidden><span id="eng-mic-meter-fill"></span></span>
+                  </div>
+                  <p class="eng-status" id="eng-mic-status"></p>
+                  <button class="btn btn--ghost btn--sm" id="eng-mic-privacy" type="button" hidden>Open Windows microphone settings</button>
+                  <span class="field__hint">
+                    <strong>System default</strong> follows Windows' default recording
+                    device (Sound settings › Input). Pick your headset here to keep the
+                    engineer on it whatever Windows does — if it's unplugged, the
+                    engineer uses the default until it's back.
+                  </span>
+                </div>
+
                 <label class="field">
                   <span class="field__label">Radio calls</span>
                   <select class="field__input" id="eng-readouts">
@@ -4520,6 +4545,10 @@
      the router would miss that first call. Shared verbatim with the web pit
      wall (scripts/build-web.js). -->
 <script src="schedule-panel.js"></script>
+<!-- Board lap conditions: the session letter beside a board time and the
+     card on hover (migration 0043). Before control-panel.js and review-panel.js,
+     which both draw board times through it. -->
+<script src="board-conditions.js"></script>
 <script src="control-panel.js"></script>
 <!-- Setup editor: three data files (pure lookup tables), then the editor.
      After control-panel.js so the tab router exists before apexSetup does —
@@ -4559,6 +4588,8 @@
      control-panel.js the first time the Training tab opens. -->
 <script src="training-reference.js"></script>
 <script src="vr-guide.js"></script>
+<!-- The engineer's microphone rules (window.APEX_MIC) — shared with main. -->
+<script src="mic-picker.js"></script>
 <script src="engineer-panel.js"></script>
 <!-- Team tab header ▸ Relay source. Self-contained; reads the team roster
      push (onTeamCloud) for the teammate list and the gate's status. Desktop

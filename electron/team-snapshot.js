@@ -176,6 +176,11 @@ function buildTeamSnapshot(frame, at) {
           lapsBehind: row.lapsBehind,
           inPit: row.inPit,
           retired: row.retired,
+          // Outstanding penalties (count + kind where known) for the sheet's
+          // badge. Absent on a clear car, so a clean field adds nothing to the
+          // relay payload (0017's relay_publish caps it at 64 KB).
+          penalties: row.penalties,
+          penaltyKind: row.penaltyKind,
           pitStops: row.pitStops,
           tyreCompound: row.tyreCompound,
           virtualEnergy: row.virtualEnergy,
