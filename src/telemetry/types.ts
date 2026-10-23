@@ -1379,6 +1379,22 @@ export interface StandingEntry {
    */
   retired?: boolean;
   /**
+   * Penalties the stewards have issued this car that it has NOT yet served —
+   * LMU's per-car count (`/rest/watch/standings` `penalties`; rF2's
+   * `mNumPenalties`). It rises when a penalty lands and falls when one is
+   * served. Omitted when the car is clear, when the count is unknown, and for a
+   * {@link retired} car (nothing left to serve). See telemetry/penalties.ts.
+   */
+  penalties?: number;
+  /**
+   * What the outstanding penalties are, ONLY where a source actually says — and
+   * only when the kind covers every one of {@link penalties}. Known for our own
+   * car (the pit-menu row / trace) and, in a replay, for every car (LMU's
+   * LiveStandings feed). Omitted otherwise: the count is a fact, the kind is
+   * never inferred.
+   */
+  penaltyKind?: 'drive-through' | 'stop-go';
+  /**
    * Completed pit stops. Counted by the provider off pit-lane entries, NOT
    * taken from the sim: LMU's own `pitstops` field resets (driver swaps in a
    * team race), so it reported 0 for cars on their ninth stop. Counting starts

@@ -634,6 +634,11 @@ function defaultSettings() {
       // names anywhere the panel cannot grow (the in-game layer grows it —
       // see widthBumpFor in overlay/js/ingame.js).
       avg: 'off', // 'off' | 'on'
+      // 'on' badges any car with a penalty still to serve ("DT" / "SG" where
+      // the sim names the kind, "PEN" where it does not). On by default: it
+      // costs no column, and a car ahead that still owes a stop is race
+      // information. 'off' for a plain timing tower.
+      pen: 'on', // 'on' | 'off'
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -983,6 +988,7 @@ function normalizeStandings(stored) {
     decimals: from.decimals === 1 || from.decimals === 2 ? from.decimals : d.decimals,
     names: from.names === 'surname' || from.names === 'forename' ? from.names : d.names,
     avg: from.avg === 'on' ? 'on' : d.avg,
+    pen: from.pen === 'off' ? 'off' : d.pen,
   };
 }
 

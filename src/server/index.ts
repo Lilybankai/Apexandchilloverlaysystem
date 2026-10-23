@@ -239,6 +239,13 @@ export interface StandingsView {
    * identifies a driver is a fact about the grid, not about the software.
    */
   names: 'full' | 'surname' | 'forename';
+  /** The optional last-5-lap AVG column: `'off'` (the default) or `'on'`. */
+  avg: 'off' | 'on';
+  /**
+   * The outstanding-penalty badge on each row ("DT" / "SG" / "PEN"): `'on'`
+   * (the default) or `'off'` for a plain timing tower.
+   */
+  pen: 'on' | 'off';
 }
 
 /** URL the overlays read their appearance from. */
@@ -273,6 +280,8 @@ const appearance: Appearance = {
     pos: 'overall',
     decimals: 3,
     names: 'full',
+    avg: 'off',
+    pen: 'on',
   },
   speedUnit: 'kph',
   tempUnit: 'c',
@@ -392,6 +401,10 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
         v.names === 'full' || v.names === 'surname' || v.names === 'forename'
           ? v.names
           : appearance.standings.names,
+      // The same trap again, for the AVG column (sent by the app since it was
+      // added, dropped here until now) and the penalty badge.
+      avg: v.avg === 'on' || v.avg === 'off' ? v.avg : appearance.standings.avg,
+      pen: v.pen === 'on' || v.pen === 'off' ? v.pen : appearance.standings.pen,
     };
   }
   return getAppearance();

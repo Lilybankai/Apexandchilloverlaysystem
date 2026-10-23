@@ -61,6 +61,7 @@ import {
   type TyreState,
   type WeatherForecastSlot,
 } from './types';
+import { penaltyCount, penaltyFields } from './penalties';
 import type { ServerConfig } from '../server/config';
 import {
   assignClassPositions,
@@ -501,6 +502,10 @@ export class RF2Provider implements TelemetryProvider {
         // overall leader.
         ...lapFractionOf(scoring.readDoubleLE(off + VS.mLapDist), trackLenM),
         inPit: scoring.readUInt8(off + VS.mInPits) !== 0,
+        // Every vehicle record is the same struct, so the penalty count the
+        // player's track-limits block reads at this offset is there for the
+        // whole field. rF2 publishes no penalty KIND, so the badge stays generic.
+        ...penaltyFields(penaltyCount(scoring.readInt16LE(off + VS.mNumPenalties)), undefined),
         isPlayer,
       };
       standings.push(entry);

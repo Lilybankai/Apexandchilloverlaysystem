@@ -118,6 +118,12 @@ import {
   type ReplayField,
   type ReplayMetrics,
 } from './replayFeed';
+import {
+  penaltyCount,
+  penaltyFields,
+  penaltyKindFromType,
+  type PenaltyKind,
+} from './penalties';
 import { fingerprintGarageData } from './setupFingerprint';
 import {
   LapTraceRecorder,
@@ -313,6 +319,19 @@ interface RestStanding {
    * which is how a replayed car finds its manufacturer (telemetry/replayFeed).
    */
   vehicleFilename?: string;
+  /**
+   * Outstanding (unserved) penalties on this car — the count LMU's own
+   * broadcast overlay watches on every row to pop its "Penalty" card. Rises
+   * live when a penalty lands, drops when it is served (verified live on our
+   * own row, 2026-08-04). See telemetry/penalties.ts.
+   */
+  penalties?: number;
+  /**
+   * NOT a REST field: set only on the rows the replay feed builds, from
+   * LiveStandings' `penalties: {DT, SG}` (telemetry/replayFeed.ts). REST names
+   * no penalty kind for anyone.
+   */
+  penaltyKind?: PenaltyKind;
 }
 
 /**
@@ -2044,7 +2063,24 @@ export class LmuRestProvider implements TelemetryProvider {
     // the team relay may ever put a teammate's telemetry on (teammateRelay.ts).
     const teamCarId =
       teamStint.teammateDriving && teamStint.car ? teamStint.car.slotID : UNKNOWN_VALUE;
-    const standings = this.buildStandings(cars, focusId, ownId, frameSessionKey, trackLen, teamCarId);
+    // Our car's penalty KIND for its standings row — named by the pit menu or
+    // the trace, which are read for our car alone (buildPenaltyType below).
+    // Carried over from the previous frame because the track-limits block that
+    // resolves it is built further down; a kind arriving one frame late on the
+    // tower is invisible, and reordering the build to save it is not.
+    const ourPenalty =
+      ourCar && this.ourPenaltyKind
+        ? { slotId: ourCar.slotID, kind: this.ourPenaltyKind }
+        : undefined;
+    const standings = this.buildStandings(
+      cars,
+      focusId,
+      ownId,
+      frameSessionKey,
+      trackLen,
+      teamCarId,
+      ourPenalty,
+    );
     // A replay's road gaps are timed off the replay clock (the feed's own gap
     // fields are road-time figures that jump at the line — see replayFeed).
     const replayGap =
@@ -2101,6 +2137,13 @@ export class LmuRestProvider implements TelemetryProvider {
         : limitsBase.penalties > 0
           ? { ...limitsBase, ...this.buildPenaltyType() }
           : limitsBase;
+    // …and the same kind for our standings row next frame (see `ourPenalty`
+    // above). Only for a SINGLE outstanding penalty: the pit menu names the one
+    // to serve next, and with two owed that is not a statement about both.
+    this.ourPenaltyKind =
+      withType && !withType.disqualified && withType.penalties === 1
+        ? penaltyKindFromType(withType.penaltyType)
+        : undefined;
     // The sim's LIVE lap-validity verdict (countLapFlag). Only a definite
     // yes/no is forwarded: COUNT_NEITHER (out-lap, garage) and an absent
     // channel both leave the field off, so the widget shows nothing rather
@@ -2507,6 +2550,7 @@ export class LmuRestProvider implements TelemetryProvider {
     sessionKey: string,
     trackLen: number,
     teamCarId: number = UNKNOWN_VALUE,
+    ourPenalty?: { slotId: number; kind: PenaltyKind },
   ): StandingEntry[] {
     // The whole build is a pure projection of the REST snapshot — and that
     // snapshot is replaced wholesale every 150 ms while this runs per frame,
@@ -2515,7 +2559,9 @@ export class LmuRestProvider implements TelemetryProvider {
     // identity of `cars` keys the memo; the scalar inputs ride beside it. A
     // badge or manufacturer that resolves between refreshes appears on the
     // next one, which is sooner than any eye can ask for it.
-    const cacheKey = `${focusId}|${ownId}|${sessionKey}|${trackLen}|${teamCarId}`;
+    const cacheKey =
+      `${focusId}|${ownId}|${sessionKey}|${trackLen}|${teamCarId}` +
+      (ourPenalty ? `|${ourPenalty.slotId}:${ourPenalty.kind}` : '');
     if (cars === this.standingsCacheCars && this.standingsCacheKey === cacheKey) {
       return this.standingsCache;
     }
@@ -2542,6 +2588,16 @@ export class LmuRestProvider implements TelemetryProvider {
       const ranks = this.driverRanksFor(c.driverName);
       const lastS1 = posOrUnknown(c.lastSectorTime1);
       const lastS2 = posOrUnknown(c.lastSectorTime2);
+      // Outstanding penalties: the row's own count, for every car. The kind
+      // only where a source names it — the replay feed's LiveStandings rows,
+      // or the pit menu / trace for OUR car, and then only while the row agrees
+      // there is exactly one (telemetry/penalties.ts).
+      const penCount = penaltyCount(c.penalties);
+      const penKind =
+        c.penaltyKind ??
+        (ourPenalty && c.slotID === ourPenalty.slotId && penCount === 1
+          ? ourPenalty.kind
+          : undefined);
       return {
       slotId: c.slotID,
       position: c.position,
@@ -2584,6 +2640,8 @@ export class LmuRestProvider implements TelemetryProvider {
       lapsCompleted: Math.max(0, c.lapsCompleted | 0),
       inPit: isInPit(c),
       retired: isRetired(c) || undefined,
+      // Outstanding penalties, for every car — see `penCount` above.
+      ...penaltyFields(penCount, penKind, isRetired(c)),
       pitStops: stopsBySlot.get(c.slotID),
       // LMU publishes a 0..1 energy fraction per car (its overlay shows this to
       // the cars ahead), but a car/class that isn't running a virtual-energy
@@ -2623,6 +2681,11 @@ export class LmuRestProvider implements TelemetryProvider {
   /** The standings memo — see the head of {@link buildStandings}. */
   private standingsCacheCars: RestStanding[] | null = null;
   private standingsCacheKey = '';
+  /**
+   * Our car's single outstanding penalty's kind, as last named by the pit menu
+   * or the trace — fed to the NEXT frame's standings row. See buildFrame.
+   */
+  private ourPenaltyKind: PenaltyKind | undefined = undefined;
   private standingsCache: StandingEntry[] = [];
 
   /**

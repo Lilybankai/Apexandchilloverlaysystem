@@ -824,12 +824,46 @@
     avgHead.appendChild(avgLabel);
     avgHead.appendChild(avg);
 
+    // The outstanding-penalty badge. On by default; its own row like AVG.
+    // "PENALTY", not "PENALTIES": the label column's 58px floor is sized for
+    // eight characters (see DECIMALS above).
+    const penLabel = document.createElement('span');
+    penLabel.className = 'ovcard__bg-label';
+    penLabel.textContent = 'PENALTY';
+
+    const pen = document.createElement('select');
+    pen.className = 'field__input field__input--inline';
+    pen.id = 'standings-pen';
+    for (const [value, text] of [
+      ['on', 'Badge cars that owe one'],
+      ['off', 'Hidden'],
+    ]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      pen.appendChild(opt);
+    }
+    // Defensive default, same idiom as AVG: an older config has no `pen`.
+    pen.value = v.pen === 'off' ? 'off' : 'on';
+    pen.title =
+      'Marks any car with a penalty still to serve, at the end of its name: ' +
+      'DT (drive-through) or SG (stop/go) where the game says which, PEN where ' +
+      'it does not, and ×2 when a car owes more than one. It clears the moment ' +
+      'the penalty is served';
+    pen.addEventListener('change', () => void send({ pen: pen.value }));
+
+    const penHead = document.createElement('div');
+    penHead.className = 'ovcard__view-head';
+    penHead.appendChild(penLabel);
+    penHead.appendChild(pen);
+
     wrap.appendChild(head);
     wrap.appendChild(detail);
     wrap.appendChild(gapHead);
     wrap.appendChild(dpHead);
     wrap.appendChild(nmHead);
     wrap.appendChild(avgHead);
+    wrap.appendChild(penHead);
     wrap.appendChild(flHead);
     wrap.appendChild(posHead);
     return wrap;

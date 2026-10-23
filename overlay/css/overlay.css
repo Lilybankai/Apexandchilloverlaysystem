@@ -429,6 +429,35 @@
   font-family: var(--font-ui);
   text-overflow: ellipsis;
 }
+/* Outstanding-penalty badge ("DT", "SG", "PEN", "SG×2"). Floated to the right
+   edge of the driver cell rather than given a column of its own: penalties are
+   rare, and a column reserved on every row for them would come straight out of
+   the driver names all race. Floated rather than appended so the name keeps its
+   start on every row and ellipsises SHORT of the badge — appended, a long name
+   pushed it out of the clipped cell, the one part that must never be cut.
+   Red, the stewards' colour the Track Limits widget's PENALTY chip already
+   uses, on its own opaque square like the pit flag so it survives the panel's
+   background slider; sized off the type tokens so it rides the Text size
+   slider. No `display` here: `hidden` must win (and in-game, ingame.css's
+   `[hidden]` catch-all is what keeps a cleared badge from holding space). */
+.standings__pen {
+  float: right;
+  margin: 1px 0 0 4px;
+  padding: 0 4px;
+  height: calc(var(--fs-body) * 1.15);
+  line-height: calc(var(--fs-body) * 1.15);
+  border-radius: 3px;
+  background: rgba(8, 10, 17, 0.82);
+  color: var(--pos-loss);
+  box-shadow: inset 0 0 0 1px var(--pos-loss);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+  /* The panel's translucent-mode text shadow muddies a coloured glyph on its
+     own dark square — same reason as .pit-flag. */
+  text-shadow: none;
+}
 /* Virtual-energy cell: a % readout over a thin fill bar. */
 .standings__ve {
   position: relative;

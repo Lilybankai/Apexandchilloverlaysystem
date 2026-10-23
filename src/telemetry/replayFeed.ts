@@ -51,6 +51,7 @@
 import { WebSocket } from 'ws';
 import type { LocalCarPhysics } from './lmuLocalCar';
 import { UNKNOWN_VALUE, type SessionPhase } from './types';
+import { liveStandingsPenalties, type PenaltyKind } from './penalties';
 
 /* ------------------------------- raw shapes ------------------------------- */
 
@@ -82,6 +83,12 @@ export interface LiveStandingRow {
   vehicleNumber?: string | number;
   vehFilename?: string;
   teamName?: string;
+  /**
+   * Outstanding penalties by kind — `{ DT, SG, TIME }`, on every row of the
+   * 2026-10-12 capture (all zero). LMU's own timing screen shows "DT"/"SG" off
+   * the first two; see telemetry/penalties.ts.
+   */
+  penalties?: { DT?: number; SG?: number; TIME?: number };
 }
 
 /** The `body` of a `replayMetrics` push — the replay CAMERA car. */
@@ -378,6 +385,10 @@ export interface ReplayCar {
   carVelocity?: { velocity?: number };
   finishStatus?: string;
   veFraction?: number;
+  /** Outstanding penalties (DT + SG) — see {@link liveStandingsPenalties}. */
+  penalties?: number;
+  /** Their kind, when the row's DT/SG split names a single one. */
+  penaltyKind?: PenaltyKind;
 }
 
 /** What one LiveStandings push becomes. */
@@ -484,6 +495,13 @@ export function buildReplayField(
     // A flat 100 is what every car read for the whole capture, mid-stint — not
     // a reading. Only a value that has visibly moved off full is passed on.
     if (fin(ve) && ve > 0 && ve < 100) car.veFraction = ve / 100;
+    // The one place a RIVAL's penalty kind is published: LiveStandings splits
+    // the count into drive-throughs and stop/gos (telemetry/penalties.ts).
+    const pen = liveStandingsPenalties(r.penalties);
+    if (pen) {
+      car.penalties = pen.count;
+      if (pen.kind) car.penaltyKind = pen.kind;
+    }
     return car;
   });
   return { cars, positions, raceDist };
