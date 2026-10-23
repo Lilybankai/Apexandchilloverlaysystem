@@ -411,6 +411,8 @@
     if (webRelayToggle) webRelayToggle.checked = settings.webRelay !== false;
     if (speedUnit) speedUnit.value = settings.speedUnit === 'mph' ? 'mph' : 'kph';
     if (tempUnit) tempUnit.value = settings.tempUnit === 'f' ? 'f' : 'c';
+    // The board's conditions card quotes temperatures in the same unit.
+    window.APEX_BOARD_CONDITIONS?.setTempUnit(settings.tempUnit);
     audioToggle.checked = settings.audioCues !== false;
     audioRange.value = settings.audioVolume;
     audioEcho.textContent = settings.audioVolume;
@@ -2396,6 +2398,10 @@
       // set, which is the one place that highlight means anything.
       if (row.rank === 1) lap.setAttribute('data-fastest', 'true');
       lap.textContent = formatLapTime(row.lap_ms);
+      // The conditions it was set in (migration 0043): a session letter
+      // beside the time, and the card on hover/focus. A server without 0043
+      // returns none, and the time is left exactly as it was.
+      window.APEX_BOARD_CONDITIONS?.decorate(lap, row, lap.textContent);
 
       const gap = document.createElement('span');
       gap.className = 'lbrow__gap';

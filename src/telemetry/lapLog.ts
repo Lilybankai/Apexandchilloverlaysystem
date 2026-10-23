@@ -1217,6 +1217,37 @@ export function listDays(dir = lapDir()): string[] {
 }
 
 /**
+ * The car's state as a board lap BEGAN, for the hover card on the leaderboard
+ * (migration 0043): fuel in the tank at the line, the tank it was in, the
+ * virtual energy left, and the compound fitted.
+ *
+ * Carl, 2026-10-23: "lots of people set their fastest times as quali laps, and
+ * there's no accurate way to show the conditions a lap was set in". The session
+ * type and the two temperatures have ridden in `conditions` since the board
+ * existed; these are the fields that say how light the car was.
+ *
+ * Nothing new is CAPTURED for this. `fuelStartL` is the level the lap recorder
+ * baselined in `startLap`, on the poll that crossed the line — the start of
+ * THIS lap, not the reading at upload time and not the end of the lap. The
+ * keys ride inside `p_conditions` rather than as new RPC arguments, so a server
+ * that has never heard of them stores them untouched (`submit_lap` keeps the
+ * jsonb as sent, minus `pace`) and an old `leaderboard()` simply never returns
+ * them. Each is omitted rather than zeroed when the lap did not record it: a
+ * missing reading must read as "not recorded", never as an empty tank.
+ */
+export function boardLapConditions(rec: LapRecord): Record<string, number | string> {
+  const out: Record<string, number | string> = {};
+  const pos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (pos(rec.fuelStartL)) out.fuelStartL = rec.fuelStartL;
+  if (pos(rec.capacityL)) out.capacityL = rec.capacityL;
+  if (pos(rec.veStartPct)) out.veStartPct = rec.veStartPct;
+  if (typeof rec.compound === 'string' && rec.compound.trim()) {
+    out.compound = rec.compound.trim().slice(0, 32);
+  }
+  return out;
+}
+
+/**
  * Build the full desired state from every lap file on disk.
  *
  * Activity is grouped per day; bests are ALL-TIME rather than windowed, because
@@ -1299,6 +1330,7 @@ export function buildUploadPlan(dir = lapDir()): UploadPlan {
             // and a later threshold change can be argued about with evidence.
             ...(typeof rec.wetness === 'number' ? { wetness: rec.wetness } : {}),
             condition,
+            ...boardLapConditions(rec),
           },
         });
       }

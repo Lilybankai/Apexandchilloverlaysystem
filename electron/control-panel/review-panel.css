@@ -1500,7 +1500,8 @@
    of the page — instead of the numbers on the right being pushed out of it. */
 .rv-board__table { table-layout: fixed; width: 100%; }
 .rv-board__table th:nth-child(1) { width: 40px; }
-.rv-board__table th:nth-child(4) { width: 80px; }
+/* 100, not 80: the lap cell carries the session letter (board-conditions.js). */
+.rv-board__table th:nth-child(4) { width: 100px; }
 .rv-board__table th:nth-child(5) { width: 64px; }
 .rv-board__table th:nth-child(6) { width: 68px; }
 .rv-board__table td.who { text-align: left; font-family: var(--font-ui); overflow: hidden; text-overflow: ellipsis; }
