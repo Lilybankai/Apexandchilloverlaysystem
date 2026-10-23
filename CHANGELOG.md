@@ -5,6 +5,44 @@
      app until it is renamed.
 -->
 
+## 1.3.13-beta.1 — 2026-10-23
+
+### Added
+
+- **Leaderboard: see the conditions behind a time.** Hover any board time
+  with a letter beside it (P, Q or R) to see the session it was set in,
+  track and air temperature, and the fuel in the car as the lap began.
+  Qualifying laps are marked in amber, so a low-fuel quali time is easy to
+  tell from a race-fuel one. Fuel shows on laps set from this version on.
+
+- **Penalty badges.** Any car with a penalty still to serve now carries a
+  red badge in the Standings tower, the Relative panel and the Team tab's
+  timing sheet (desktop and web pit wall), so you can see when the car
+  ahead still owes a stop. It reads DT (drive-through) or SG (stop/go) where
+  the game says which, PEN where it doesn't, and ×2 for more than one, and
+  clears the moment it's served. On by default; turn it off with the new
+  PENALTY option on the Standings and Relative cards.
+
+- **Race engineer: choose your microphone.** The Engineer tab has a
+  Microphone picker. Choose your headset or leave it on System default,
+  scan again after plugging something in, and use Test mic to check the
+  engineer can hear you. If your chosen headset is unplugged, the engineer
+  uses the system default and tells you. If Windows is blocking desktop
+  apps from the microphone, the tab says which switch is off and opens the
+  setting for you.
+
+### Fixed
+
+- The engineer could say no microphone was found with a headset plugged
+  in, and stay that way until the app restarted. It now tries the
+  microphone again on every press.
+
+- OBS Browser Sources now honour the Standings AVG column setting.
+
+- OBS Browser Sources no longer draw empty white boxes beside driver names
+  in the Standings and Relative panels when a car has no brand or rating
+  badge.
+
 ## 1.3.12 — 2026-10-19
 
 A new Review: your sessions and your races in one list, each with its own
