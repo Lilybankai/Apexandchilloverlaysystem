@@ -5,7 +5,10 @@
      app until it is renamed.
 -->
 
-## 1.3.13-beta.1 — 2026-10-23
+## 1.3.13 — 2026-10-23
+
+See the conditions behind every leaderboard time, spot the cars that still
+owe a penalty, and pick the microphone your engineer listens to.
 
 ### Added
 
