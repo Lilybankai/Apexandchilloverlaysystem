@@ -2165,6 +2165,16 @@ function getEngineer() {
       // injected, like the press counter in getActions(), so engineer.js
       // keeps no analytics dependency of its own.
       noteUsage: (slug) => featureUsage.feature(slug),
+      // Microphone events (which device, scans, failures) go to stalls.log,
+      // the log "Report a problem" attaches — the 2026-10-23 "no microphone"
+      // report had nothing to send, because the listener died silently.
+      log: (line) => stallWatch.note(`ENGINEER ${line}`),
+      // "Test mic": the live input level, straight to the panel's meter.
+      onMicLevel: (payload) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('engineer:micLevel', payload);
+        }
+      },
     });
   }
   return engineerService;
@@ -5908,6 +5918,17 @@ function registerIpc() {
     }
   });
   ipcMain.handle('engineer:rate', (_evt, id, rating) => getEngineer().rate(String(id), String(rating)));
+  // The microphone picker. Both run a short-lived PowerShell child — device
+  // enumeration never happens on this thread (a wedged USB device once held
+  // main for ~10 s inside DirectInput; see gamepad.js).
+  ipcMain.handle('engineer:scanMics', () => getEngineer().scanMics());
+  ipcMain.handle('engineer:testMic', (_evt, id) => getEngineer().testMic(typeof id === 'string' ? id : ''));
+  // A fixed page, never a renderer-supplied address: Windows' microphone
+  // privacy switches, for the "Windows is blocking the microphone" line.
+  ipcMain.handle('engineer:openMicPrivacy', () => {
+    void shell.openExternal('ms-settings:privacy-microphone');
+    return { ok: true };
+  });
 
   /* ---- Team tab (pit-wall view) ---- */
   // Subscribe answers with the current snapshot so the tab paints on entry

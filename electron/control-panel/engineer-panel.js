@@ -8,6 +8,9 @@
  *
  * No polling: the initial status is fetched once, then re-renders ride the
  * pushes (which include download progress once a second while curl works).
+ * The microphone list is the one thing fetched on demand: scanned on the
+ * first visit to the tab and by "Scan for devices" (window.APEX_MIC holds the
+ * rules and the wording, shared with main).
  * Voice SAMPLES stream from the voice library over <audio> (allowed by the
  * page's media-src); "Hear" speaks locally through the real radio channel,
  * which is the honest preview once a voice is installed.
@@ -47,6 +50,14 @@
   const lastA = $('#eng-last-a');
   const rateRow = $('#eng-rate-row');
   const rateDone = $('#eng-rate-done');
+  const MIC = window.APEX_MIC || null;
+  const micSelect = $('#eng-mic');
+  const micScanBtn = $('#eng-mic-scan');
+  const micTestBtn = $('#eng-mic-test');
+  const micMeter = $('#eng-mic-meter');
+  const micMeterFill = $('#eng-mic-meter-fill');
+  const micStatus = $('#eng-mic-status');
+  const micPrivacy = $('#eng-mic-privacy');
 
   /** What each preset means, spelled out under the picker. */
   const READOUT_HINTS = {
@@ -151,7 +162,11 @@
     }
     if (!s.enabled) return ['Off. Flip the switch to put the engineer on the radio.', ''];
     if (!s.running) return ['Starting…', ''];
-    if (s.micAvailable === false) return ['Running, but no microphone was found.', 'warn'];
+    // Say which mic problem, not just that there is one — the detail (and
+    // the fix) sits under Microphone below.
+    if (s.micAvailable === false) {
+      return ["Running, but the engineer can't hear you — see Microphone below.", 'warn'];
+    }
     if (s.radioQuiet) {
       return ['Live, radio quiet — flags, penalties and box calls only until you say "talk to me" or the session changes.', 'live'];
     }
@@ -310,6 +325,129 @@
     });
   }
 
+  /* ---- microphone ------------------------------------------------------------- */
+
+  let micScan = null; // the latest scan (APEX_MIC.parseScan shape)
+  let micScanned = false; // the first-visit scan has run
+  let micTest = null; // the last test's verdict, until the choice changes
+  let micBusy = ''; // 'scan' | 'test' while one runs
+
+  /** The saved choice, from the status payload. */
+  function savedMic(s) {
+    const m = (s && s.mic) || {};
+    return { id: m.savedId || '', name: m.savedName || '' };
+  }
+
+  function renderMic(s) {
+    if (!micSelect || !MIC) return;
+    const saved = savedMic(s);
+    if (!micScan && s && s.micScan) micScan = s.micScan;
+    // Rebuild only when the list changed — a status push every second
+    // during a download must not close an open dropdown.
+    const opts = MIC.pickerOptions(micScan, saved);
+    const sig = JSON.stringify(opts);
+    if (micSelect.dataset.sig !== sig) {
+      micSelect.replaceChildren(
+        ...opts.map((o) => {
+          const el = document.createElement('option');
+          el.value = o.value;
+          el.textContent = o.label;
+          return el;
+        }),
+      );
+      micSelect.dataset.sig = sig;
+    }
+    if (document.activeElement !== micSelect && micSelect.value !== saved.id) micSelect.value = saved.id;
+    micScanBtn.disabled = !!micBusy;
+    micScanBtn.textContent = micBusy === 'scan' ? 'Scanning…' : 'Scan for devices';
+    micTestBtn.disabled = !!micBusy;
+    micTestBtn.textContent = micBusy === 'test' ? 'Listening…' : 'Test mic';
+    micMeter.hidden = micBusy !== 'test';
+
+    // One line, most urgent first: a scan that found a blocker or nothing
+    // at all; then the running listener's own word on its microphone; then
+    // the last test; then what the scan found.
+    const summary = MIC.scanSummary(micScan, saved);
+    const live = s && s.running ? MIC.micLine(s.mic) : null;
+    const test = MIC.testSummary(micTest);
+    let line = ['', ''];
+    if (summary.tone === 'warn' && (summary.privacyHelp || !micScan.ok)) line = [summary.text, 'warn'];
+    else if (micBusy === 'test') line = ['Say something — "radio check, one two"…', ''];
+    else if (test.text) line = [test.text, test.tone];
+    else if (live && live[1] === 'warn') line = live;
+    else if (summary.tone === 'warn') line = [summary.text, 'warn'];
+    else if (live) line = [`${live[0]} ${summary.text}`.trim(), live[1]];
+    else if (summary.text) line = [summary.text, ''];
+    micStatus.textContent = line[0];
+    micStatus.className = 'eng-status' + (line[1] ? ` eng-status--${line[1]}` : '');
+    micPrivacy.hidden = !(summary.privacyHelp && api.engineerOpenMicPrivacy);
+  }
+
+  async function scanMics() {
+    if (!api.engineerScanMics || micBusy) return;
+    micBusy = 'scan';
+    micTest = null;
+    renderMic(last);
+    try {
+      micScan = await api.engineerScanMics();
+    } catch (err) {
+      micScan = { ok: false, error: (err && err.message) || 'scan failed', devices: [] };
+    } finally {
+      micBusy = '';
+      micScanned = true;
+      renderMic(last);
+    }
+  }
+
+  async function testMic() {
+    if (!api.engineerTestMic || micBusy) return;
+    window.APEX_FEATURE_CATALOG?.note('action:engineer.mic-test');
+    micBusy = 'test';
+    micTest = null;
+    micMeterFill.style.width = '0%';
+    renderMic(last);
+    try {
+      micTest = await api.engineerTestMic(micSelect.value);
+    } catch (err) {
+      micTest = { ok: false, error: (err && err.message) || 'test failed' };
+    } finally {
+      micBusy = '';
+      micMeterFill.style.width = '0%';
+      renderMic(last);
+    }
+  }
+
+  if (micSelect && MIC) {
+    micSelect.addEventListener('change', () => {
+      const opt = micSelect.selectedOptions && micSelect.selectedOptions[0];
+      // The label carries " — not connected" for a missing saved device;
+      // the NAME saved is the device's own.
+      const found = micScan && micScan.ok ? micScan.devices.find((d) => d.id === micSelect.value) : null;
+      const name = micSelect.value ? (found ? found.name : savedMic(last).name || (opt && opt.textContent) || '') : '';
+      micTest = null;
+      window.APEX_FEATURE_CATALOG?.note('action:engineer.mic');
+      void api.updateSettings({ engineer: { micId: micSelect.value, micName: name } });
+    });
+    micScanBtn.addEventListener('click', () => void scanMics());
+    micTestBtn.addEventListener('click', () => void testMic());
+    if (micPrivacy) micPrivacy.addEventListener('click', () => void api.engineerOpenMicPrivacy());
+    if (api.onEngineerMicLevel) {
+      api.onEngineerMicLevel((p) => {
+        if (!p) return;
+        micMeterFill.style.width = `${p.done ? 0 : MIC.meterPct(p.level)}%`;
+      });
+    }
+  }
+
+  // The router calls this whenever the Engineer tab opens (control-panel.js
+  // showView). Scan once per launch on the first visit; Scan for devices does
+  // the rest, so a driver plugging a headset in has a button, not a wait.
+  window.apexEngineer = {
+    shown() {
+      if (!micScanned && micSelect && MIC) void scanMics();
+    },
+  };
+
   /* ---- push-to-talk binding --------------------------------------------------- */
 
   async function renderPtt() {
@@ -374,6 +512,7 @@
     voicesEl.replaceChildren(...s.voices.map((v) => voiceRow(v, s)));
     renderReclaim(s);
 
+    renderMic(s);
     renderStt(s);
     renderSttSmall(s);
     renderLastCall(s);

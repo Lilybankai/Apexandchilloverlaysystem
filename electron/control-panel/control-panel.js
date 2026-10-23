@@ -6984,6 +6984,9 @@
       void loadAdmin();
     }
     if (target === 'schedule') window.apexSchedule?.shown();
+    // The microphone list is scanned on the first visit (a PowerShell child,
+    // so never at launch for drivers who never open the tab).
+    if (target === 'engineer') window.apexEngineer?.shown();
     // Training ▸ Chase: mounted on first visit, re-read on each one after — the
     // board moves while the driver is in the sim, not while they are here.
     if (target === 'training') showTrainingChase();

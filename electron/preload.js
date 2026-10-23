@@ -98,6 +98,18 @@ contextBridge.exposeInMainWorld('apex', {
   engineerRemoveUnusedVoices: () => ipcRenderer.invoke('engineer:removeUnusedVoices'),
   /** Mark the last free-form reply useful or wrong. */
   engineerRate: (id, rating) => ipcRenderer.invoke('engineer:rate', id, rating),
+  /** List the microphones the engineer can listen on, plus Windows' privacy switches. */
+  engineerScanMics: () => ipcRenderer.invoke('engineer:scanMics'),
+  /** Listen a few seconds on one microphone ('' = System default); levels arrive via onEngineerMicLevel. */
+  engineerTestMic: (id) => ipcRenderer.invoke('engineer:testMic', id),
+  /** Open Settings › Privacy & security › Microphone. */
+  engineerOpenMicPrivacy: () => ipcRenderer.invoke('engineer:openMicPrivacy'),
+  /** The input level during a mic test: { level } … { level: 0, done }. Returns unsubscribe. */
+  onEngineerMicLevel: (callback) => {
+    const listener = (_evt, payload) => callback(payload);
+    ipcRenderer.on('engineer:micLevel', listener);
+    return () => ipcRenderer.removeListener('engineer:micLevel', listener);
+  },
   /** Status pushes: download progress, running state. Returns unsubscribe. */
   onEngineerStatus: (callback) => {
     const listener = (_evt, payload) => callback(payload);
