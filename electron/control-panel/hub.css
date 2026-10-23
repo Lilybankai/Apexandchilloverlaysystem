@@ -1437,7 +1437,7 @@ html, body { height: 100%; overflow: hidden; }
 .lbhead--board > :nth-child(1) { flex: 0 0 34px; }
 .lbhead--board > :nth-child(2) { flex: 0 0 150px; }
 .lbhead--board > :nth-child(3) { flex: 1 1 auto; }
-.lbhead--board > :nth-child(4) { flex: 0 0 92px; text-align: right; }
+.lbhead--board > :nth-child(4) { flex: 0 0 112px; text-align: right; }
 .lbhead--board > :nth-child(5) { flex: 0 0 76px; text-align: right; }
 .lbhead--board > :nth-child(6) { flex: 0 0 62px; text-align: right; }
 .lbhead--board > :nth-child(7) { flex: 0 0 84px; }
@@ -1483,7 +1483,9 @@ html, body { height: 100%; overflow: hidden; }
   white-space: nowrap;
 }
 .lbrow--board .lbrow__car { flex: 1 1 auto; }
-.lbrow--board .lbrow__time { flex: 0 0 92px; text-align: right; }
+/* 112 rather than the pace list's 92: room for the session letter beside the
+   time (board-conditions.js) without the time moving between rows. */
+.lbrow--board .lbrow__time { flex: 0 0 112px; text-align: right; }
 .lbrow--board .lbrow__gap {
   flex: 0 0 76px;
   text-align: right;
@@ -1517,6 +1519,92 @@ html, body { height: 100%; overflow: hidden; }
   vertical-align: 1px;
   white-space: nowrap;
 }
+
+/* ------------------------- board lap conditions ------------------------- */
+/*
+ * board-conditions.js: a board time that carries the conditions it was set in
+ * (migration 0043) wears a one-letter session marker — P, Q, R — and shows the
+ * card below on hover or focus. Every board surface uses these: the
+ * Leaderboard tab, Review's board peek and Compare board, Training's Chase list.
+ *
+ * The marker is quiet except for Q: a qualifying lap is the one Carl asked to
+ * be able to spot at a glance ("lots of people set their fastest times as
+ * quali laps"), so it alone takes the warn colour.
+ */
+.lbcond {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: help;
+  border-radius: 4px;
+}
+.lbcond:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.lbcond__mark {
+  display: inline-block;
+  min-width: 15px;
+  padding: 0 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+.lbcond__mark[data-session="qualifying"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+.lbcond:hover .lbcond__mark,
+.lbcond:focus-visible .lbcond__mark { color: var(--text); border-color: var(--text-3); }
+.lbcond:hover .lbcond__mark[data-session="qualifying"],
+.lbcond:focus-visible .lbcond__mark[data-session="qualifying"] { color: var(--warn); border-color: var(--warn); }
+
+/* The card. Fixed to the viewport and appended to <body>, so no board's own
+   scroller can clip it; placed by board-conditions.js above the time. */
+.lbtip {
+  position: fixed;
+  z-index: 9000;
+  min-width: 190px;
+  max-width: 320px;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-3);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  pointer-events: none;
+}
+.lbtip[hidden] { display: none; }
+.lbtip__head {
+  margin: 0 0 7px;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lbtip__head[data-session="qualifying"] { color: var(--warn); }
+.lbtip__list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+.lbtip__list dt { color: var(--text-3); white-space: nowrap; }
+.lbtip__list dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lbtip__list dd[data-muted="true"] { color: var(--text-3); font-family: var(--font-ui); font-style: italic; }
 
 /* Your own row. The rail is on the left where the position is, so it reads as
    "this line is yours" rather than as a highlighted lap time. */
