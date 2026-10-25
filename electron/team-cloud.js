@@ -73,7 +73,13 @@ const SHAPE_RESEND_MS = 5 * 60 * 1000;
  * the next track's.
  */
 const SHAPE_ASK_MS = 15 * 1000;
-/** The server refuses history over 256 KB; stay clear of the line. */
+/**
+ * Cap on the race history as JSON TEXT. The server measures jsonb, which for
+ * this data is ~1.6x the text: 240 KB of text is ~390 KB there, under its
+ * 1 MB cap (0044). Before 0044 the cap was 256 KB of jsonb, which a 62-car
+ * field passed at lap ~51 of a 24-hour race (2026-10-25), while the text
+ * still read ~165 KB.
+ */
 const HISTORY_MAX_BYTES = 240 * 1024;
 /** After this many consecutive publish failures, sit out a few beats. */
 const FAILS_BEFORE_BACKOFF = 3;
@@ -178,6 +184,19 @@ function thinHistory(history, maxBytes = HISTORY_MAX_BYTES) {
     if (size(thin) <= maxBytes) return thin;
   }
   return null;
+}
+
+/**
+ * The history clock after a publish: `{ sentAt, rev }`. A history that was
+ * attempted is charged to the clock whatever the outcome, so a refused one is
+ * not re-sent until the next 60 s window. Only an accepted one records its
+ * revision. Before this, a server refusal (history_too_large, 2026-10-25)
+ * left the clock open, every 1 Hz publish carried the history again, and
+ * every one was refused whole, so the live car stopped reaching the team.
+ */
+function historyClockAfter({ attempted, published, historyStored, rev, now, prevSentAt, prevRev }) {
+  if (!attempted) return { sentAt: prevSentAt, rev: prevRev };
+  return { sentAt: now, rev: published && historyStored ? rev : prevRev };
 }
 
 /**
@@ -565,18 +584,19 @@ async function publishTick() {
   }
 
   publishing = true;
+  let published = false;
+  let historyStored = false;
   try {
     const res = await auth.rpc('relay_publish', args);
     if (res.ok && res.body && res.body.ok !== false) {
+      published = true;
+      // 0044 drops an over-cap history from the publish and says so.
+      historyStored = res.body.history !== 'too_large';
       failStreak = 0;
       state.lastPublishAt = Date.now();
       if (args.p_map_shape) {
         lastShapeIdSent = shapeId(shape);
         lastShapeSentAt = now;
-      }
-      if (args.p_history) {
-        lastHistorySentAt = now;
-        lastHistoryRevSent = history.revision;
       }
       // The server says whether the team half landed. A team we were removed
       // from mid-race must read as an error on the crew header, not as
@@ -601,6 +621,17 @@ async function publishTick() {
     if (failStreak >= FAILS_BEFORE_BACKOFF) backoffLeft = BACKOFF_TICKS;
     setPublishStatus('error', err.message);
   } finally {
+    const clock = historyClockAfter({
+      attempted: !!args.p_history,
+      published,
+      historyStored,
+      rev: history && history.revision,
+      now,
+      prevSentAt: lastHistorySentAt,
+      prevRev: lastHistoryRevSent,
+    });
+    lastHistorySentAt = clock.sentAt;
+    lastHistoryRevSent = clock.rev;
     publishing = false;
   }
 }
@@ -865,6 +896,7 @@ module.exports = {
   overlaySources,
   resolveRelaySource,
   thinHistory,
+  historyClockAfter,
   normalizeCode,
   shapeId,
   shapeDue,
