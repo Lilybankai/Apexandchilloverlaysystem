@@ -38,6 +38,7 @@ const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
 const billingService = require('./billing');
 const startup = require('./startup');
+const titleBar = require('./titleBar');
 const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
@@ -7090,6 +7091,12 @@ function createWindow() {
     backgroundColor: '#060a12',
     title: 'Apex AIO System',
     icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
+    // No Windows caption bar: the panel's own top strip runs to the edge and
+    // is the drag area, with the real caption buttons drawn over its right
+    // end in the panel's colours. Both pages this window shows (index.html
+    // and auth.html) mark their drag area and keep clear of the buttons —
+    // see electron/titleBar.js.
+    ...titleBar.mainWindowChrome(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

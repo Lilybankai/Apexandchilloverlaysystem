@@ -47,16 +47,45 @@ html, body { height: 100%; overflow: hidden; }
 /* ------------------------------ top strip -------------------------------- */
 
 /* Identity and LIVE controls only -- see the comment in index.html. Nothing
- * here navigates, so nothing here competes with a growing list of sections. */
+ * here navigates, so nothing here competes with a growing list of sections.
+ *
+ * It is also the WINDOW'S TITLE BAR. The main window has no Windows caption
+ * bar (electron/titleBar.js): this strip runs to the top edge, dragging it
+ * moves the window, double-clicking it maximises/restores, and Windows draws
+ * the real minimise/maximise/close buttons over its right-hand end in the
+ * strip's own colours. Keep the height in step with OVERLAY_HEIGHT there.
+ *
+ * --caption-w is how wide those buttons are, read from the window-controls
+ * overlay's env(titlebar-area-*) rather than assumed (Windows sizes them by
+ * display scale). Outside that window -- a browser, the web pit wall, the
+ * screenshot harness -- the env() fallbacks make it 0 and nothing moves. */
+:root {
+  --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  --topbar-pad: 16px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 16px;
+  padding: 0 calc(var(--topbar-pad) + var(--caption-w)) 0 var(--topbar-pad);
   height: 46px;
   flex: 0 0 auto;
   background: rgba(6, 10, 18, 0.97);
   border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* Everything that can be clicked, typed in or hovered for a tooltip opts OUT
+ * of the drag area, or Windows takes the click for a window drag and the
+ * control goes dead. The whole Race/Training switch is excluded, gaps and
+ * all, so a near-miss between its two halves cannot start a drag either.
+ * The empty spacer, the logo and the feed pill stay draggable: that is the
+ * bar's grab area. scripts/test-titlebar.js holds every control in the strip
+ * to this list -- a new one that is not covered fails there. */
+.topbar :is(button, a, input, select, textarea, label, summary, [tabindex], [role], [title], .seg) {
+  -webkit-app-region: no-drag;
 }
 
 .nav__brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
@@ -452,7 +481,7 @@ html, body { height: 100%; overflow: hidden; }
 
 @media (max-width: 900px) {
   .seg__label { display: none; }
-  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar { gap: 8px; --topbar-pad: 10px; }
 }
 
 /* Near the window's 760px minimum the last labels in the strip go: the feed
@@ -1745,6 +1774,10 @@ html, body { height: 100%; overflow: hidden; }
   align-items: center;
   justify-content: center;
   padding: 32px 24px;
+  /* A tall sheet stops below the title bar: the top strip is still the
+     window's drag area under the scrim, and the caption buttons are drawn
+     over everything, so nothing of the sheet may sit up there. */
+  padding-top: max(32px, calc(env(titlebar-area-height, 0px) + 16px));
 }
 
 .sheet__scrim {

@@ -1022,6 +1022,8 @@
   align-items: center;
   justify-content: center;
   padding: 32px 24px;
+  /* Clear of the window's title bar, as .sheet is in hub.css. */
+  padding-top: max(32px, calc(env(titlebar-area-height, 0px) + 16px));
 }
 
 .su-guide__scrim {
