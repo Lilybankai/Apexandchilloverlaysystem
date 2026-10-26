@@ -58,6 +58,7 @@
     "test:racelog-outlines": "node scripts/test-racelog-outlines.js",
     "test:racelog-live": "node scripts/test-racelog-live.js",
     "test:reviewcharts": "node scripts/test-reviewcharts.js",
+    "test:comparegears": "node scripts/test-comparegears.js",
     "test:lapdetail": "node scripts/test-lapdetail.js",
     "test:ghostlap": "node scripts/test-ghostlap.js",
     "test:ghoststore": "node scripts/test-ghoststore.js",
