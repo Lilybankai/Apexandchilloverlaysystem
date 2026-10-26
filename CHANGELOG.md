@@ -5,6 +5,31 @@
      app until it is renamed.
 -->
 
+## 1.3.14-beta.1 — 2026-10-26
+
+### Changed
+
+- **The app has its own title bar.** The Windows grey caption bar is gone:
+  the dark top strip with the logo and Start button now runs to the top of
+  the window, and the minimise, maximise and close buttons sit in it in the
+  app's colours. Drag the strip to move the window, double-click it to
+  maximise. Snap Layouts still appear when you hover over maximise. The
+  Terms & Privacy window gets the same look.
+
+- **Review: both cars' gears when comparing.** Comparing a lap against
+  another (yours or a leaderboard lap) now draws both drivers' gear changes,
+  yours solid and theirs dashed, like speed, pedals and steering, and the
+  readout shows both gears at the cursor. Gear shifts no longer draw as
+  spikes down to neutral.
+
+### Fixed
+
+- **The Team relay no longer stops in a long race.** Deep into a 24-hour
+  race the relay could stop with "history_too_large", and your teammates
+  lost your car, tyres and timing along with the race charts. The server
+  side was fixed during the race; the app now also makes sure a race
+  history the server turns down can never hold up the live data.
+
 ## 1.3.13 — 2026-10-23
 
 See the conditions behind every leaderboard time, spot the cars that still
