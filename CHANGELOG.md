@@ -5,7 +5,10 @@
      app until it is renamed.
 -->
 
-## 1.3.14-beta.1 — 2026-10-26
+## 1.3.14 — 2026-10-26
+
+An app that looks like one from edge to edge, both cars' gears when you
+compare laps, and a Team relay that lasts a 24-hour race.
 
 ### Changed
 
