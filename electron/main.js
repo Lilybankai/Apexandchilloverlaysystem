@@ -38,6 +38,7 @@ const { autoUpdater } = require('electron-updater');
 const authService = require('./auth');
 const billingService = require('./billing');
 const startup = require('./startup');
+const titleBar = require('./titleBar');
 const changelog = require('./changelog');
 const updateChannel = require('./updateChannel');
 const updateCache = require('./updateCache');
@@ -7045,6 +7046,9 @@ function openLegalWindow(section) {
     title: 'Apex AIO System — Terms & Privacy',
     icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
     autoHideMenuBar: true,
+    // The document's own header is the title bar, as in the main window —
+    // see electron/titleBar.js and the header rules in legal.html.
+    ...titleBar.legalWindowChrome(),
     // A static local document: no preload, no Node, fully sandboxed.
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -7090,6 +7094,12 @@ function createWindow() {
     backgroundColor: '#060a12',
     title: 'Apex AIO System',
     icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
+    // No Windows caption bar: the panel's own top strip runs to the edge and
+    // is the drag area, with the real caption buttons drawn over its right
+    // end in the panel's colours. Both pages this window shows (index.html
+    // and auth.html) mark their drag area and keep clear of the buttons —
+    // see electron/titleBar.js.
+    ...titleBar.mainWindowChrome(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
