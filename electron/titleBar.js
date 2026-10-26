@@ -18,8 +18,8 @@
  * (see hub.css / auth.css), so nothing here has to know the button width,
  * which Windows varies with the display scale.
  *
- * Only the main window uses this. The in-game, training and VR layers are
- * frameless on purpose, and the Terms & Privacy window keeps the native bar.
+ * The main window and the Terms & Privacy window use this. The in-game,
+ * training and VR layers are frameless on purpose.
  */
 
 /*
@@ -58,4 +58,30 @@ function mainWindowChrome() {
   };
 }
 
-module.exports = { TOPBAR_HEIGHT, OVERLAY_HEIGHT, titleBarOverlay, mainWindowChrome };
+/*
+ * The Terms & Privacy window (control-panel/legal.html). Its header is the
+ * document's own `--panel` (#0b1120), a shade lighter than the control
+ * panel's strip, with `--dim` (#8b96ad) secondary text; the buttons take
+ * those so they read as part of that header. Same 46px header, same 45px
+ * buttons above its 1px rule.
+ */
+const LEGAL_OVERLAY_COLOURS = Object.freeze({
+  color: '#0b1120',
+  symbolColor: '#8b96ad',
+});
+
+/** Spread into the Terms & Privacy window's BrowserWindow options. */
+function legalWindowChrome() {
+  return {
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { ...LEGAL_OVERLAY_COLOURS, height: OVERLAY_HEIGHT },
+  };
+}
+
+module.exports = {
+  TOPBAR_HEIGHT,
+  OVERLAY_HEIGHT,
+  titleBarOverlay,
+  mainWindowChrome,
+  legalWindowChrome,
+};

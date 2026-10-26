@@ -7046,6 +7046,9 @@ function openLegalWindow(section) {
     title: 'Apex AIO System — Terms & Privacy',
     icon: path.join(__dirname, 'control-panel', 'assets', 'icon.png'),
     autoHideMenuBar: true,
+    // The document's own header is the title bar, as in the main window —
+    // see electron/titleBar.js and the header rules in legal.html.
+    ...titleBar.legalWindowChrome(),
     // A static local document: no preload, no Node, fully sandboxed.
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });

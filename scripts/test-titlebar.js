@@ -14,8 +14,9 @@
  *      under the minimise button.
  *   3. The buttons' colours or height drift from the strip they sit on.
  *
- * Plus the boundary: only the main window loses the native bar. The in-game,
- * training and VR layers stay frameless and the Terms window stays native.
+ * The Terms & Privacy window gets the same treatment over its own header.
+ * The boundary: those two windows and no others. The in-game, training and
+ * VR layers stay frameless.
  *
  * Run: node scripts/test-titlebar.js
  */
@@ -48,6 +49,7 @@ const panelCss = read(PANEL, 'control-panel.css');
 const indexHtml = read(PANEL, 'index.html');
 const authHtml = read(PANEL, 'auth.html');
 const authCss = read(PANEL, 'auth.css');
+const legalHtml = read(PANEL, 'legal.html');
 
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 /** Every `selector { body }` at any nesting depth, as [selector, body]. */
@@ -103,7 +105,7 @@ check(
 );
 
 /* -------------------------------------------------------------------------- */
-console.log('\nonly the main window');
+console.log('\nonly the main window and the Terms window');
 /* -------------------------------------------------------------------------- */
 
 /** The options object of the `new BrowserWindow({` that follows `anchor`. */
@@ -129,7 +131,6 @@ check('main.js requires electron/titleBar', /require\('\.\/titleBar'\)/.test(mai
 
 const others = [
   ['the in-game layer', mainJs, 'overlayWin = new BrowserWindow('],
-  ['the Terms & Privacy window', mainJs, 'legalWindow = new BrowserWindow('],
   ['the training layer', read(ROOT, 'electron', 'trainingLayer.js'), 'new deps.BrowserWindow('],
   ['the VR panel window', read(ROOT, 'electron', 'vr', 'index.js'), 'new this.BrowserWindow('],
 ];
@@ -138,11 +139,9 @@ for (const [name, src, anchor] of others) {
   check(`${name} is found`, Boolean(block));
   check(
     `${name} keeps its own frame`,
-    block && !/titleBarStyle|titleBarOverlay|mainWindowChrome/.test(block),
+    block && !/titleBarStyle|titleBarOverlay|WindowChrome/.test(block),
   );
-}
-for (const [name, src, anchor] of others.filter(([n]) => n !== 'the Terms & Privacy window')) {
-  check(`${name} is still frameless`, /frame:\s*false/.test(windowBlock(src, anchor) || ''));
+  check(`${name} is still frameless`, /frame:\s*false/.test(block || ''));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -187,38 +186,53 @@ for (const sheet of sheets.slice(sheets.indexOf('hub.css') + 1)) {
 console.log('\nevery control in the strip is clickable (no-drag)');
 /* -------------------------------------------------------------------------- */
 
-// The no-drag rule's selectors, as simple compounds: tag, .class, [attr].
-const noDrag = rules(hubCss)
-  .filter(([, body]) => /-webkit-app-region:\s*no-drag/.test(body))
-  .flatMap(([sel]) => {
-    const m = sel.match(/^\.topbar\s+:is\(([^)]*)\)$/);
-    if (m) return m[1].split(',').map((s) => s.trim());
-    return sel.split(',').map((s) => s.trim().replace(/^\.topbar\s+/, ''));
-  });
-check('a no-drag rule exists for the strip', noDrag.length > 0);
 const parse = (sel) => ({
   tag: (sel.match(/^[a-z][\w-]*/i) || [])[0] || null,
   classes: [...sel.matchAll(/\.([\w-]+)/g)].map((m) => m[1]),
   attrs: [...sel.matchAll(/\[([\w-]+)\]/g)].map((m) => m[1]),
 });
-const compounds = noDrag.map(parse);
-const matches = (el) =>
-  compounds.some(
-    (c) =>
-      (!c.tag || c.tag === el.tag) &&
-      c.classes.every((k) => el.classes.includes(k)) &&
-      c.attrs.every((a) => a in el.attrs) &&
-      (c.tag || c.classes.length || c.attrs.length),
-  );
+/**
+ * A stylesheet's no-drag selectors under `scope` (`.topbar`, `header`), as
+ * simple compounds (tag, .class, [attr]), returned as a matcher for parsed
+ * elements. `.count` is how many compounds it found.
+ */
+function noDragMatcher(css, scope) {
+  const list = rules(css)
+    .filter(([, body]) => /-webkit-app-region:\s*no-drag/.test(body))
+    .flatMap(([sel]) =>
+      sel
+        .split(/,(?![^(]*\))/)
+        .map((s) => s.trim())
+        .filter((s) => s.startsWith(`${scope} `))
+        .map((s) => s.slice(scope.length + 1).trim()),
+    )
+    .flatMap((s) => {
+      const m = s.match(/^:is\(([^)]*)\)$/);
+      return m ? m[1].split(',').map((x) => x.trim()) : [s];
+    });
+  const compounds = list.map(parse);
+  const fn = (el) =>
+    compounds.some(
+      (c) =>
+        (!c.tag || c.tag === el.tag) &&
+        c.classes.every((k) => el.classes.includes(k)) &&
+        c.attrs.every((a) => a in el.attrs) &&
+        (c.tag || c.classes.length || c.attrs.length),
+    );
+  fn.count = compounds.length;
+  return fn;
+}
+const matches = noDragMatcher(hubCss, '.topbar');
+check('a no-drag rule exists for the strip', matches.count > 0);
 
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
 const INTERACTIVE_TAGS = new Set(['button', 'a', 'input', 'select', 'textarea', 'label', 'summary', 'details', 'option']);
 const INTERACTIVE_ATTRS = ['tabindex', 'role', 'title', 'contenteditable', 'onclick', 'draggable'];
 
-/** Elements inside the first `<header class="topbar">`, each with its ancestors. */
-function headerElements(html) {
+/** Elements inside the first header matching `opener`, each with its ancestors. */
+function headerElements(html, opener = /<header\s+class="topbar"/) {
   const src = html.replace(/<!--[\s\S]*?-->/g, '');
-  const start = src.search(/<header\s+class="topbar"/);
+  const start = src.search(opener);
   if (start < 0) return null;
   const end = src.indexOf('</header>', start);
   const chunk = src.slice(start, end);
@@ -288,6 +302,62 @@ check(
   'the form rests below it',
   rules(authCss).some(([sel, body]) => sel === '.auth__form' && /padding-top:[^;]*env\(titlebar-area-height/.test(body)),
 );
+
+/* -------------------------------------------------------------------------- */
+console.log('\nthe Terms & Privacy window');
+/* -------------------------------------------------------------------------- */
+
+const legalBlock = windowBlock(mainJs, 'legalWindow = new BrowserWindow(');
+check('the Terms window is found in main.js', Boolean(legalBlock));
+check('it takes its title bar options', /\.\.\.titleBar\.legalWindowChrome\(\)/.test(legalBlock || ''));
+const legalStyle = (legalHtml.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+const lc = titleBar.legalWindowChrome();
+const lov = lc.titleBarOverlay || {};
+check('its caption bar is hidden', lc.titleBarStyle === 'hidden');
+check(
+  'its buttons are the colour of its header (--panel)',
+  (lov.color || '').toLowerCase() === (cssVar(legalStyle, '--panel') || '').toLowerCase(),
+  `${lov.color} vs ${cssVar(legalStyle, '--panel')}`,
+);
+check(
+  "its glyphs are the document's secondary text (--dim)",
+  (lov.symbolColor || '').toLowerCase() === (cssVar(legalStyle, '--dim') || '').toLowerCase(),
+);
+// The first `header {}` is the screen rule; the print one comes later.
+const screenHeader = (rules(legalStyle).find(([sel]) => sel === 'header') || [])[1] || '';
+check('the header is draggable', /-webkit-app-region:\s*drag/.test(screenHeader));
+check(
+  'the header is as tall as the buttons plus its rule',
+  Number((screenHeader.match(/min-height:\s*(\d+)px/) || [])[1]) === lov.height + 1,
+);
+check(
+  'its right side reserves the caption buttons',
+  /padding:[^;]*var\(--caption-w\)/.test(screenHeader) &&
+    /env\(titlebar-area-width,\s*100vw\)/.test(cssVar(legalStyle, '--caption-w') || ''),
+);
+check('a narrow window wraps the links instead of hiding them', /flex-wrap:\s*wrap/.test(screenHeader));
+// If the page itself scrolled, its scrollbar would run up the right edge
+// under the caption buttons (the close button would sit on the scroll-up end).
+const legalRule = (sel) => (rules(legalStyle).find(([s]) => s === sel) || [])[1] || '';
+check(
+  'the page does not scroll; the document does, below the header',
+  /overflow:\s*hidden/.test(legalRule('body')) && /overflow-y:\s*auto/.test(legalRule('main')),
+);
+const legalMatches = noDragMatcher(legalStyle, 'header');
+check('a no-drag rule exists for the header', legalMatches.count > 0);
+const legalInteractive = (headerElements(legalHtml, /<header>/) || []).filter(
+  (el) => INTERACTIVE_TAGS.has(el.tag) || INTERACTIVE_ATTRS.some((a) => a in el.attrs),
+);
+check(
+  "the header's three section links are seen",
+  legalInteractive.filter((el) => el.tag === 'a').length === 3,
+  `${legalInteractive.length} interactive elements`,
+);
+for (const el of legalInteractive) {
+  const name = `<${el.tag}${el.attrs.href ? ` href=${el.attrs.href}` : ''}>`;
+  check(`${name} is no-drag`, legalMatches(el) || el.ancestors.some(legalMatches), 'it would be a dead click');
+}
+check('no script in the document can add controls to the header', !/<script\b/i.test(legalHtml));
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${pass} passed, ${fail} failed`);
