@@ -18,27 +18,63 @@
       --accent: #4cc2ff;
     }
     * { box-sizing: border-box; }
+    /* The header stays put and only the document scrolls, under it. With
+       the whole page scrolling, the scrollbar ran up the right edge under
+       the caption buttons, and a section link landed its heading behind
+       the sticky header. */
+    html, body { height: 100%; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
       font: 14px/1.65 "Segoe UI", system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    /* The header is also the WINDOW'S TITLE BAR: the window has no Windows
+       caption bar (electron/titleBar.js), so dragging the header moves it,
+       double-clicking maximises, and Windows draws the real minimise /
+       maximise / close buttons over its right end in --panel. 46px tall to
+       match the 45px buttons above its 1px rule; --caption-w (read from the
+       window-controls overlay, 0 in a browser or the web build) keeps the
+       links clear of them. A narrow window wraps the links onto a second
+       row rather than pushing them under the buttons. */
+    :root {
+      --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
     }
     header {
-      position: sticky;
-      top: 0;
+      flex: 0 0 auto;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
-      padding: 14px 28px;
+      min-height: 46px;
+      padding: 0 calc(28px + var(--caption-w)) 0 28px;
       display: flex;
-      align-items: baseline;
-      gap: 18px;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 18px;
+      -webkit-app-region: drag;
+      user-select: none;
     }
-    header h1 { font-size: 15px; margin: 0; letter-spacing: 0.4px; }
-    header nav { display: flex; gap: 14px; }
-    header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+    header h1 { font-size: 15px; margin: 0; letter-spacing: 0.4px; line-height: 45px; }
+    header nav { display: flex; flex-wrap: wrap; column-gap: 14px; }
+    header a { color: var(--accent); text-decoration: none; font-size: 13px; line-height: 45px; }
     header a:hover { text-decoration: underline; }
-    main { max-width: 760px; margin: 0 auto; padding: 26px 28px 60px; }
+    /* Every link (and anything else clickable) opts out of the drag area, or
+       Windows takes the click for a window drag and the link goes dead.
+       scripts/test-titlebar.js holds the header to this. */
+    header :is(a, button, input, select, textarea, label, summary, [tabindex], [role], [title]) {
+      -webkit-app-region: no-drag;
+    }
+    /* The scroller is full width so its scrollbar sits at the window edge;
+       the text column stays 704px wide (the old 760px box less its 28px
+       sides), centred by the side padding. */
+    main {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 26px max(28px, calc((100% - 704px) / 2)) 60px;
+    }
     h2 { font-size: 18px; margin: 38px 0 6px; }
     h3 { font-size: 14px; margin: 24px 0 4px; color: var(--text); }
     h4 { font-size: 13px; margin: 18px 0 2px; color: var(--text); font-weight: 600; }
@@ -58,10 +94,11 @@
        cannot be typed out is not a citation. Needed for real: the YouTube API
        Services compliance audit is submitted as PDFs of these documents. */
     @media print {
-      body { background: #fff; color: #000; }
-      header { position: static; background: #fff; border-bottom: 1px solid #999; }
+      html, body { height: auto; }
+      body { background: #fff; color: #000; display: block; overflow: visible; }
+      header { position: static; background: #fff; border-bottom: 1px solid #999; min-height: 0; padding: 0 0 8px; }
       header nav { display: none; }
-      main { max-width: none; padding: 0 0 24px; }
+      main { overflow: visible; padding: 0 0 24px; }
       p, li, td, th, .updated { color: #222; }
       strong, h1, h2, h3, h4 { color: #000; }
       main a { color: #000; }

@@ -18,6 +18,7 @@ const {
   overlaySources,
   pickActiveSource,
   thinHistory,
+  historyClockAfter,
   normalizeCode,
   shapeId,
   shapeDue,
@@ -112,6 +113,23 @@ function check(name, cond, detail) {
     (c) => c.laps[c.laps.length - 1].lap === 380));
   check('original object untouched', big.cars[0].laps.length === 380);
   check('null history → null', thinHistory(null) === null);
+}
+
+// ── historyClockAfter: a refused history never blocks the live car ─────────
+// 2026-10-25, 24-hour race: the server refused the history (history_too_large),
+// the clock stayed open, and every 1 Hz publish re-sent it and was refused whole.
+{
+  const base = { rev: 12, now: 5000, prevSentAt: 1000, prevRev: 11 };
+  const ok = historyClockAfter({ ...base, attempted: true, published: true, historyStored: true });
+  check('accepted history records its revision and time', ok.rev === 12 && ok.sentAt === 5000);
+  const refused = historyClockAfter({ ...base, attempted: true, published: false, historyStored: false });
+  check('refused publish still charges the clock (no re-send next tick)', refused.sentAt === 5000);
+  check('refused publish does not mark the revision sent', refused.rev === 11);
+  const dropped = historyClockAfter({ ...base, attempted: true, published: true, historyStored: false });
+  check('history dropped by the server (0044) charges the clock, keeps the old revision',
+    dropped.sentAt === 5000 && dropped.rev === 11);
+  const none = historyClockAfter({ ...base, attempted: false, published: true, historyStored: true });
+  check('a publish without history leaves the clock alone', none.sentAt === 1000 && none.rev === 11);
 }
 
 // ── Circuit shape: identity, re-send, and which one a reader draws ────────

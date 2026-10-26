@@ -58,6 +58,22 @@
   const RING_PAD = 8;
   const GAP = 14;
   const EDGE = 16;
+
+  /**
+   * The highest the callout may sit. In the app window the top strip is the
+   * title bar, with the Windows caption buttons drawn over its right end, so a
+   * callout pushed into a top corner would be half under them. Elsewhere (a
+   * browser, the screenshot harness) there is no overlay and it is just EDGE.
+   */
+  function topEdge() {
+    try {
+      const wco = navigator.windowControlsOverlay;
+      if (wco && wco.visible) return Math.max(EDGE, wco.getTitlebarAreaRect().height + EDGE);
+    } catch {
+      /* no overlay API here */
+    }
+    return EDGE;
+  }
   /** How long to let a view swap settle before measuring the anchor. */
   const SETTLE_MS = 90;
 
@@ -885,8 +901,9 @@
      * used to produce exactly that: no room below, not quite enough above, and
      * a "beside" that was still vertically on top of the ring.
      */
+    const top = topEdge();
     const clampX = (x) => Math.max(EDGE, Math.min(vw - pw - EDGE, x));
-    const clampY = (y) => Math.max(EDGE, Math.min(vh - ph - EDGE, y));
+    const clampY = (y) => Math.max(top, Math.min(vh - ph - EDGE, y));
     const centredX = clampX(r.left + r.width / 2 - pw / 2);
     const centredY = clampY(r.top + r.height / 2 - ph / 2);
 
@@ -899,7 +916,7 @@
 
     const fits = (o) =>
       o.left >= EDGE &&
-      o.top >= EDGE &&
+      o.top >= top &&
       o.left + pw <= vw - EDGE &&
       o.top + ph <= vh - EDGE &&
       // And genuinely clear of the ring, not merely on the preferred side.
@@ -913,7 +930,7 @@
     const corner = {
       placement: 'beside',
       left: r.left > vw - r.right ? EDGE : vw - pw - EDGE,
-      top: r.top > vh - r.bottom ? EDGE : vh - ph - EDGE,
+      top: r.top > vh - r.bottom ? top : vh - ph - EDGE,
     };
     const chosen = options.find(fits) || corner;
 
