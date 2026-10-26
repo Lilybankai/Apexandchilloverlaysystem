@@ -1319,6 +1319,17 @@
   }
 
   /**
+   * The gear at one sample: R and N spelled as a dash reads them, and a lap
+   * that never recorded its gearbox says so rather than reading "0".
+   */
+  function gearText(cols, i) {
+    if (!CHARTS.gearKnown(cols)) return '<u>not recorded</u>';
+    const v = i === null || i === undefined ? null : cols.gear[i];
+    if (!known(v)) return dash;
+    return v < 0 ? 'R' : v === 0 ? 'N' : String(v);
+  }
+
+  /**
    * One aid's strength at one sample. A lap recorded before the aid columns
    * could be believed says so, rather than showing its gear shifts as TC.
    */
@@ -1425,7 +1436,7 @@
       <div class="rv-read"${held ? ' data-pinned="true"' : ''}>
         ${cell('delta', held ? 'Delta · held' : 'Delta', gapSec === null ? '<u>no comparison</u>' : `${fmtSec(gapSec)}<u>s</u>`, deltaBand(gapSec))}
         ${cell('speed', 'Speed', `${speedOf(ch.speedKph[i])}<u>${speedUnitLabel()}</u>`)}
-        ${cell('gear', 'Gear', String(ch.gear[i]))}
+        ${cell('gear', 'Gear', both(gearText(ch, i), gearText(vsCols, j)))}
         ${cell('throttle', 'Throttle', `${Math.round(ch.throttle[i] * 100)}<u>%</u>`)}
         ${cell('brake', 'Brake', `${Math.round(ch.brake[i] * 100)}<u>%</u>`)}
         ${cell('steer', 'Steering', both(steerText(ch, i, degrees), steerText(vsCols, j, degrees)))}

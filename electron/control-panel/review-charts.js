@@ -90,6 +90,68 @@
   }
 
   /**
+   * Whether a lap recorded its gear at all: a column the length of the lap
+   * with at least one real gear in it. Every trace since capture began has
+   * one, but a hand-edited file, or a build that never read the gearbox, would
+   * otherwise draw as a flat line on the floor that looks like a lap in
+   * neutral. Exported so the readout and the chart agree on it.
+   */
+  function gearKnown(cols, n) {
+    const g = cols && cols.gear;
+    if (!Array.isArray(g) || g.length < 2) return false;
+    if (typeof n === 'number' && g.length !== n) return false;
+    for (let i = 0; i < g.length; i++) if (g[i] > 0) return true;
+    return false;
+  }
+
+  /**
+   * The gear column as it is drawn: a shift caught mid-way held at the gear
+   * it left.
+   *
+   * The recorder samples every ~10 m and LMU reports neutral for the instant
+   * the box is between gears, so EVERY lap carries a dozen or so one-sample
+   * zeros at racing speed (measured 2026-10-26 over 1 364 local laps: 17 051
+   * one-sample blips, ~12.5 a lap, every lap). Stepped, each one is a spike
+   * to the floor; with two laps on the band that is two dozen spikes per lap
+   * and the shifts themselves are lost in them. A run of at most three
+   * non-forward samples, with a forward gear either side and the car moving,
+   * is a shift and is held; anything longer is real (a spin, a stall, the
+   * pits) and is drawn as recorded. The readout still reads the raw sample.
+   */
+  const SHIFT_BLIP_MAX = 3;
+  const SHIFT_BLIP_KPH = 30;
+  const gearCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function gearDrawn(cols) {
+    const g = cols && cols.gear;
+    if (!Array.isArray(g)) return g;
+    if (gearCache && gearCache.has(cols)) {
+      const hit = gearCache.get(cols);
+      if (hit.src === g) return hit.out;
+    }
+    const v = Array.isArray(cols.speedKph) && cols.speedKph.length === g.length ? cols.speedKph : null;
+    const out = g.slice();
+    for (let i = 1; i < out.length; i++) {
+      if (out[i] > 0 || !(out[i - 1] > 0)) continue;
+      let k = i;
+      while (k < out.length && !(g[k] > 0)) k++;
+      const run = k - i;
+      const moving = !v || v[i] > SHIFT_BLIP_KPH;
+      if (k < out.length && run <= SHIFT_BLIP_MAX && moving) {
+        for (let m = i; m < k; m++) out[m] = out[i - 1];
+      }
+      i = k - 1;
+    }
+    if (gearCache) gearCache.set(cols, { src: g, out });
+    return out;
+  }
+
+  /** The column one series draws from one lap: its own `column` view, else the raw key. */
+  function columnOf(cols, s) {
+    if (!cols) return undefined;
+    return typeof s.column === 'function' ? s.column(cols) : cols[s.key];
+  }
+
+  /**
    * The session's lap times, in order, with the stints marked.
    *
    * The y-scale is set by the CLEAN laps alone and everything else is clamped
@@ -628,7 +690,8 @@
       const bh = (usable * (band.weight || 1)) / total;
       const y0 = y;
       const y1 = y + bh;
-      out.bands.push({ y0, y1, label: band.label });
+      const placed = { y0, y1, label: band.label };
+      out.bands.push(placed);
 
       // Each band sits on its own faint plate, so a glance separates them
       // without a border per band shouting for attention.
@@ -645,7 +708,7 @@
         let mx = -Infinity;
         const reach = (cols, dd) => {
           for (const s of band.series) {
-            const col = cols[s.key];
+            const col = columnOf(cols, s);
             const scale = seriesScale(s, cols);
             if (scale === null || !Array.isArray(col) || col.length !== dd.length) continue;
             for (let i = 0; i < col.length; i++) {
@@ -693,11 +756,24 @@
       ctx.rect(x0, y0, plotW, bh);
       ctx.clip();
 
+      // Two staircases on one band agree for most of a lap — same gear at the
+      // same corner — and drawn at the same height the top one hides the
+      // other entirely, which is why gear once showed one lap only. With a
+      // second lap on a band that asks for it, the two are pulled `separate`
+      // px apart (yours above, theirs below): a quarter of a gear at most, so
+      // the axis still reads, and enough that where you agree both are seen.
+      // Only when both laps really draw: one line alone stays where its axis says.
+      const drawsAll = (cols, dd) => band.series.every((s) => !s.known || s.known(cols, dd.length));
+      const split = band.compare && o.vs && band.separate > 0
+        && drawsAll(src, dcol) && drawsAll(o.vs, o.vs.d || []) ? band.separate : 0;
+
       /** One series of one lap's columns, as a path. */
       const stroke = (cols, dd, s, style) => {
-        const col = cols[s.key];
+        const col = columnOf(cols, s);
         const scale = seriesScale(s, cols);
         if (scale === null || !Array.isArray(col) || col.length !== dd.length || !dd.length) return;
+        if (s.known && !s.known(cols, dd.length)) return;
+        const dy = style ? split : -split;
         const path = () => {
           let started = false;
           for (let i = 0; i < col.length; i++) {
@@ -706,12 +782,12 @@
             if (!inWindow(dd[i]) && !(i > 0 && inWindow(dd[i - 1]))
               && !(i + 1 < dd.length && inWindow(dd[i + 1]))) continue;
             const cx = px(dd[i]);
-            const cy = py(col[i] * scale);
+            const cy = py(col[i] * scale) + dy;
             if (!started) { ctx.moveTo(cx, cy); started = true; continue; }
             if (s.step) {
               // Gear is a step, not a slope: the gearbox does not sweep between
               // third and fourth, and a ramp claims a moment that never was.
-              ctx.lineTo(cx, py(col[i - 1] * scale));
+              ctx.lineTo(cx, py(col[i - 1] * scale) + dy);
             }
             ctx.lineTo(cx, cy);
           }
@@ -761,6 +837,26 @@
       for (const s of band.series) stroke(src, dcol, s);
 
       ctx.restore();
+
+      // A lap that never recorded this channel SAYS so, in the band, rather
+      // than drawing nothing and leaving the driver to wonder whether the
+      // other car spent the lap in neutral. Only for bands that name what is
+      // missing (`missing`), and only against a series' own `known` test.
+      if (band.missing) {
+        const lacks = [];
+        const absent = (cols, dd) => band.series.some((s) => s.known && !s.known(cols, dd.length));
+        if (absent(src, dcol)) lacks.push('mine');
+        if (band.compare && o.vs && absent(o.vs, o.vs.d || [])) lacks.push('theirs');
+        if (lacks.length) {
+          placed.missing = lacks;
+          const whose = lacks.length === 2 ? 'either lap' : lacks[0] === 'mine' ? 'this lap' : 'the other lap';
+          ctx.font = '9px Bahnschrift, "Segoe UI", sans-serif';
+          ctx.fillStyle = CSS.text3;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`${band.missing} for ${whose}`, x1 - 6, y0 + 3);
+        }
+      }
 
       // Scale: the two ends of the axis, and the band's name.
       ctx.font = '9px "Cascadia Mono", Consolas, monospace';
@@ -2257,10 +2353,23 @@
     }
     bands.push(
       {
+        // Both laps, like every other channel: yours solid, theirs dashed and
+        // paler. It was once left single on purpose ("two staircases are
+        // unreadable") and that read as the other car's gears going missing.
+        // What made two unreadable was the pair below, both now handled:
+        // the lines sit exactly on top of each other wherever the cars agree
+        // (`separate` pulls them apart), and every lap carries a dozen
+        // one-sample neutrals mid-shift that drew as spikes (`gearDrawn`).
         label: 'Gear',
         weight: 0.8,
         min: 0,
-        series: [{ key: 'gear', color: CSS.best, step: true }],
+        compare: true,
+        separate: 1.5,
+        missing: 'no gear data',
+        series: [{
+          key: 'gear', color: CSS.best, cmp: '#dccbff', step: true,
+          column: gearDrawn, known: gearKnown,
+        }],
         fmt: (v) => String(Math.round(v)),
       },
       {
@@ -2384,6 +2493,6 @@
     drawLapChart, drawTrend, drawPositions, drawRaceProgress, drawChannels, drawLapMap, drawWear,
     channelBands, distanceAtPoint, stationNear, holdPlan,
     brakePoints, brakePointPairs,
-    aidsKnown, steerRangeOf, drawWheel,
+    aidsKnown, steerRangeOf, drawWheel, gearKnown, gearDrawn,
   };
 });

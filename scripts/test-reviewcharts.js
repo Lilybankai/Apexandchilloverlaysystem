@@ -711,7 +711,10 @@ function squareMap(rise) {
     withDelta[0].floor === 0.1);
   check('speed, the pedals and the steering accept a second lap',
     plain[0].compare === true && plain[1].compare === true && plain[3].compare === true);
-  check('gear does not — two staircases are unreadable', !plain[2].compare);
+  // It once did not ("two staircases are unreadable"), and Carl read that as
+  // the other car's gears going missing. test-comparegears.js covers why the
+  // pair is now readable.
+  check('so does gear — both cars\' shifts, pulled apart', plain[2].compare === true && plain[2].separate > 0);
 }
 
 {
