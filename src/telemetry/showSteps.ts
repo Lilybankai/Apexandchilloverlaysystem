@@ -40,6 +40,8 @@ export const SHOW_MARGIN_M = 60;
 export const SHOW_MAX_RUN_M = 400;
 /** A point closer than this to the reference's gets no arrow, metres. */
 export const MIN_ARROW_M = 3;
+/** An apex this much slower is named as the cause of a slow exit, km/h. */
+const MIN_APEX_CAUSE_KPH = 3;
 /** A corner whose driver loss is under this is not worth a step, seconds. */
 export const SHOW_MIN_SEC = 0.02;
 
@@ -181,10 +183,12 @@ function sentence(c: CornerPhaseLoss, own: number, worst: CoachPhase, arrow: Sho
   const minGap = c.mine.minKph !== null && c.ref.minKph !== null ? c.mine.minKph - c.ref.minKph : null;
   const exitGap = c.mine.exitKph !== null && c.ref.exitKph !== null ? c.mine.exitKph - c.ref.exitKph : null;
   const phase = arrowPhase ?? worst;
-  if ((phase === 'turnIn' || phase === 'midCorner' || phase === 'braking') && minGap !== null && minGap <= -1) {
+  if (phase === 'exit' || phase === 'exitRun') {
+    // A slow exit usually starts with a slow apex: say so when it did.
+    if (minGap !== null && minGap <= -MIN_APEX_CAUSE_KPH) advice.push(`carry ${kph(minGap)} more through the apex`);
+    else if (exitGap !== null && exitGap <= -1) advice.push(`${kph(exitGap)} more on the exit`);
+  } else if (minGap !== null && minGap <= -1) {
     advice.push(`carry ${kph(minGap)} more to the apex`);
-  } else if ((phase === 'exit' || phase === 'exitRun') && exitGap !== null && exitGap <= -1) {
-    advice.push(`${kph(exitGap)} more on the exit`);
   }
   if (advice.length) {
     const line = advice.join(' and ');

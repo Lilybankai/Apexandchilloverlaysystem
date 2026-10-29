@@ -357,7 +357,7 @@ function straightShare(
   if (Math.abs(sec) > Math.abs(runLoss)) sec = runLoss;
 
   const flag: 'tow' | 'car' = Math.abs(e[e.length - 1]!) < TOW_COLLAPSE * peak ? 'tow' : 'car';
-  return { flag, sec: Math.round(sec * 10000) / 10000 };
+  return { flag, sec };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
