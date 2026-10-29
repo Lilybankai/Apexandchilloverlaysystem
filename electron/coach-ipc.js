@@ -101,10 +101,31 @@ function inputHash(kind, context, facts, version) {
 }
 
 /** A CoachAiRequest from a report and its context. */
+/**
+ * A report's facts, most important first, for when there are more than
+ * MAX_FACTS (a Road Atlanta session has 85). Report order puts every corner's
+ * detail before the session-wide facts, so a plain cut dropped exactly what
+ * the takeaways cite — the braking pattern, the sector, the aim. First the
+ * facts the template cites, then the session-wide ones, then the rest as
+ * they came.
+ */
+function factsByWeight(report) {
+  const facts = Array.isArray(report && report.facts) ? report.facts : [];
+  const cited = new Set([
+    ...(Array.isArray(report.takeaways) ? report.takeaways : []).flatMap((t) => (t && Array.isArray(t.factIds) ? t.factIds : [])),
+    ...(Array.isArray(report.worst) ? report.worst : []).flatMap((w) => (w && Array.isArray(w.factIds) ? w.factIds : [])),
+  ]);
+  const rank = (f) => (cited.has(f && f.id) ? 0 : /^(?:session|pattern|seq|fair|lap|S\d)\./.test(String(f && f.id)) ? 1 : 2);
+  return facts
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i)
+    .map((x) => x.f);
+}
+
 function requestFromReport(report, context, version) {
   const kind = report && report.scope === 'lap' ? 'lap' : 'session';
   const ctx = wireContext(context);
-  const facts = wireFacts(report && report.facts);
+  const facts = wireFacts(report ? factsByWeight(report) : []);
   return { kind, inputHash: inputHash(kind, ctx, facts, version), context: ctx, facts };
 }
 

@@ -64,6 +64,17 @@ console.log('\n§1 the request and its hash');
   check('a changed fact changes the hash', T.requestFromReport(changed, CTX, COACH_REPORT_VERSION).inputHash !== req.inputHash);
   check('a new template version changes the hash', T.requestFromReport(REPORT, CTX, COACH_REPORT_VERSION + 1).inputHash !== req.inputHash);
   check('the context changes the hash', T.requestFromReport(REPORT, { ...CTX, track: 'Spa' }, COACH_REPORT_VERSION).inputHash !== req.inputHash);
+  // 85 facts with the cited and session-wide ones LAST, as a real session
+  // orders them: the cut must keep those and drop corner detail instead.
+  {
+    const detail = Array.from({ length: 80 }, (_, i) => ({ id: `C${(i % 9) + 1}.d${i}`, kind: 'x', value: i, unit: 's', text: `detail ${i}` }));
+    const tail = ['pattern.brakeEarly', 'S3.loss', 'session.aimFor', 'seq.C2-C4.loss', 'C2.loss'].map((id, i) => ({ id, kind: 'x', value: i, unit: 's', text: `wide ${id}` }));
+    const rep = { scope: 'session', facts: [...detail, ...tail], takeaways: [{ factIds: ['pattern.brakeEarly', 'C2.loss'] }], worst: [{ factIds: ['C2.loss'] }] };
+    const sent = new Set(T.requestFromReport(rep, CTX, COACH_REPORT_VERSION).facts.map((f) => f.id));
+    check('over the cap: cited facts are kept', sent.has('pattern.brakeEarly') && sent.has('C2.loss'));
+    check('over the cap: session-wide facts are kept', sent.has('S3.loss') && sent.has('session.aimFor') && sent.has('seq.C2-C4.loss'));
+    check('over the cap: corner detail is what goes', !sent.has('C9.d80') && sent.size === 60);
+  }
   const many = { scope: 'session', facts: Array.from({ length: 90 }, (_, i) => ({ id: `f${i}`, kind: 'x', value: i, unit: 's', text: `fact ${i}` })) };
   check('facts capped at 60', T.requestFromReport(many, CTX, 1).facts.length === 60);
   const raw = T.requestFromRaw({ kind: 'habits', inputHash: 'aimed', context: CTX, facts: FACTS }, COACH_REPORT_VERSION);
