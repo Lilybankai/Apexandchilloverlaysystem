@@ -1,0 +1,80 @@
+/*
+ * show-me.css — the "Show me" step-through (show-me.js). Host-agnostic: the
+ * Review Coach tab and the Practice tab both mount it, so nothing here
+ * reaches outside `.showme`.
+ */
+
+.showme {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.showme__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.showme__btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-2, #2a3448);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel-2, #101724);
+  color: var(--text, #f4f6fb);
+  font: 600 18px/1 var(--font-display, sans-serif);
+  cursor: pointer;
+}
+.showme__btn:hover:not(:disabled) { border-color: var(--cyan, #26bbf4); }
+.showme__btn:focus-visible { outline: 1px solid var(--cyan, #26bbf4); outline-offset: 1px; }
+.showme__btn:disabled { opacity: 0.35; cursor: default; }
+
+.showme__head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 13px var(--font-display, sans-serif);
+  color: var(--text-2, #9aa4b8);
+}
+.showme__count { color: var(--text-3, #66708a); font-weight: 600; }
+.showme__corner,
+.showme__title { overflow: hidden; text-overflow: ellipsis; }
+.showme__corner::before,
+.showme__title::before { content: '·'; margin: 0 6px; color: var(--text-3, #66708a); }
+.showme__corner:empty { display: none; }
+.showme__corner { color: var(--cyan, #26bbf4); font-weight: 600; }
+.showme__title { color: var(--text, #f4f6fb); font-weight: 600; }
+
+.showme__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text, #f4f6fb);
+}
+
+.showme__dots { display: flex; gap: 6px; padding-left: 36px; }
+.showme__dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--line-2, #2a3448);
+  cursor: pointer;
+}
+.showme__dot[data-on='true'] { background: #ffb020; }
+.showme__dot:focus-visible { outline: 1px solid var(--cyan, #26bbf4); outline-offset: 2px; }
+
+.showme--empty { font-size: 12px; color: var(--text-3, #66708a); }
