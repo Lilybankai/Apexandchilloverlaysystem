@@ -4908,6 +4908,9 @@ function registerIpc() {
     }
   });
 
+  // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
+  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
+
   ipcMain.handle('review:sessions', () => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
