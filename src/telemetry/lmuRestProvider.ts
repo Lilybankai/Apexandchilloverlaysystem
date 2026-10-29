@@ -52,7 +52,7 @@ import { PitStopCounter } from './pitStopCounter';
 import { predictLapsToFlag } from './lapsToFlag';
 import { resolveTimeRemaining } from './sessionClock';
 import { buildRadar, type RadarCar } from './radar';
-import { TrackMapBuilder } from './trackMap';
+import { TrackMapBuilder, trackKey as mapKeyOf } from './trackMap';
 import {
   TELEMETRY_SCHEMA_VERSION,
   UNKNOWN_VALUE,
@@ -3795,7 +3795,16 @@ export class LmuRestProvider implements TelemetryProvider {
     }
     const trackKey = trackKeyOf(trackName, trackLenM);
     this.ghost.sync(
-      { sim: 'lmu', trackKey, carClass, condition: conditionOf(wetness), trackLengthM: trackLenM },
+      {
+        sim: 'lmu',
+        trackKey,
+        carClass,
+        condition: conditionOf(wetness),
+        trackLengthM: trackLenM,
+        // The corner catalogue's key: the track map's, as `lapDetail.mapKeyForLap`
+        // builds it for a stored lap (LMU publishes no layout name).
+        mapKey: mapKeyOf(trackName, undefined, trackLenM),
+      },
       nowMs,
     );
   }

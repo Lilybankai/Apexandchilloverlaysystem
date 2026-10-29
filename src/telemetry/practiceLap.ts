@@ -19,11 +19,13 @@
  *
  * The comparison arithmetic is `lapDetail.compareWith` — the same delta and
  * micro-sectors the Review tab draws — and the corners are the debrief's own
- * (`practiceReference`), so "C5" here is "C5" in the debrief and on track.
+ * (`practiceReference`, numbered by the layout's corner catalogue when it has
+ * one), so "C5" here is "C5" in the debrief, on track, and next session.
  */
 
 import { cornerResult, type LapColumns } from './corners';
 import { colAt, lineOffset, minSpeed, scoreLap, type AccuracyScore } from './accuracyScore';
+import { catalogForTrack } from './cornerCatalog';
 import { lapDir as defaultLapDir } from './lapLog';
 import {
   compareWith,
@@ -39,8 +41,10 @@ import { readTrace, traceDir as defaultTraceDir, type CompletedTrace, type Trace
 import {
   bestValidLap,
   cleanCols,
+  cornerIdOf,
   practiceReference,
   type PracticeColumns,
+  type PracticeCornerSpan,
   type PracticeTargetInfo,
 } from './practiceReview';
 import { findSnapshot, type PracticeReviewDeps } from './practiceReviewLoad';
@@ -56,6 +60,8 @@ export interface PracticeLapArgs {
 /** One corner of the studied lap against the target. Signs as everywhere: positive seconds = slower. */
 export interface PracticeCornerRow {
   index: number;
+  /** Catalogue id ('C5'); C(index+1) when the layout has no catalogue. */
+  id?: string;
   entryD: number;
   apexD: number;
   exitD: number;
@@ -136,7 +142,7 @@ export function cornerTip(r: { deltaSec: number | null; brakeDeltaM: number | nu
 export function cornerRows(
   lap: PracticeColumns,
   ref: PracticeColumns,
-  corners: { entryD: number; apexD: number; exitD: number }[],
+  corners: PracticeCornerSpan[],
   lengthM: number,
 ): PracticeCornerRow[] {
   const scored = scoreLap(lap, ref, corners, lengthM);
@@ -148,6 +154,7 @@ export function cornerRows(
     const refMinKph = minSpeed(ref, c.entryD, c.exitD);
     return {
       index,
+      id: cornerIdOf(c, index),
       entryD: c.entryD,
       apexD: c.apexD,
       exitD: c.exitD,
@@ -224,7 +231,7 @@ export function loadPracticeLap(args: PracticeLapArgs, deps: PracticeReviewDeps)
     const c = bestFile && bestFile.trace ? cleanCols(bestFile.trace) : null;
     if (c) cols.set(best.id, c);
   }
-  const reference = practiceReference(session, cols, snap ? snap.target : null);
+  const reference = practiceReference(session, cols, snap ? snap.target : null, catalogForTrack(session));
   if (!reference) return null;
 
   const out: PracticeLapResult = { ...base, target: reference.target, corners: [], score: null };

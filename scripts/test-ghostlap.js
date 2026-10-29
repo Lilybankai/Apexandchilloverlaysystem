@@ -446,7 +446,10 @@ console.log('14) /ghost.json — the contract');
   check('every column is index-aligned with d', ['t', 'x', 'z', 'brake', 'throttle', 'steer', 'gear', 'speedKph'].every((k) => j[k].length === j.d.length));
   check('brakes are {d, x, z}', j.brakes.every((b) => Object.keys(b).sort().join(',') === 'd,x,z'));
   const ck = Object.keys(j.corners[0]).sort().join(',');
-  check('corners are {entryD, apexD, exitD, apexX, apexZ, minKph} and nothing else', ck === 'apexD,apexX,apexZ,entryD,exitD,minKph', ck);
+  // `id` since the corner catalogue (2026-10-29): the catalogue's 'C5', or
+  // C(index+1) off the lap itself — here, a ghost built with no catalogue.
+  check('corners are {id, entryD, apexD, exitD, apexX, apexZ, minKph} and nothing else', ck === 'apexD,apexX,apexZ,entryD,exitD,id,minKph', ck);
+  check('corners without a catalogue are numbered C1..Cn by position', j.corners.every((c, i) => c.id === `C${i + 1}`));
   check('corners in order, entry < apex < exit', j.corners.every((c, i) => c.entryD < c.apexD && c.apexD < c.exitD && (i === 0 || c.entryD >= j.corners[i - 1].exitD)));
   // The sector lines must land where the Review tab puts them: the same
   // derivation, run on the cleaned curve rather than the raw columns.

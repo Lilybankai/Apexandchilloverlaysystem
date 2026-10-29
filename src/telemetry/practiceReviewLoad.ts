@@ -34,6 +34,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { catalogForTrack } from './cornerCatalog';
 import { lapDir as defaultLapDir } from './lapLog';
 import { readTrace, traceDir as defaultTraceDir, type TraceFile } from './lapTrace';
 import { loadSession } from './stintReview';
@@ -137,5 +138,6 @@ export function loadPracticeReview(sessionId: string, deps: PracticeReviewDeps):
     traces,
     target: snap ? snap.target : null,
     endedAt: snap && snap.endedAt ? snap.endedAt : undefined,
+    catalog: catalogForTrack(session),
   });
 }

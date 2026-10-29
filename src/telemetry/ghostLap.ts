@@ -62,7 +62,9 @@
  */
 
 import { brakePoints } from './brakePoints';
-import { findCorners, type Corner } from './corners';
+import type { Corner } from './corners';
+import type { CornerCatalog } from './coachContract';
+import { catalogCorners } from './cornerCatalogSnap';
 import { interpDist, interpTime, type Sample } from './paceDelta';
 import type { TraceFile } from './lapTrace';
 import { UNKNOWN_VALUE, type GhostState } from './types';
@@ -146,8 +148,14 @@ export interface GhostLap {
   /**
    * The lap cut into corners, computed once when the ghost is built. Absent
    * when the lap has no speed channel. See `corners.ts`.
+   *
+   * With the layout's corner catalogue (`cornerCatalog.ts`), these are the
+   * catalogue's corners snapped onto this lap, in catalogue order, so
+   * `corners[k].id === 'C' + (k + 1)` and the live Corner Analysis numbers
+   * the same corner the same way every session. Without one, the lap's own,
+   * `id` C1..Cn. See {@link applyCornerCatalog}.
    */
-  corners?: Corner[];
+  corners?: (Corner & { id?: string })[];
   /**
    * Where the sim's S1 and S2 lines fell on this lap, as lap fractions, so a
    * sector readout can split the reference at the real sector lines rather
@@ -236,7 +244,11 @@ export function cleanTraceIndexed(
  *
  * @param label - Overlay label; see {@link GhostLap.label}.
  */
-export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null {
+export function ghostFromTrace(
+  file: TraceFile,
+  label: string,
+  catalog: CornerCatalog | null = null,
+): GhostLap | null {
   const tr = file?.trace;
   if (!tr || !Array.isArray(tr.d) || !Array.isArray(tr.t)) return null;
 
@@ -301,12 +313,35 @@ export function ghostFromTrace(file: TraceFile, label: string): GhostLap | null 
   const sectorD = sectorLines(trace, lapSec, file.lapMs, file.s1Ms, file.s2Ms);
   if (sectorD) lap.sectorD = sectorD;
   if (speedKph) {
-    lap.corners = findCorners(
+    lap.corners = catalogCorners(
       { d, speedKph, ...(brake ? { brake } : {}), ...(throttle ? { throttle } : {}), ...line },
       trackLengthM,
+      catalog,
     );
   }
   return lap;
+}
+
+/**
+ * Re-cut a built ghost's corners against the layout's catalogue — for the
+ * selector, which knows the layout but builds laps through loaders that do
+ * not. Replaces the array (never mutates it), so a frame already holding the
+ * old list keeps it. A `null` catalogue leaves the lap's own corners alone.
+ */
+export function applyCornerCatalog(lap: GhostLap, catalog: CornerCatalog | null): void {
+  if (!catalog || !lap.speedKph || !(lap.trackLengthM > 0)) return;
+  const line = ghostHasLine(lap) ? { x: lap.x!, z: lap.z! } : {};
+  lap.corners = catalogCorners(
+    {
+      d: lap.trace.map((sm) => sm.d),
+      speedKph: lap.speedKph,
+      ...(lap.brake ? { brake: lap.brake } : {}),
+      ...(lap.throttle ? { throttle: lap.throttle } : {}),
+      ...line,
+    },
+    lap.trackLengthM,
+    catalog,
+  );
 }
 
 /**
@@ -466,6 +501,8 @@ export function getPublishedGhost(): GhostLap | null {
 
 /** A corner as `/ghost.json` serves it. See `corners.ts` for how each is found. */
 export interface GhostJsonCorner {
+  /** Catalogue id ('C5'), or C(index+1) off the reference when the layout has no catalogue. */
+  id?: string;
   entryD: number;
   apexD: number;
   exitD: number;
@@ -537,6 +574,7 @@ export function ghostJson(lap: GhostLap | null): GhostJson | null {
     ...(lap.corners
       ? {
           corners: lap.corners.map((c) => ({
+            ...(c.id ? { id: c.id } : {}),
             entryD: round6(c.entryD),
             apexD: round6(c.apexD),
             exitD: round6(c.exitD),
