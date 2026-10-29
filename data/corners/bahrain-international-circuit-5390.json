@@ -1,0 +1,145 @@
+{
+  "mapKey": "bahrain-international-circuit-5390",
+  "trackLengthM": 5387,
+  "builtFrom": 17,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.103265,
+      "apexD": 0.136155,
+      "exitD": 0.14229,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.14648,
+      "apexD": 0.15457,
+      "exitD": 0.1599,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.252872,
+      "apexD": 0.281248,
+      "exitD": 0.29461,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C4",
+      "entryD": 0.333755,
+      "apexD": 0.35001,
+      "exitD": 0.36229,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.36535,
+      "apexD": 0.37665,
+      "exitD": 0.38009,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.398397,
+      "apexD": 0.42099,
+      "exitD": 0.42585,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.475099,
+      "apexD": 0.50617,
+      "exitD": 0.51018,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C8",
+      "entryD": 0.613896,
+      "apexD": 0.64102,
+      "exitD": 0.64706,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.688525,
+      "apexD": 0.7111,
+      "exitD": 0.720345,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C10",
+      "entryD": 0.738962,
+      "apexD": 0.762485,
+      "exitD": 0.76855,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C11",
+      "entryD": 0.882147,
+      "apexD": 0.91196,
+      "exitD": 0.91845,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C4",
+        "C5",
+        "C6"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 17,
+    "local": 0,
+    "cloud": 17,
+    "cutBy": {
+      "line": 15,
+      "latG": 2
+    },
+    "classes": {
+      "HYPERCAR": 5,
+      "GT3": 8,
+      "LMP3": 2,
+      "LMP2_ELMS": 1,
+      "GTE": 1
+    },
+    "support": [
+      1,
+      1,
+      1,
+      0.76,
+      1,
+      1,
+      1,
+      1,
+      0.94,
+      1,
+      1
+    ]
+  }
+}

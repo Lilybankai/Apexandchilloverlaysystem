@@ -1,0 +1,134 @@
+{
+  "mapKey": "fuji-speedway-4540",
+  "trackLengthM": 4536,
+  "builtFrom": 19,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.125804,
+      "apexD": 0.16716,
+      "exitD": 0.17488,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.263114,
+      "apexD": 0.290995,
+      "exitD": 0.29756,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.344506,
+      "apexD": 0.3797,
+      "exitD": 0.39012,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.417473,
+      "apexD": 0.441545,
+      "exitD": 0.44985,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.590669,
+      "apexD": 0.62673,
+      "exitD": 0.63048,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.63304,
+      "apexD": 0.640295,
+      "exitD": 0.64496,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.67334,
+      "apexD": 0.68731,
+      "exitD": 0.70013,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.725947,
+      "apexD": 0.75204,
+      "exitD": 0.75996,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.787341,
+      "apexD": 0.810605,
+      "exitD": 0.82066,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C3",
+        "C4"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C5",
+        "C6"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C7",
+        "C8"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 19,
+    "local": 0,
+    "cloud": 19,
+    "cutBy": {
+      "line": 13,
+      "latG": 6
+    },
+    "classes": {
+      "LMP2_ELMS": 1,
+      "GT3": 13,
+      "HYPERCAR": 2,
+      "LMP3": 2,
+      "GTE": 1
+    },
+    "support": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.95,
+      1
+    ]
+  }
+}

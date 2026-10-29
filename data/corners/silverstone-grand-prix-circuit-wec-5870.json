@@ -1,0 +1,178 @@
+{
+  "mapKey": "silverstone-grand-prix-circuit-wec-5870",
+  "trackLengthM": 5869,
+  "builtFrom": 12,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.029878,
+      "apexD": 0.049767,
+      "exitD": 0.05234,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.07331,
+      "apexD": 0.087655,
+      "exitD": 0.09082,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.107814,
+      "apexD": 0.133628,
+      "exitD": 0.14008,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.145099,
+      "apexD": 0.157843,
+      "exitD": 0.161765,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.285841,
+      "apexD": 0.320818,
+      "exitD": 0.325465,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.33192,
+      "apexD": 0.34819,
+      "exitD": 0.36039,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.479478,
+      "apexD": 0.50279,
+      "exitD": 0.50653,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C8",
+      "entryD": 0.59614,
+      "apexD": 0.6129,
+      "exitD": 0.61707,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.623166,
+      "apexD": 0.63906,
+      "exitD": 0.64443,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.648415,
+      "apexD": 0.661863,
+      "exitD": 0.669665,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.806132,
+      "apexD": 0.839146,
+      "exitD": 0.84747,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C12",
+      "entryD": 0.896671,
+      "apexD": 0.91866,
+      "exitD": 0.923135,
+      "dir": "L",
+      "seq": "S4"
+    },
+    {
+      "id": "C13",
+      "entryD": 0.9242,
+      "apexD": 0.929472,
+      "exitD": 0.93585,
+      "dir": "R",
+      "seq": "S4"
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C2",
+        "C3",
+        "C4"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C5",
+        "C6"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C8",
+        "C9",
+        "C10"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S4",
+      "cornerIds": [
+        "C12",
+        "C13"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 12,
+    "local": 0,
+    "cloud": 12,
+    "cutBy": {
+      "line": 3,
+      "latG": 9
+    },
+    "classes": {
+      "GT3": 7,
+      "HYPERCAR": 4,
+      "LMP2": 1
+    },
+    "support": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.92,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

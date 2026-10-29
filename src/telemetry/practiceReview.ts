@@ -15,11 +15,16 @@
  *     the lap, added up) and its consistency;
  *   - per corner, what it cost on average and how it was usually driven.
  *
- * Corners come from the REFERENCE, in its own order, named C1..Cn on screen.
+ * Corners are numbered by the layout's CORNER CATALOGUE (`cornerCatalog.ts`)
+ * when it has one: the reference's own corners snapped onto the catalogue's,
+ * so "C5" is the same corner every session, whichever lap is the reference.
+ * Without a catalogue they are the reference's own, C1..Cn in its order.
  * When the target carries the `corners` list `/ghost.json` serves, that list
- * is used as it is — it is the list the live Corner Analysis numbered, so
- * "C5" here is the C5 the driver saw. Otherwise `findCorners()` cuts them from
- * the reference's columns, which is how that list was made in the first place.
+ * is used as it is — it is the list the live Corner Analysis numbered (by the
+ * same catalogue since it shipped, by position before), so "C5" here is the
+ * C5 the driver saw. Otherwise the reference's columns are cut the way that
+ * list is made (`cornerCatalogSnap.catalogCorners`). Every corner row carries
+ * its `id`.
  *
  * ## Signs, and why they are pinned
  * Positive is LOSING everywhere a time is involved (`deltaSec`, a corner's
@@ -37,7 +42,9 @@
  * Pure: no fs, no Electron, no clock. `practiceReviewLoad.ts` does the reading.
  */
 
-import { cornerResult, findCorners, type CornerTrace, type LapColumns } from './corners';
+import { cornerResult, type CornerTrace, type LapColumns } from './corners';
+import { catalogCorners } from './cornerCatalogSnap';
+import type { CornerCatalog } from './coachContract';
 import { scoreLap, type AccuracyScore } from './accuracyScore';
 import type { ReviewLap, ReviewSession } from './stintReview';
 import type { TraceFile } from './lapTrace';
@@ -56,6 +63,8 @@ export interface PracticeTargetInfo {
 
 export interface PracticeLapCorner {
   index: number;
+  /** Catalogue id ('C5'); C(index+1) when the layout has no catalogue. */
+  id?: string;
   deltaSec: number | null;
   brakeDeltaM: number | null;
   apexKphDelta: number | null;
@@ -77,8 +86,14 @@ export interface PracticeLap {
 }
 
 export interface CornerSummary {
-  /** C(index+1) on screen; the reference's own order, never official names. */
+  /** Position in the list; never an official name. */
   index: number;
+  /**
+   * What to show: the catalogue id ('C5'), stable across sessions, or
+   * C(index+1) off the reference when the layout has no catalogue (or the
+   * target was snapshotted before the catalogue shipped).
+   */
+  id?: string;
   entryD: number;
   apexD: number;
   exitD: number;
@@ -135,7 +150,7 @@ export interface PracticeTargetSnapshot {
     x?: readonly number[];
     z?: readonly number[];
     trackLengthM?: number;
-    corners?: readonly { entryD: number; apexD: number; exitD: number }[];
+    corners?: readonly { id?: string; entryD: number; apexD: number; exitD: number }[];
   };
 }
 
@@ -147,6 +162,11 @@ export interface PracticeReviewInput {
   target: PracticeTargetSnapshot | null;
   /** When the session ended (the detector's answer); falls back to the session's own end. */
   endedAt?: string;
+  /**
+   * The layout's corner catalogue (`cornerCatalog.catalogForTrack(session)`),
+   * or null / absent to number off the reference as before.
+   */
+  catalog?: CornerCatalog | null;
 }
 
 /** Laps within this share of the best count towards the consistency figure. */
@@ -253,11 +273,31 @@ function coversLap(c: PracticeColumns): boolean {
   return c.d[0]! <= 0.02 && c.d[c.d.length - 1]! >= 0.98;
 }
 
-/** The reference's corners, or none when it has no speed channel to cut them from. */
-function cornersOf(c: PracticeColumns, lengthM: number): { entryD: number; apexD: number; exitD: number }[] {
-  if (!c.speedKph) return [];
-  return findCorners({ ...c, speedKph: c.speedKph } as CornerTrace, lengthM);
+/** A corner as the review cuts by it. `id` is always set by this module. */
+export interface PracticeCornerSpan {
+  id?: string;
+  entryD: number;
+  apexD: number;
+  exitD: number;
 }
+
+/**
+ * The reference's corners, numbered by the catalogue when there is one, or
+ * none when it has no speed channel to cut them from.
+ */
+function cornersOf(c: PracticeColumns, lengthM: number, catalog: CornerCatalog | null): PracticeCornerSpan[] {
+  if (!c.speedKph) return [];
+  return catalogCorners({ ...c, speedKph: c.speedKph } as CornerTrace, lengthM, catalog).map((k) => ({
+    id: k.id,
+    entryD: k.entryD,
+    apexD: k.apexD,
+    exitD: k.exitD,
+  }));
+}
+
+/** The id to show for a corner at `index`. */
+export const cornerIdOf = (c: { id?: string } | undefined, index: number): string =>
+  c && typeof c.id === 'string' && c.id ? c.id : `C${index + 1}`;
 
 /* -------------------------------------------------------------------------- */
 /*  Small numerics                                                            */
@@ -299,7 +339,7 @@ export interface PracticeReference {
   target: PracticeTargetInfo;
   /** The reference's cleaned columns. */
   ref: PracticeColumns;
-  corners: { entryD: number; apexD: number; exitD: number }[];
+  corners: PracticeCornerSpan[];
 }
 
 /**
@@ -313,6 +353,7 @@ export function practiceReference(
   s: ReviewSession,
   cols: Map<string, PracticeColumns>,
   snapshot: PracticeTargetSnapshot | null,
+  catalog: CornerCatalog | null = null,
 ): PracticeReference | null {
   const L = s.trackLengthM > 0 ? s.trackLengthM : 0;
   if (snapshot) {
@@ -322,10 +363,13 @@ export function practiceReference(
       return {
         target: { kind: snapshot.kind, label: snapshot.label, lapId: snapshot.lapId, lapSec: snapshot.lapSec },
         ref,
+        // The served list is what the driver saw: its own ids when the ghost
+        // was numbered by the catalogue, else its positions — never renumbered
+        // here, or the review would call the C5 on screen something else.
         corners:
           Array.isArray(served) && served.length > 0
-            ? served.map((c) => ({ entryD: c.entryD, apexD: c.apexD, exitD: c.exitD }))
-            : cornersOf(ref, L > 0 ? L : snapshot.columns.trackLengthM || 0),
+            ? served.map((c, i) => ({ id: cornerIdOf(c, i), entryD: c.entryD, apexD: c.apexD, exitD: c.exitD }))
+            : cornersOf(ref, L > 0 ? L : snapshot.columns.trackLengthM || 0, catalog),
       };
     }
   }
@@ -340,7 +384,7 @@ export function practiceReference(
   return {
     target: { kind: 'sessionBest', label: `Session best · ${fmtLap(lapSec)}`, lapId: best.id, lapSec },
     ref,
-    corners: cornersOf(ref, L),
+    corners: cornersOf(ref, L, catalog),
   };
 }
 
@@ -373,7 +417,7 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     if (c) cols.set(lap.id, c);
   }
 
-  const reference = practiceReference(s, cols, input.target);
+  const reference = practiceReference(s, cols, input.target, input.catalog ?? null);
   const target: PracticeTargetInfo | null = reference ? reference.target : null;
   const refCorners = reference ? reference.corners : [];
   const refColumns: LapColumns | null = reference ? reference.ref : null;
@@ -392,6 +436,7 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
         const r = cornerResult(corner, refColumns, c, L);
         corners.push({
           index,
+          id: cornerIdOf(corner, index),
           deltaSec: r.deltaSec,
           brakeDeltaM: r.brakeDeltaM,
           apexKphDelta: r.apexKphDelta,
@@ -475,6 +520,7 @@ export function buildPracticeReview(input: PracticeReviewInput): PracticeReview 
     const avgScore = mean(scores);
     return {
       index,
+      id: cornerIdOf(c, index),
       entryD: c.entryD,
       apexD: c.apexD,
       exitD: c.exitD,

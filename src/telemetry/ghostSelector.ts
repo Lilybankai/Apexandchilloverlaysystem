@@ -39,7 +39,9 @@
  * other change of question.
  */
 
-import type { GhostLap } from './ghostLap';
+import type { CornerCatalog } from './coachContract';
+import { loadCornerCatalogAsync } from './cornerCatalog';
+import { applyCornerCatalog, type GhostLap } from './ghostLap';
 import { ghostFromReference, referenceMatches, type GhostReference } from './ghostReference';
 import { GhostIndex, loadBestGhost, type GhostDirs, type GhostQuery } from './ghostStore';
 import type { LapRecord, TrackCondition } from './lapLog';
@@ -68,6 +70,14 @@ export interface GhostCombo {
    * payload carries no length of its own.
    */
   trackLengthM?: number;
+  /**
+   * The layout's track-map key (`trackMap.trackKey`, as `lapDetail.mapKeyForLap`
+   * builds it) — not part of the key either; it names the corner catalogue
+   * the ghost's corners are numbered by, so the live Corner Analysis says
+   * "C5" for the corner the Practice review calls C5. Absent: the ghost's
+   * own corners, C1..Cn.
+   */
+  mapKey?: string;
 }
 
 export interface GhostSelectorOptions {
@@ -77,12 +87,19 @@ export interface GhostSelectorOptions {
   publish?: (lap: GhostLap | null) => void;
   /** Wall clock, for the retry delay. A seam for the tests. */
   now?: () => number;
+  /**
+   * The corner catalogue for a layout; `cornerCatalog.loadCornerCatalogAsync`
+   * by default (never a sync read: this runs beside the frame loop). A seam
+   * for the tests.
+   */
+  catalog?: (mapKey: string) => Promise<CornerCatalog | null>;
 }
 
 export class GhostSelector {
   private readonly dirs: GhostDirs;
   private readonly publish: (lap: GhostLap | null) => void;
   private readonly now: () => number;
+  private readonly catalogFor: (mapKey: string) => Promise<CornerCatalog | null>;
   /** Built on first use, so a session that never wants a ghost never reads a lap. */
   private index: GhostIndex | null = null;
 
@@ -109,6 +126,7 @@ export class GhostSelector {
     this.dirs = opts.dirs ?? {};
     this.publish = opts.publish ?? (() => undefined);
     this.now = opts.now ?? Date.now;
+    this.catalogFor = opts.catalog ?? ((k: string) => loadCornerCatalogAsync(k));
   }
 
   /** The lap being chased, or `null`. */
@@ -226,6 +244,12 @@ export class GhostSelector {
     this.rearm = false;
     const ref = this.activeReference();
     const current = this.current;
+    const mapKey = combo.mapKey;
+    const catalog: Promise<CornerCatalog | null> = mapKey
+      ? Promise.resolve()
+          .then(() => this.catalogFor(mapKey))
+          .catch(() => null)
+      : Promise.resolve(null);
     // The reference is built off the loop like a local load, and reused when
     // it is already the one selected. One that cannot be built (no usable
     // columns, no live length) falls through to the local best.
@@ -253,7 +277,20 @@ export class GhostSelector {
           .catch(() => null)
           .then((l) => ({ lap: l, fromRef: false }));
       })
-      .then(({ lap, fromRef: isRef }) => this.finish(gen, lap, isRef));
+      .then(({ lap, fromRef: isRef }) =>
+        // Numbered by the layout's catalogue before anyone sees it: a small
+        // file, read once per layout per run, alongside the lap's own read.
+        catalog.then((cat) => {
+          if (lap && cat && lap !== this.current) {
+            try {
+              applyCornerCatalog(lap, cat);
+            } catch {
+              /* the lap's own corners stand */
+            }
+          }
+          this.finish(gen, lap, isRef);
+        }),
+      );
   }
 
   private finish(gen: number, lap: GhostLap | null, fromRef = false): void {

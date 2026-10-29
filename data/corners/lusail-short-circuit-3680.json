@@ -1,0 +1,79 @@
+{
+  "mapKey": "lusail-short-circuit-3680",
+  "trackLengthM": 3676,
+  "builtFrom": 9,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.162921,
+      "apexD": 0.218325,
+      "exitD": 0.229,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.327005,
+      "apexD": 0.34846,
+      "exitD": 0.35099,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.527797,
+      "apexD": 0.6125,
+      "exitD": 0.61558,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C4",
+      "entryD": 0.646731,
+      "apexD": 0.66853,
+      "exitD": 0.67456,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.72975,
+      "apexD": 0.753712,
+      "exitD": 0.761125,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.847178,
+      "apexD": 0.88561,
+      "exitD": 0.89437,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 9,
+    "local": 0,
+    "cloud": 9,
+    "cutBy": {
+      "line": 7,
+      "latG": 2
+    },
+    "classes": {
+      "GT3": 6,
+      "LMP2_ELMS": 3
+    },
+    "support": [
+      1,
+      1,
+      0.78,
+      1,
+      0.89,
+      1
+    ]
+  }
+}

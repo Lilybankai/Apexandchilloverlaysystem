@@ -1,0 +1,127 @@
+{
+  "mapKey": "weathertech-raceway-laguna-seca-3590",
+  "trackLengthM": 3590,
+  "builtFrom": 48,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.086455,
+      "apexD": 0.133198,
+      "exitD": 0.152965,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.192285,
+      "apexD": 0.221443,
+      "exitD": 0.22952,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.269068,
+      "apexD": 0.29043,
+      "exitD": 0.29744,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C4",
+      "entryD": 0.39199,
+      "apexD": 0.427435,
+      "exitD": 0.438535,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.516148,
+      "apexD": 0.54038,
+      "exitD": 0.54641,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.647002,
+      "apexD": 0.685108,
+      "exitD": 0.691835,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.69189,
+      "apexD": 0.701685,
+      "exitD": 0.703495,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.732328,
+      "apexD": 0.75675,
+      "exitD": 0.77151,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.802939,
+      "apexD": 0.83069,
+      "exitD": 0.83837,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C10",
+      "entryD": 0.882369,
+      "apexD": 0.912718,
+      "exitD": 0.918845,
+      "dir": "L",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C6",
+        "C7",
+        "C8"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 48,
+    "local": 29,
+    "cloud": 19,
+    "cutBy": {
+      "line": 14,
+      "latG": 34
+    },
+    "classes": {
+      "LMP2_ELMS": 5,
+      "GT3": 41,
+      "HYPERCAR": 1,
+      "LMP3": 1
+    },
+    "support": [
+      1,
+      0.96,
+      0.98,
+      1,
+      0.98,
+      1,
+      1,
+      0.9,
+      0.94,
+      1
+    ]
+  }
+}
