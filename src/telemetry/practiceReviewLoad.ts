@@ -137,6 +137,11 @@ export function findSnapshot(
 export interface PracticeReviewOptions {
   /** Measure against this instead of the session's snapshot (a board lap picked afterwards). */
   target?: PracticeTargetSnapshot | null;
+  /**
+   * Measure against the session's own best lap even when a lap was chased
+   * (the Practice target picker's "vs your session best").
+   */
+  sessionBest?: boolean;
 }
 
 /** What {@link boardTargetSnapshot} needs besides the trace. */
@@ -206,7 +211,7 @@ export function loadPracticeReview(
   return buildPracticeReview({
     session,
     traces,
-    target: opts && opts.target ? opts.target : snap ? snap.target : null,
+    target: opts && opts.target ? opts.target : opts && opts.sessionBest ? null : snap ? snap.target : null,
     endedAt: snap && snap.endedAt ? snap.endedAt : undefined,
     catalog: catalogForTrack(session),
   });

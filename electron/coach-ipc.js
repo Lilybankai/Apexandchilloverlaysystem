@@ -232,11 +232,15 @@ function register(ipcMain, deps) {
   /** The leaderboard target behind `targetLapId`, fetched as review:practice fetches it. */
   const loaderDeps = async (args) => {
     const out = { reviewDir: reviewDir() };
-    if (args.targetLapId && typeof deps.boardTarget === 'function') {
+    // Resolved by main.js exactly as review:practice resolves it, so the
+    // coach measures against the lap the debrief beside it shows.
+    if (args.targetLapId && typeof deps.targetOpts === 'function') {
       try {
-        out.target = await deps.boardTarget(args.sessionId, args.targetLapId);
+        const t = await deps.targetOpts(args.sessionId, args.targetLapId);
+        if (t && t.opts && t.opts.target) out.target = t.opts.target;
+        if (t && t.opts && t.opts.sessionBest) out.sessionBest = true;
       } catch {
-        out.target = null;
+        /* the session's own target stands */
       }
     }
     return out;

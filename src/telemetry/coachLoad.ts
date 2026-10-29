@@ -67,6 +67,8 @@ export interface CoachLoadDeps extends PracticeReviewDeps {
    * grid beside it talk about the same lap.
    */
   target?: PracticeTargetSnapshot | null;
+  /** Measure against the session's own best even when a lap was chased. */
+  sessionBest?: boolean;
 }
 
 export interface CoachSessionArgs {
@@ -154,7 +156,9 @@ function readTraces(laps: readonly ReviewLap[], tdir: string): Map<string, Trace
 function reviewFor(sessionId: string, deps: CoachLoadDeps, targetLapId?: string | null): PracticeReview | null {
   // The board snapshot when one was resolved for this targetLapId; without
   // it the session's own target stands, as review:practice falls back.
-  return targetLapId && deps.target ? loadPracticeReview(sessionId, deps, { target: deps.target }) : loadPracticeReview(sessionId, deps);
+  if (targetLapId && deps.target) return loadPracticeReview(sessionId, deps, { target: deps.target });
+  if (targetLapId && deps.sessionBest) return loadPracticeReview(sessionId, deps, { sessionBest: true });
+  return loadPracticeReview(sessionId, deps);
 }
 
 function mapKeyOf(session: ReviewSession, lapDir: string): string | null {

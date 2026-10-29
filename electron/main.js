@@ -4865,14 +4865,27 @@ function registerIpc() {
    * leaderboard lap. A board target that cannot be had (offline, signed out)
    * falls back to the usual target and says why in `targetError`.
    */
+  /**
+   * What a Practice `targetLapId` means for the loaders: 'sessionBest' = the
+   * session's own best even when a lap was chased; a board id = that
+   * leaderboard lap, fetched (fair-ipc.js). `error` when a board lap cannot
+   * be had — the caller falls back to the usual target and says why.
+   */
+  async function practiceTargetOpts(sessionId, want) {
+    if (!want) return { opts: undefined, error: null };
+    if (want === 'sessionBest') return { opts: { sessionBest: true }, error: null };
+    const board = await fairIpc.boardTarget(sessionId, want);
+    return board && board.ok ? { opts: { target: board.target }, error: null } : { opts: undefined, error: (board && board.error) || 'unknown target' };
+  }
+
   ipcMain.handle('review:practice', async (_evt, sessionId, opts) => {
     if (typeof sessionId !== 'string' || !sessionId) return { ok: false, review: null, error: 'no session' };
     try {
       const { loadPracticeReview } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js'));
       const want = opts && typeof opts.targetLapId === 'string' ? opts.targetLapId : '';
-      const board = want ? await fairIpc.boardTarget(sessionId, want) : null;
-      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() }, board && board.ok ? { target: board.target } : undefined);
-      if (review && board && !board.ok) return { ok: true, review, targetError: board.error };
+      const t = await practiceTargetOpts(sessionId, want);
+      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() }, t.opts);
+      if (review && t.error) return { ok: true, review, targetError: t.error };
       return review ? { ok: true, review } : { ok: false, review: null, error: 'session not found' };
     } catch (err) {
       console.error('[app] practice review unavailable:', err.message);
@@ -4895,10 +4908,9 @@ function registerIpc() {
       const { loadPracticeLap } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceLap.js'));
       const haveMapKey = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
       // `targetLapId`: the board lap the debrief was measured against (as `review:practice`).
-      const board = typeof req.targetLapId === 'string' && req.targetLapId ? await fairIpc.boardTarget(sessionId, req.targetLapId) : null;
-      const target = board && board.ok ? board.target : undefined;
-      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey, target }, { reviewDir: practiceReviewsDir() });
-      if (result && board && !board.ok) return { ok: true, result, targetError: board.error };
+      const t = await practiceTargetOpts(sessionId, typeof req.targetLapId === 'string' ? req.targetLapId : '');
+      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey, ...(t.opts || {}) }, { reviewDir: practiceReviewsDir() });
+      if (result && t.error) return { ok: true, result, targetError: t.error };
       return result ? { ok: true, result } : { ok: false, result: null, error: 'lap not found' };
     } catch (err) {
       console.error('[app] practice lap unavailable:', err.message);
@@ -4928,7 +4940,7 @@ function registerIpc() {
   });
 
   // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
-  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, boardTarget: (sessionId, id) => fairIpc.boardTarget(sessionId, id), userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
+  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
   ipcMain.handle('review:sessions', () => {
     try {
