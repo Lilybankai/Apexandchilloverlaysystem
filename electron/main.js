@@ -4890,6 +4890,9 @@ function registerIpc() {
     }
   });
 
+  // "Your driving": habits across sessions at one track/class (electron/habits-ipc.js).
+  require('./habits-ipc').register(ipcMain, { allowed: () => practiceOnThisChannel(loadSettings()), reviewDir: practiceReviewsDir });
+
   /**
    * The accuracy score across practice sessions at one track in one class,
    * oldest first (Practice Review phase 3). Ended sessions are remembered in

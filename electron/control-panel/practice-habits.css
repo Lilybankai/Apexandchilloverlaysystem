@@ -1,0 +1,307 @@
+/* =========================================================================
+ * practice-habits.css — "Your driving" (practice-habits.js), in the Practice tab.
+ * -------------------------------------------------------------------------
+ * The habits view of the AI driving coach: a session-by-session trend, a
+ * per-corner consistency strip and three to five habit cards. Dark navy
+ * cards with cyan accents, after Carl's Practice redesign mockup (2026-10-29),
+ * on the panel's own tokens (control-panel.css :root) so it moves with them.
+ * Everything is scoped under .ph so nothing leaks into the Practice tab.
+ *
+ * Tones: cyan is the driver's line, purple the second series; green / amber /
+ * red only grade a corner's braking spread and a habit card's level.
+ * ========================================================================= */
+
+.ph { display: flex; flex-direction: column; gap: 14px; }
+
+.ph__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; }
+.ph__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.ph__scope { color: var(--text-2); font-size: 12.5px; }
+.ph--loading .ph__scope { color: var(--text-3); }
+
+.ph__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+@media (max-width: 1100px) { .ph__grid { grid-template-columns: minmax(0, 1fr); } }
+
+.ph-card {
+  position: relative;
+  min-width: 0;
+  background:
+    linear-gradient(180deg, rgba(38, 187, 244, 0.035), transparent 45%),
+    var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px 14px;
+}
+.ph-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.ph-card__title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.ph-card__sub { color: var(--text-3); font-size: 11.5px; }
+
+.ph-note { margin: 6px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.ph-note--small { font-size: 11.5px; color: var(--text-3); }
+
+/* ---- tabs (Lap time / Accuracy / Pace %) ---- */
+.ph-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.ph-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: 600 11.5px var(--font-ui);
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ph-tab:hover { color: var(--text); }
+.ph-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--cyan) 22%, var(--panel-2));
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 55%, transparent);
+}
+.ph-tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+/* ---- the trend chart ---- */
+.ph-chart { display: block; width: 100%; height: auto; max-height: 240px; }
+.ph-chart__grid { stroke: rgba(255, 255, 255, 0.05); stroke-width: 1; }
+.ph-chart__axis { font-family: var(--font-mono); font-size: 10px; fill: var(--text-3); }
+.ph-chart__day { font-family: var(--font-display); font-size: 10.5px; fill: var(--text-2); letter-spacing: 0.03em; }
+.ph-chart__type { font-family: var(--font-mono); font-size: 9.5px; fill: var(--text-3); }
+.ph-chart__band { fill: color-mix(in srgb, var(--purple) 14%, transparent); }
+.ph-chart__line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ph-chart__line--a {
+  stroke: var(--cyan);
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--cyan) 45%, transparent));
+}
+.ph-chart__line--b { stroke: var(--purple); stroke-dasharray: 4 4; stroke-width: 1.8; }
+.ph-chart__dot--a { fill: var(--panel); stroke: var(--cyan); stroke-width: 2.2; }
+.ph-chart__dot--b { fill: var(--purple); }
+.ph-chart__hit { fill: transparent; }
+.ph-chart__pt:hover .ph-chart__hit { fill: rgba(255, 255, 255, 0.035); }
+
+.ph-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; color: var(--text-3); font-size: 11.5px; }
+.ph-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ph-key { display: inline-block; width: 16px; height: 3px; border-radius: 2px; background: var(--cyan); }
+.ph-key--b { background: repeating-linear-gradient(90deg, var(--purple) 0 4px, transparent 4px 7px); }
+.ph-key--band { height: 9px; width: 14px; background: color-mix(in srgb, var(--purple) 30%, transparent); }
+
+/* ---- the corner consistency strip ---- */
+/* Columns share the width down to 22px each (Le Mans has 20–25 corners);
+   only past that does the strip scroll. */
+.ph-cs {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.ph-cs__col {
+  flex: 1 1 0;
+  min-width: 22px;
+  max-width: 54px;
+  display: grid;
+  grid-template-rows: auto 112px auto auto;
+  justify-items: center;
+  gap: 4px;
+  padding: 6px 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1px solid transparent;
+}
+.ph-cs__col--habit { border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.ph-cs__val { font-family: var(--font-mono); font-size: 10px; letter-spacing: -0.02em; color: var(--text-2); white-space: nowrap; }
+.ph-cs__bar {
+  position: relative;
+  width: 14px;
+  height: 100%;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+.ph-cs__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 4px;
+  --tone: var(--ok);
+  background: linear-gradient(180deg, var(--tone), color-mix(in srgb, var(--tone) 45%, transparent));
+}
+.ph-cs__fill[data-tone="warn"] { --tone: var(--warn); }
+.ph-cs__fill[data-tone="bad"] { --tone: var(--bad); }
+.ph-cs__none {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 0;
+  height: 2px;
+  background: var(--text-3);
+  opacity: 0.5;
+}
+.ph-cs__id {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ph-cs__dot {
+  position: absolute;
+  top: -1px;
+  right: -7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.ph-cs__loss {
+  min-width: 100%;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bad) calc(var(--a, 0) * 55%), var(--panel-3));
+}
+.ph-cs--dense { gap: 2px; }
+.ph-cs--dense .ph-cs__col { min-width: 19px; }
+.ph-cs--dense .ph-cs__id { font-size: 10px; }
+.ph-cs--dense .ph-cs__dot { right: -4px; }
+.ph-cs__axis {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* ---- AI summary ---- */
+.ph-ai {
+  border: 1px solid color-mix(in srgb, var(--cyan) 35%, var(--line));
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  background:
+    radial-gradient(80% 140% at 0% 0%, rgba(38, 187, 244, 0.12), transparent 60%),
+    var(--panel);
+}
+.ph-ai[hidden] { display: none; }
+.ph-ai__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ph-ai__badge {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.ph-ai__headline { color: var(--text); font-size: 13.5px; }
+.ph-ai__list { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.ph-ai__list b { color: var(--text); font-weight: 600; }
+.ph-ai__chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--purple) 35%, var(--panel-2));
+}
+
+/* ---- habit cards ---- */
+.ph-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.ph-hcard {
+  --tone: var(--cyan);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 13px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.ph-hcard[data-level="watch"] { --tone: var(--warn); }
+.ph-hcard[data-level="good"] { --tone: var(--ok); }
+.ph-hcard__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ph-hcard__title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.ph-hcard__level {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tone);
+  white-space: nowrap;
+}
+.ph-hcard__mid { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ph-hcard__big {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.1;
+}
+.ph-hcard__text { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.ph-hcard__chip {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bad) 35%, var(--panel-3));
+}
+.ph-spark { width: 96px; height: 26px; flex: none; }
+.ph-spark polyline { fill: none; stroke: var(--tone); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
+.ph-spark circle { fill: var(--tone); }

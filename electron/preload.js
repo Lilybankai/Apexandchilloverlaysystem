@@ -415,6 +415,13 @@ contextBridge.exposeInMainWorld('apex', {
    */
   practiceTrend: (args) => ipcRenderer.invoke('practice:trend', args),
 
+  /**
+   * "Your driving" — habits across sessions at one track in one class:
+   * `{ trackKey, carClass }` → `{ ok, report: HabitsReport | null, error? }`
+   * (electron/habits-ipc.js, src/telemetry/drivingHabits.ts).
+   */
+  practiceHabits: (args) => ipcRenderer.invoke('practice:habits', args),
+
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {
     const listener = (_evt, pending) => callback(pending);
