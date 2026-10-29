@@ -289,7 +289,7 @@ function register(ipcMain, deps) {
 
   ipcMain.handle('practice:coachLap', async (_evt, req) => {
     if (!allowed()) return { ...gated, breakdown: null, show: [] };
-    const args = { ...sessionArgs(req), lapId: str(req && req.lapId), at: str(req && req.at) };
+    const args = { ...sessionArgs(req), lapId: str(req && req.lapId), at: str(req && req.at), cornerId: strOrNull(req && req.cornerId) };
     if (!args.sessionId || !args.lapId) return { ok: false, report: null, breakdown: null, show: [], error: 'no lap' };
     try {
       const out = coachLoad().loadLapCoach(args, await loaderDeps(args));

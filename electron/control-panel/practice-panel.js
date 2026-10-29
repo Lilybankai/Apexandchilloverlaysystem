@@ -1938,7 +1938,7 @@
     const targetLapId = targetSel || undefined;
     const coachCall = typeof window.apex.practiceCoachLap === 'function'
       ? Promise.resolve()
-        .then(() => window.apex.practiceCoachLap({ sessionId: currentId, lapId, at, targetLapId }))
+        .then(() => window.apex.practiceCoachLap({ sessionId: currentId, lapId, at, targetLapId, cornerId: showCorner || undefined }))
         .catch(() => null)
       : Promise.resolve(null);
     let res = null;

@@ -79,6 +79,8 @@ export interface CoachSessionArgs {
 export interface CoachLapArgs extends CoachSessionArgs {
   lapId: string;
   at?: string;
+  /** "Show me" opened from this corner: its step leads, even when it is not the lap's worst three. */
+  cornerId?: string | null;
 }
 
 export interface CoachLapResult {
@@ -357,10 +359,15 @@ export function loadSessionCoach(args: CoachSessionArgs, deps: CoachLoadDeps): {
 /*  One practice lap                                                          */
 /* -------------------------------------------------------------------------- */
 
-function safeShow(b: LapLossBreakdown | null, mine: LossLapInput | null, ref: LossLapInput | null): ShowStep[] {
+function safeShow(b: LapLossBreakdown | null, mine: LossLapInput | null, ref: LossLapInput | null, cornerId?: string | null): ShowStep[] {
   if (!b || !mine || !ref) return [];
   try {
-    return showSteps(b, mine, ref, 3);
+    const top = showSteps(b, mine, ref, 3);
+    if (!cornerId || top.some((s) => s.cornerId === cornerId)) return top;
+    // The corner the driver clicked, from the session's worst list: on this
+    // one lap it may not be among the three, and Show me must still open on it.
+    const asked = showSteps(b, mine, ref, b.corners.length).find((s) => s.cornerId === cornerId);
+    return asked ? [asked, ...top].slice(0, 3) : top;
   } catch {
     return [];
   }
@@ -409,7 +416,7 @@ export function loadLapCoach(args: CoachLapArgs, deps: CoachLoadDeps): CoachLapR
     sectorD: w.sectorD,
     generatedAt: lap.at,
   });
-  return { report, breakdown, show: safeShow(breakdown, mine, ref) };
+  return { report, breakdown, show: safeShow(breakdown, mine, ref, args.cornerId) };
 }
 
 /* -------------------------------------------------------------------------- */
