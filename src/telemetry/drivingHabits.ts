@@ -902,7 +902,10 @@ export function buildHabitsReport(input: HabitsInput): HabitsReportFull {
       const absEv = mean(aided.map((l) => l.f!.absEvents).filter(fin));
       if (absSec !== null && absEv !== null && absEv >= 0.5) {
         const share = lapAvg > 0 ? (absSec / lapAvg) * 100 : 0;
-        const lv = share >= 3 ? 'watch' : 'info';
+        // GT3 drivers brake INTO the ABS on purpose: this PC's GT3 laps sit
+        // near 4% of the lap on it and are quick. Only far beyond that is it
+        // a stab that locks the fronts rather than a driver using the system.
+        const lv = share >= 8 ? 'watch' : 'info';
         const t = `ABS works about ${Math.round(absEv)} times a lap, ${absSec.toFixed(1)} s in all.` +
           (lv === 'watch' ? ' Ease the initial stab so the tyres keep turning.' : '');
         lap.push({
