@@ -88,7 +88,12 @@ function addLap({ k = 1, minutes, sessionType = 'practice', noTrace = false } = 
   return id;
 }
 
-const deps = (onStats) => ({ lapDir: LAPS, traceDir: TRACES, cacheDir: CACHE, onStats });
+// An empty catalogue folder: the fixture is Road Atlanta, which ships a
+// catalogue, and these sections pin the reference fallback. §6 also loads
+// the shipped one.
+const NO_CATALOG = path.join(ROOT, 'no-catalog');
+fs.mkdirSync(NO_CATALOG, { recursive: true });
+const deps = (onStats) => ({ lapDir: LAPS, traceDir: TRACES, cacheDir: CACHE, cornerDir: NO_CATALOG, onStats });
 async function load(now = Date.parse('2026-10-29T12:00:00.000Z')) {
   let stats = null;
   const report = await loadDrivingHabits({ trackKey: FIX.trackKey, carClass: FIX.carClass }, deps((s) => (stats = s)), now);
@@ -171,6 +176,13 @@ async function load(now = Date.parse('2026-10-29T12:00:00.000Z')) {
     // An unknown track: null.
     const none = await loadDrivingHabits({ trackKey: 'nowhere_1', carClass: 'GT3' }, deps());
     check('no sessions at the track → null', none === null);
+    // The shipped Road Atlanta catalogue: stable ids, every lap re-cut by it.
+    const shipped = await loadDrivingHabits(
+      { trackKey: FIX.trackKey, carClass: FIX.carClass },
+      { lapDir: LAPS, traceDir: TRACES, cacheDir: path.join(ROOT, 'coach-shipped') },
+      Date.parse('2026-10-29T12:00:00.000Z'),
+    );
+    check('with the shipped catalogue: source catalog, C1..C10', shipped && shipped.cornerSource === 'catalog' && shipped.corners.length === 10, shipped && `${shipped.cornerSource}, ${shipped.corners.length}`);
 
     /* §7 in flight */
     console.log('\n§7 two loads at once');
