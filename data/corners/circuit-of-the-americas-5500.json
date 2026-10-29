@@ -1,0 +1,181 @@
+{
+  "mapKey": "circuit-of-the-americas-5500",
+  "trackLengthM": 5497,
+  "builtFrom": 28,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.089528,
+      "apexD": 0.119887,
+      "exitD": 0.125985,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.141345,
+      "apexD": 0.163005,
+      "exitD": 0.182785,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.216889,
+      "apexD": 0.247655,
+      "exitD": 0.253365,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.25952,
+      "apexD": 0.28805,
+      "exitD": 0.29669,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.30014,
+      "apexD": 0.311262,
+      "exitD": 0.3183,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.328095,
+      "apexD": 0.34538,
+      "exitD": 0.35337,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.35463,
+      "apexD": 0.36117,
+      "exitD": 0.36544,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.440619,
+      "apexD": 0.469552,
+      "exitD": 0.47598,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.65428,
+      "apexD": 0.687695,
+      "exitD": 0.692275,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C10",
+      "entryD": 0.712448,
+      "apexD": 0.729112,
+      "exitD": 0.740545,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.759389,
+      "apexD": 0.779432,
+      "exitD": 0.784645,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C12",
+      "entryD": 0.81507,
+      "apexD": 0.84154,
+      "exitD": 0.850505,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C13",
+      "entryD": 0.894557,
+      "apexD": 0.91485,
+      "exitD": 0.9205,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C14",
+      "entryD": 0.950582,
+      "apexD": 0.970145,
+      "exitD": 0.97572,
+      "dir": "L",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C10",
+        "C11"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 28,
+    "local": 8,
+    "cloud": 20,
+    "cutBy": {
+      "line": 15,
+      "latG": 13
+    },
+    "classes": {
+      "GT3": 14,
+      "HYPERCAR": 9,
+      "LMP2": 2,
+      "LMP2_ELMS": 3
+    },
+    "support": [
+      1,
+      1,
+      0.86,
+      0.96,
+      0.89,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.89,
+      1
+    ]
+  }
+}

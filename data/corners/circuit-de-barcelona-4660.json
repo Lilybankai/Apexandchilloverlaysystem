@@ -1,0 +1,134 @@
+{
+  "mapKey": "circuit-de-barcelona-4660",
+  "trackLengthM": 4655,
+  "builtFrom": 95,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.144307,
+      "apexD": 0.182735,
+      "exitD": 0.19039,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.19275,
+      "apexD": 0.203105,
+      "exitD": 0.207925,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.22838,
+      "apexD": 0.25105,
+      "exitD": 0.26019,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.341993,
+      "apexD": 0.375143,
+      "exitD": 0.38298,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.430922,
+      "apexD": 0.45792,
+      "exitD": 0.46646,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.524595,
+      "apexD": 0.547375,
+      "exitD": 0.55526,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C7",
+      "entryD": 0.600538,
+      "apexD": 0.625033,
+      "exitD": 0.632805,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C8",
+      "entryD": 0.719329,
+      "apexD": 0.753155,
+      "exitD": 0.76005,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.789338,
+      "apexD": 0.813818,
+      "exitD": 0.82495,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C10",
+      "entryD": 0.85618,
+      "apexD": 0.87472,
+      "exitD": 0.88116,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C11",
+      "entryD": 0.908538,
+      "apexD": 0.937375,
+      "exitD": 0.944245,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 95,
+    "local": 80,
+    "cloud": 15,
+    "cutBy": {
+      "line": 4,
+      "latG": 91
+    },
+    "classes": {
+      "GT3": 90,
+      "HYPERCAR": 5
+    },
+    "support": [
+      1,
+      0.99,
+      0.94,
+      0.99,
+      1,
+      1,
+      0.95,
+      1,
+      0.93,
+      1,
+      0.93
+    ]
+  }
+}

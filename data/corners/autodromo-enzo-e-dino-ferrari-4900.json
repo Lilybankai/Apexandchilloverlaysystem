@@ -1,0 +1,151 @@
+{
+  "mapKey": "autodromo-enzo-e-dino-ferrari-4900",
+  "trackLengthM": 4901,
+  "builtFrom": 22,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.10735,
+      "apexD": 0.141858,
+      "exitD": 0.14611,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.14911,
+      "apexD": 0.156615,
+      "exitD": 0.15851,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.169655,
+      "apexD": 0.181375,
+      "exitD": 0.19324,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.24969,
+      "apexD": 0.26776,
+      "exitD": 0.26893,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.27855,
+      "apexD": 0.288575,
+      "exitD": 0.29324,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.326374,
+      "apexD": 0.349024,
+      "exitD": 0.354615,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C7",
+      "entryD": 0.450967,
+      "apexD": 0.47342,
+      "exitD": 0.47725,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C8",
+      "entryD": 0.539875,
+      "apexD": 0.58074,
+      "exitD": 0.584005,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.660862,
+      "apexD": 0.681283,
+      "exitD": 0.684085,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.68536,
+      "apexD": 0.689319,
+      "exitD": 0.693525,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.812099,
+      "apexD": 0.842861,
+      "exitD": 0.84771,
+      "dir": "L",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C4",
+        "C5"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C9",
+        "C10"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 22,
+    "local": 1,
+    "cloud": 21,
+    "cutBy": {
+      "line": 14,
+      "latG": 8
+    },
+    "classes": {
+      "GT3": 16,
+      "HYPERCAR": 4,
+      "LMP2_ELMS": 2
+    },
+    "support": [
+      1,
+      1,
+      1,
+      0.77,
+      0.95,
+      1,
+      0.95,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

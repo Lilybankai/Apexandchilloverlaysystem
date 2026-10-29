@@ -1,0 +1,141 @@
+{
+  "mapKey": "aut-dromo-jos-carlos-pace-4270",
+  "trackLengthM": 4273,
+  "builtFrom": 14,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.047983,
+      "apexD": 0.090495,
+      "exitD": 0.09647,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.101225,
+      "apexD": 0.11184,
+      "exitD": 0.11379,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.125965,
+      "apexD": 0.15281,
+      "exitD": 0.185335,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.298072,
+      "apexD": 0.333973,
+      "exitD": 0.338795,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.456492,
+      "apexD": 0.550967,
+      "exitD": 0.558035,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.564198,
+      "apexD": 0.579238,
+      "exitD": 0.58594,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.624295,
+      "apexD": 0.647293,
+      "exitD": 0.65267,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.667815,
+      "apexD": 0.69473,
+      "exitD": 0.696035,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.736423,
+      "apexD": 0.761597,
+      "exitD": 0.76686,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C10",
+      "entryD": 0.83793,
+      "apexD": 0.854875,
+      "exitD": 0.87232,
+      "dir": "L",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C5",
+        "C6"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C7",
+        "C8"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 14,
+    "local": 0,
+    "cloud": 14,
+    "cutBy": {
+      "line": 13,
+      "latG": 1
+    },
+    "classes": {
+      "GT3": 12,
+      "LMP2_ELMS": 2
+    },
+    "support": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.86,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

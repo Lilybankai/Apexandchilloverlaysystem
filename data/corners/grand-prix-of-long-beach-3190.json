@@ -1,0 +1,116 @@
+{
+  "mapKey": "grand-prix-of-long-beach-3190",
+  "trackLengthM": 3187,
+  "builtFrom": 34,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.178095,
+      "apexD": 0.227648,
+      "exitD": 0.23661,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.26038,
+      "apexD": 0.2852,
+      "exitD": 0.29124,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.359117,
+      "apexD": 0.377825,
+      "exitD": 0.384955,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C4",
+      "entryD": 0.470809,
+      "apexD": 0.505085,
+      "exitD": 0.51347,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.569452,
+      "apexD": 0.599473,
+      "exitD": 0.607265,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.754611,
+      "apexD": 0.79857,
+      "exitD": 0.809615,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.822743,
+      "apexD": 0.845795,
+      "exitD": 0.8626,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.865749,
+      "apexD": 0.882984,
+      "exitD": 0.889365,
+      "dir": "R",
+      "seq": "S2"
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C6",
+        "C7",
+        "C8"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 34,
+    "local": 4,
+    "cloud": 30,
+    "cutBy": {
+      "line": 34,
+      "latG": 0
+    },
+    "classes": {
+      "GT3": 24,
+      "LMP2_ELMS": 6,
+      "HYPERCAR": 4
+    },
+    "support": [
+      1,
+      1,
+      0.82,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  }
+}

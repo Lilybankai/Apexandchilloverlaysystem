@@ -1,0 +1,144 @@
+{
+  "mapKey": "michelin-raceway-road-atlanta-4080",
+  "trackLengthM": 4083,
+  "builtFrom": 232,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.066909,
+      "apexD": 0.111383,
+      "exitD": 0.1172,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.178205,
+      "apexD": 0.20264,
+      "exitD": 0.20872,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.217025,
+      "apexD": 0.232105,
+      "exitD": 0.242415,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.25823,
+      "apexD": 0.27674,
+      "exitD": 0.28621,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.320626,
+      "apexD": 0.34936,
+      "exitD": 0.35676,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.454314,
+      "apexD": 0.48735,
+      "exitD": 0.49541,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.50626,
+      "apexD": 0.527405,
+      "exitD": 0.53353,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.818539,
+      "apexD": 0.859587,
+      "exitD": 0.866035,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.8683,
+      "apexD": 0.87954,
+      "exitD": 0.88405,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.939225,
+      "apexD": 0.963585,
+      "exitD": 0.985555,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C2",
+        "C3",
+        "C4"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C6",
+        "C7"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C8",
+        "C9"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 232,
+    "local": 187,
+    "cloud": 45,
+    "cutBy": {
+      "line": 232,
+      "latG": 0
+    },
+    "classes": {
+      "GT3": 190,
+      "LMP2": 24,
+      "HYPERCAR": 7,
+      "LMP2_ELMS": 9,
+      "LMP3": 2
+    },
+    "support": [
+      0.84,
+      1,
+      0.99,
+      1,
+      0.94,
+      0.73,
+      1,
+      1,
+      0.98,
+      1
+    ]
+  }
+}
