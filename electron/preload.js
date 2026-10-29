@@ -418,6 +418,19 @@ contextBridge.exposeInMainWorld('apex', {
    */
   practiceTrend: (args) => ipcRenderer.invoke('practice:trend', args),
 
+  /* ---- AI driving coach (electron/coach-ipc.js) ---- */
+
+  /** `{ sessionId, targetLapId? }` → `{ ok, report: CoachReport | null }`: template words, fast. */
+  practiceCoach: (args) => ipcRenderer.invoke('practice:coach', args),
+  /** `{ sessionId, targetLapId? }` → `{ ok, report, ai, cached }`, `report.source === 'ai'`; ok:false → keep the template. */
+  practiceCoachAi: (args) => ipcRenderer.invoke('practice:coachAi', args),
+  /** `{ sessionId, lapId, at, targetLapId? }` → `{ ok, report, breakdown: LapLossBreakdown | null, show: ShowStep[] }`. */
+  practiceCoachLap: (args) => ipcRenderer.invoke('practice:coachLap', args),
+  /** The same object `reviewLap` takes → `{ ok, report, breakdown, show }`. */
+  reviewCoach: (args) => ipcRenderer.invoke('review:coach', args),
+  /** A CoachAiRequest (or `{ report, context }`) → `{ ok, ai: CoachAiResult | null, cached }`. */
+  coachAi: (req) => ipcRenderer.invoke('coach:ai', req),
+
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {
     const listener = (_evt, pending) => callback(pending);
