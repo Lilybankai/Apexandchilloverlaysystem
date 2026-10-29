@@ -4928,7 +4928,7 @@ function registerIpc() {
   });
 
   // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
-  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
+  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, boardTarget: (sessionId, id) => fairIpc.boardTarget(sessionId, id), userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
   ipcMain.handle('review:sessions', () => {
     try {

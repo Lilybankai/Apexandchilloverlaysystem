@@ -52,6 +52,7 @@ import { lapDir as defaultLapDir } from './lapLog';
 import { readTrace, traceDir as defaultTraceDir, type CompletedTrace, type TraceFile } from './lapTrace';
 import type { PracticeReview } from './practiceReview';
 import { findSnapshot, loadPracticeReview, type PracticeReviewDeps } from './practiceReviewLoad';
+import type { PracticeTargetSnapshot } from './practiceReview';
 import { showSteps } from './showSteps';
 import { loadSession, type ReviewLap, type ReviewSession } from './stintReview';
 import { lapLoss, type LossCorner, type LossLapInput } from './timeLoss';
@@ -59,6 +60,13 @@ import { lapLoss, type LossCorner, type LossLapInput } from './timeLoss';
 export interface CoachLoadDeps extends PracticeReviewDeps {
   cornerDir?: string;
   targetColumns?: (lapId: string) => Record<string, unknown> | null;
+  /**
+   * A leaderboard lap picked as the target, already fetched (fair-ipc.js
+   * `boardTarget`). The debrief is then measured against it exactly as
+   * `review:practice` does for the same `targetLapId`, so the coach and the
+   * grid beside it talk about the same lap.
+   */
+  target?: PracticeTargetSnapshot | null;
 }
 
 export interface CoachSessionArgs {
@@ -144,8 +152,9 @@ function readTraces(laps: readonly ReviewLap[], tdir: string): Map<string, Trace
 
 /** The review, with `targetLapId` handed to a loader that takes it (fair), ignored otherwise. */
 function reviewFor(sessionId: string, deps: CoachLoadDeps, targetLapId?: string | null): PracticeReview | null {
-  const load = loadPracticeReview as unknown as (id: string, d: PracticeReviewDeps, o?: { targetLapId?: string }) => PracticeReview | null;
-  return targetLapId ? load(sessionId, deps, { targetLapId }) : load(sessionId, deps);
+  // The board snapshot when one was resolved for this targetLapId; without
+  // it the session's own target stands, as review:practice falls back.
+  return targetLapId && deps.target ? loadPracticeReview(sessionId, deps, { target: deps.target }) : loadPracticeReview(sessionId, deps);
 }
 
 function mapKeyOf(session: ReviewSession, lapDir: string): string | null {
@@ -166,6 +175,9 @@ function targetInput(
 ): LossLapInput | null {
   const t = review.target;
   if (!t) return null;
+  if (deps.target && deps.target.lapId === t.lapId) {
+    return lossInput(t.lapId, t.lapSec, deps.target.columns as unknown as Record<string, unknown>);
+  }
   const own = traces.get(t.lapId);
   if (own) return lossInput(t.lapId, t.lapSec, own.trace as unknown as Record<string, unknown>);
   const snap = findSnapshot(review.id, session, deps.reviewDir);

@@ -208,17 +208,30 @@ function register(ipcMain, deps) {
   const ai = createAi({ authService, userDataDir: deps.userDataDir });
   const gated = { ok: false, report: null, error: 'Practice is a beta feature.' };
 
+  /** The leaderboard target behind `targetLapId`, fetched as review:practice fetches it. */
+  const loaderDeps = async (args) => {
+    const out = { reviewDir: reviewDir() };
+    if (args.targetLapId && typeof deps.boardTarget === 'function') {
+      try {
+        out.target = await deps.boardTarget(args.sessionId, args.targetLapId);
+      } catch {
+        out.target = null;
+      }
+    }
+    return out;
+  };
+
   const sessionArgs = (req) => ({
     sessionId: str(req && req.sessionId),
     targetLapId: strOrNull(req && req.targetLapId),
   });
 
-  ipcMain.handle('practice:coach', (_evt, req) => {
+  ipcMain.handle('practice:coach', async (_evt, req) => {
     if (!allowed()) return gated;
     const args = sessionArgs(req);
     if (!args.sessionId) return { ok: false, report: null, error: 'no session' };
     try {
-      const out = coachLoad().loadSessionCoach(args, { reviewDir: reviewDir() });
+      const out = coachLoad().loadSessionCoach(args, await loaderDeps(args));
       return out ? { ok: true, report: out.report } : { ok: false, report: null, error: 'session not found' };
     } catch (err) {
       console.error('[app] practice coach unavailable:', err.message);
@@ -231,7 +244,7 @@ function register(ipcMain, deps) {
     const args = sessionArgs(req);
     if (!args.sessionId) return { ok: false, report: null, error: 'no session' };
     try {
-      const out = coachLoad().loadSessionCoach(args, { reviewDir: reviewDir() });
+      const out = coachLoad().loadSessionCoach(args, await loaderDeps(args));
       if (!out) return { ok: false, report: null, error: 'session not found' };
       const R = coachReport();
       if (!out.report.facts.length || !out.report.takeaways.length) {
@@ -249,12 +262,12 @@ function register(ipcMain, deps) {
     }
   });
 
-  ipcMain.handle('practice:coachLap', (_evt, req) => {
+  ipcMain.handle('practice:coachLap', async (_evt, req) => {
     if (!allowed()) return { ...gated, breakdown: null, show: [] };
     const args = { ...sessionArgs(req), lapId: str(req && req.lapId), at: str(req && req.at) };
     if (!args.sessionId || !args.lapId) return { ok: false, report: null, breakdown: null, show: [], error: 'no lap' };
     try {
-      const out = coachLoad().loadLapCoach(args, { reviewDir: reviewDir() });
+      const out = coachLoad().loadLapCoach(args, await loaderDeps(args));
       return out
         ? { ok: true, report: out.report, breakdown: out.breakdown, show: out.show }
         : { ok: false, report: null, breakdown: null, show: [], error: 'lap not found' };
