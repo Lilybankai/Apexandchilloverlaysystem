@@ -1,0 +1,230 @@
+/*
+ * review-coach.css — Review's Coach sub-tab (review-coach.js) and the lap
+ * view's "Show me" holder. BETA, 2026-10-29. Built on the Review tab's own
+ * cards (.rv-card / .rvx-card) and tokens; nothing here restyles them.
+ *
+ * Phase colours, in road order — the same five everywhere the coach draws a
+ * phase: braking red, turn-in amber, mid-corner violet, exit cyan, exit run
+ * navy (dark, so it never reads as the exit's cyan). Tow/car (not the
+ * driver's) is grey, hatched.
+ */
+
+.rvx-body[data-tab='coach'] {
+  --rvc-braking: #ff5470;
+  --rvc-turnIn: #ffb020;
+  --rvc-midCorner: #b388ff;
+  --rvc-exit: #26bbf4;
+  --rvc-exitRun: #3d5a99;
+  --rvc-advice: #ffb020;
+}
+
+/* ---- The lap picker strip ---- */
+.rvc-top { padding: 10px 16px; }
+.rvc-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.rvc-pick__lap { display: inline-flex; align-items: center; gap: 8px; }
+.rvc-pick__lap > span {
+  font: 600 11px var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvc-pick select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font: 13px var(--font-mono);
+}
+.rvc-pick__vs { display: inline-flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--text-2); }
+.rvc-pick__vs b { color: #8b7dff; font-weight: 600; }
+.rvc-pick__vs span { font-family: var(--font-mono); color: var(--text); }
+.rvc-pick__vs i { font-style: normal; color: var(--text-3); }
+
+/* ---- Report beside Show me ---- */
+.rvc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .rvc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.rvc-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.rvc-beta,
+.rvc-src {
+  font: 600 9.5px var(--font-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  color: var(--warn);
+}
+.rvc-src { border-color: rgba(139, 125, 255, 0.55); color: #8b7dff; }
+
+.rvc-headline {
+  margin: 0 0 12px;
+  font: 600 16px/1.4 var(--font-display);
+  color: var(--text);
+}
+
+.rvc-fair { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+
+.rvc-takeaways { display: flex; flex-direction: column; gap: 8px; }
+.rvc-take {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--bad);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 9px 12px;
+}
+.rvc-take[data-tone='potential'] { border-left-color: var(--warn); }
+.rvc-take[data-tone='target'] { border-left-color: var(--cyan); }
+.rvc-take header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rvc-take b { font: 600 13.5px var(--font-display); color: var(--text); }
+.rvc-take p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.rvc-take footer { display: flex; gap: 6px; margin-top: 6px; }
+
+.rvc-chip {
+  flex: none;
+  font: 600 11px var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--bad);
+  background: rgba(255, 84, 112, 0.12);
+}
+.rvc-chip[data-tone='potential'],
+.rvc-chip[data-tone='warn'] { color: var(--warn); background: rgba(255, 176, 32, 0.12); }
+.rvc-chip[data-tone='target'] { color: var(--cyan); background: rgba(38, 187, 244, 0.12); }
+
+.rvc-corner {
+  font: 600 11px var(--font-display);
+  color: var(--cyan);
+  background: transparent;
+  border: 1px solid rgba(38, 187, 244, 0.4);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.rvc-corner:hover { background: rgba(38, 187, 244, 0.12); }
+
+/* ---- Where the time goes ---- */
+.rvc-worst { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rvc-worst li { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.rvc-worst li:last-child { border-bottom: 0; padding-bottom: 0; }
+.rvc-worst__row {
+  display: grid;
+  grid-template-columns: 42px 74px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rvc-worst__row:hover .rvc-worst__id { text-decoration: underline; }
+.rvc-worst__id { font: 600 13px var(--font-display); color: var(--cyan); }
+.rvc-worst__loss { font: 600 13px var(--font-mono); }
+.rvc-worst__phase { font-size: 12.5px; color: var(--text-2); }
+.rvc-pri {
+  font: 600 9.5px var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvc-worst li[data-priority='high'] .rvc-pri { color: var(--bad); }
+.rvc-worst li[data-priority='medium'] .rvc-pri { color: var(--warn); }
+.rvc-worst__tip { margin: 2px 0 0 52px; font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+
+.rvc-num[data-tone='loss'],
+.rvc-worst__loss[data-tone='loss'] { color: var(--bad); }
+.rvc-num[data-tone='gain'],
+.rvc-worst__loss[data-tone='gain'] { color: var(--ok); }
+.rvc-num[data-tone='level'],
+.rvc-worst__loss[data-tone='level'] { color: var(--text-2); }
+
+/* ---- Show me ---- */
+.rvc-show .rvx-card__head { justify-content: space-between; }
+.rvc-showme { margin-bottom: 10px; }
+.rvc-map {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.rvc-map canvas,
+.rvc-chan canvas { display: block; width: 100%; height: 100%; }
+.rvc-map .rv-card__note { padding: 12px; }
+.rvc-chan { position: relative; width: 100%; height: 260px; margin-top: 8px; }
+
+/* ---- Corner by corner ---- */
+.rvc-break .rvx-card__head { justify-content: space-between; }
+.rvc-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--text-3); }
+.rvc-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rvc-legend .rvc-seg { width: 10px; height: 10px; border-radius: 2px; }
+.rvc-legend__axis { font-family: var(--font-mono); }
+
+.rvc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rvc-table th,
+.rvc-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.rvc-table thead th {
+  font: 600 10px var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rvc-table tbody th { font: 600 13px var(--font-display); color: var(--text); width: 52px; }
+.rvc-table tr[data-step='true'] { cursor: pointer; }
+.rvc-table tr[data-step='true']:hover,
+.rvc-table tr[data-step='true']:focus-visible { background: var(--panel-2); outline: none; }
+.rvc-table tr[data-step='true'] th { color: var(--cyan); }
+.rvc-num { font-family: var(--font-mono); text-align: right !important; width: 76px; }
+.rvc-barcell { width: 55%; }
+.rvc-main { color: var(--text-2); font-size: 12.5px; }
+
+.rvc-bar { display: flex; width: 100%; height: 12px; }
+.rvc-bar__neg,
+.rvc-bar__pos { flex: 1 1 50%; display: flex; height: 100%; }
+.rvc-bar__neg { justify-content: flex-end; border-right: 1px solid var(--text-3); }
+.rvc-seg { display: block; height: 100%; background: var(--text-3); }
+.rvc-bar__neg .rvc-seg { opacity: 0.55; }
+.rvc-seg[data-phase='braking'] { background: var(--rvc-braking, #ff5470); }
+.rvc-seg[data-phase='turnIn'] { background: var(--rvc-turnIn, #ffb020); }
+.rvc-seg[data-phase='midCorner'] { background: var(--rvc-midCorner, #b388ff); }
+.rvc-seg[data-phase='exit'] { background: var(--rvc-exit, #26bbf4); }
+.rvc-seg[data-phase='exitRun'] { background: var(--rvc-exitRun, #3d5a99); }
+.rvc-seg[data-notyou='true'] {
+  background: repeating-linear-gradient(135deg, #4a5468 0 3px, #2a3448 3px 6px);
+}
+
+.rvc-notyou {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.rvc-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
+.rvc-foot span { font-family: var(--font-mono); }
+.rvc-foot .rvc-seq { font-family: inherit; }
+
+/* ---- The lap view: Show me above the map ---- */
+.rv-showme {
+  background: var(--panel);
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+/* The side column's first row is the map's 1fr; with Show me above it, the
+   step-through takes its own height and the map keeps the stretch. */
+.rv-lap__side:has(> .rv-showme) { grid-template-rows: auto minmax(0, 1fr) repeat(4, auto); }

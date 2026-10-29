@@ -8424,6 +8424,9 @@
     applyFuelTabVisibility();
     applyVrTabVisibility();
     applyPracticeTabVisibility();
+    // Review's Coach sub-tab (beta) answers to the same signal.
+    window.apexFollowingBeta = followingBeta;
+    window.apexReview?.setBeta?.(followingBeta);
     applyTrainingVisibility();
     // The channel is known now, so main's mode can be taken at its word.
     adoptTrainingMode(null);

@@ -87,6 +87,11 @@
     { slug: 'action:review.session', tab: 'review', label: 'Opened a session' },
     { slug: 'action:review.lap', tab: 'review', label: 'Opened a lap' },
     { slug: 'action:review.compare', tab: 'review', label: 'Compared against another lap' },
+    // The driving coach (2026-10-29): Review's Coach sub-tab and Show me.
+    // BETA — the sub-tab exists only for drivers following beta, so its
+    // adoption is measured against them (see `gated` on TABS).
+    { slug: 'action:review.coach', tab: 'review', gated: 'beta', label: 'Read the lap coach (beta)' },
+    { slug: 'action:review.showme', tab: 'review', gated: 'beta', label: 'Stepped through Show me (beta)' },
 
     // The Practice tab: a debrief read, and a lap studied against the target.
     { slug: 'action:practice.debrief', tab: 'practice', label: 'Opened a practice debrief' },
