@@ -203,6 +203,8 @@ export interface CornerStat {
   exitD: number | null;
   /** Per lap, in lap order; null = not scored on that lap. */
   perLap: (number | null)[];
+  /** Per lap: whether it counted towards the averages (see {@link inliers}). Absent = every scored lap. */
+  keptLap?: boolean[];
   /** Mean over the scored laps. */
   lossSec: number;
   /** Scored laps. */
@@ -281,9 +283,36 @@ function sampleOfRow(r: CoachFallbackRow): CornerSample | null {
   };
 }
 
+/**
+ * A lap that went off, spun or backed out for traffic is still a clean lap,
+ * and it can lose half a minute in one corner. Averaged in, that one lap
+ * becomes the coaching (seen on Road Atlanta 2026-10-08: 34 s in C5 on one
+ * lap made "brake 21 m later" the session's headline). A sample this far
+ * above the corner's median — {@link OUTLIER_FLOOR_SEC}, or five median
+ * absolute deviations if that is more — is left out of every average; the
+ * per-lap bars still show it.
+ */
+export const OUTLIER_FLOOR_SEC = 0.5;
+const OUTLIER_MADS = 5;
+
+function median(xs: readonly number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+}
+
+export function inliers<T extends { loss: number }>(xs: readonly T[]): T[] {
+  if (xs.length < 4) return [...xs];
+  const med = median(xs.map((s) => s.loss));
+  const mad = median(xs.map((s) => Math.abs(s.loss - med)));
+  const cap = med + Math.max(OUTLIER_FLOOR_SEC, OUTLIER_MADS * mad);
+  return xs.filter((s) => s.loss <= cap);
+}
+
 /** Fold one corner's samples (a column of laps, null = not scored) into a stat. */
 function statOf(id: string, samples: readonly (CornerSample | null)[]): CornerStat {
-  const got = samples.filter((s): s is CornerSample => !!s);
+  const got = inliers(samples.filter((s): s is CornerSample => !!s));
+  const kept = new Set(got);
   const avg = (pick: (s: CornerSample) => number | null): number | null => mean(got.map(pick).filter(finite));
   let phases: Record<CoachPhase, number> | null = null;
   const withPhases = got.filter((s) => s.phases);
@@ -299,6 +328,7 @@ function statOf(id: string, samples: readonly (CornerSample | null)[]): CornerSt
     entryD: first ? first.entryD : null,
     exitD: first ? first.exitD : null,
     perLap: samples.map((s) => (s ? r3(s.loss) : null)),
+    keptLap: samples.map((s) => !!s && kept.has(s)),
     lossSec: mean(got.map((s) => s.loss)) ?? 0,
     laps: got.length,
     losing: got.filter((s) => s.loss > LEVEL_SEC).length,
@@ -333,7 +363,7 @@ export function confidenceOf(s: CornerStat): number {
   if (s.laps <= 0) return 0;
   const share = s.losing / s.laps;
   const shrink = s.laps / (s.laps + 1);
-  const xs = s.perLap.filter(finite);
+  const xs = s.perLap.filter((v, i): v is number => finite(v) && (!s.keptLap || s.keptLap[i] === true));
   const sd = stdev(xs);
   const cv = sd !== null && Math.abs(s.lossSec) > 1e-6 ? Math.min(1, sd / Math.abs(s.lossSec)) : 0;
   return r2(Math.max(0, Math.min(1, share * shrink * (1 - 0.3 * cv))));
@@ -892,6 +922,7 @@ function statsFromSummaries(review: PracticeReview): CornerStat[] {
         }),
       ]);
       s.perLap = review.laps.map(() => null);
+      delete s.keptLap;
       return s;
     });
 }
