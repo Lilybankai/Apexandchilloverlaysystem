@@ -365,7 +365,8 @@ export function emptyPhasePoints(): PhasePoints {
 
 /**
  * The phase points of every corner on one lap. `corners` must be in lap order
- * (they are sorted by apex here if not); the result is index-aligned with it.
+ * and not overlap (`findCorners` and the catalogue both give that; `lapLoss`
+ * sorts by apex first); the result is index-aligned with it.
  * Each corner's searches stay between its neighbours' apexes, so a chicane's
  * two halves never claim each other's braking or throttle.
  */
