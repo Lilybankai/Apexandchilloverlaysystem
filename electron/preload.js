@@ -430,6 +430,12 @@ contextBridge.exposeInMainWorld('apex', {
   reviewCoach: (args) => ipcRenderer.invoke('review:coach', args),
   /** A CoachAiRequest (or `{ report, context }`) → `{ ok, ai: CoachAiResult | null, cached }`. */
   coachAi: (req) => ipcRenderer.invoke('coach:ai', req),
+  /**
+   * "Your driving" — habits across sessions at one track in one class:
+   * `{ trackKey, carClass }` → `{ ok, report: HabitsReport | null, error? }`
+   * (electron/habits-ipc.js, src/telemetry/drivingHabits.ts).
+   */
+  practiceHabits: (args) => ipcRenderer.invoke('practice:habits', args),
 
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {
