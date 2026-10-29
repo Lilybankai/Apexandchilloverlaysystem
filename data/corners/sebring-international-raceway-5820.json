@@ -1,0 +1,161 @@
+{
+  "mapKey": "sebring-international-raceway-5820",
+  "trackLengthM": 5820,
+  "builtFrom": 22,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.053369,
+      "apexD": 0.0819,
+      "exitD": 0.09234,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.137338,
+      "apexD": 0.16229,
+      "exitD": 0.168465,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.178893,
+      "apexD": 0.192562,
+      "exitD": 0.199455,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.310865,
+      "apexD": 0.340248,
+      "exitD": 0.34522,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.3577,
+      "apexD": 0.37091,
+      "exitD": 0.384955,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.447815,
+      "apexD": 0.475093,
+      "exitD": 0.48022,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.48644,
+      "apexD": 0.500895,
+      "exitD": 0.512815,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.537148,
+      "apexD": 0.558805,
+      "exitD": 0.56484,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.664998,
+      "apexD": 0.691725,
+      "exitD": 0.6987,
+      "dir": "R",
+      "seq": "S4"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.714494,
+      "apexD": 0.727485,
+      "exitD": 0.7347,
+      "dir": "R",
+      "seq": "S4"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.881501,
+      "apexD": 0.91926,
+      "exitD": 0.93508,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C2",
+        "C3"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C4",
+        "C5"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C6",
+        "C7"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S4",
+      "cornerIds": [
+        "C9",
+        "C10"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 22,
+    "local": 0,
+    "cloud": 22,
+    "cutBy": {
+      "line": 17,
+      "latG": 5
+    },
+    "classes": {
+      "LMP3": 2,
+      "GT3": 11,
+      "LMP2_ELMS": 2,
+      "HYPERCAR": 3,
+      "GTE": 3,
+      "LMP2": 1
+    },
+    "support": [
+      0.95,
+      1,
+      1,
+      1,
+      0.91,
+      1,
+      1,
+      1,
+      0.91,
+      1,
+      0.95
+    ]
+  }
+}

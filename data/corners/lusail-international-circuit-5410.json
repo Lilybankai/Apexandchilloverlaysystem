@@ -1,0 +1,151 @@
+{
+  "mapKey": "lusail-international-circuit-5410",
+  "trackLengthM": 5405,
+  "builtFrom": 34,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.110649,
+      "apexD": 0.146639,
+      "exitD": 0.15612,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.18205,
+      "apexD": 0.202823,
+      "exitD": 0.21328,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.232585,
+      "apexD": 0.24523,
+      "exitD": 0.255715,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C4",
+      "entryD": 0.297068,
+      "apexD": 0.32214,
+      "exitD": 0.32854,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.387443,
+      "apexD": 0.40759,
+      "exitD": 0.414755,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.45682,
+      "apexD": 0.484702,
+      "exitD": 0.49522,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C7",
+      "entryD": 0.530901,
+      "apexD": 0.547653,
+      "exitD": 0.55354,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.566377,
+      "apexD": 0.584255,
+      "exitD": 0.59302,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.680304,
+      "apexD": 0.73882,
+      "exitD": 0.74181,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.760201,
+      "apexD": 0.77869,
+      "exitD": 0.782875,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.815522,
+      "apexD": 0.836758,
+      "exitD": 0.839705,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C12",
+      "entryD": 0.895964,
+      "apexD": 0.921373,
+      "exitD": 0.93081,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C7",
+        "C8"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C9",
+        "C10"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 34,
+    "local": 20,
+    "cloud": 14,
+    "cutBy": {
+      "line": 7,
+      "latG": 27
+    },
+    "classes": {
+      "GT3": 28,
+      "LMP2_ELMS": 5,
+      "LMP3": 1
+    },
+    "support": [
+      0.94,
+      0.94,
+      1,
+      0.88,
+      1,
+      0.94,
+      1,
+      0.97,
+      0.85,
+      0.88,
+      0.88,
+      1
+    ]
+  }
+}

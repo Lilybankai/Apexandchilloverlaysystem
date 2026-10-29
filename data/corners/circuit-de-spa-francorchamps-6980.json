@@ -1,0 +1,206 @@
+{
+  "mapKey": "circuit-de-spa-francorchamps-6980",
+  "trackLengthM": 6982,
+  "builtFrom": 118,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.016547,
+      "apexD": 0.038378,
+      "exitD": 0.04307,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.137485,
+      "apexD": 0.151205,
+      "exitD": 0.15397,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.30367,
+      "apexD": 0.32991,
+      "exitD": 0.33532,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.335755,
+      "apexD": 0.341243,
+      "exitD": 0.34818,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.352688,
+      "apexD": 0.36179,
+      "exitD": 0.367145,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.396214,
+      "apexD": 0.421188,
+      "exitD": 0.43158,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.442196,
+      "apexD": 0.45239,
+      "exitD": 0.45864,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.51249,
+      "apexD": 0.532448,
+      "exitD": 0.537775,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C9",
+      "entryD": 0.60396,
+      "apexD": 0.629215,
+      "exitD": 0.638315,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.64035,
+      "apexD": 0.648965,
+      "exitD": 0.6558,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.674329,
+      "apexD": 0.691442,
+      "exitD": 0.69733,
+      "dir": "R",
+      "seq": "S4"
+    },
+    {
+      "id": "C12",
+      "entryD": 0.709815,
+      "apexD": 0.72296,
+      "exitD": 0.729935,
+      "dir": "R",
+      "seq": "S4"
+    },
+    {
+      "id": "C13",
+      "entryD": 0.85733,
+      "apexD": 0.87133,
+      "exitD": 0.87491,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C14",
+      "entryD": 0.919327,
+      "apexD": 0.948182,
+      "exitD": 0.9507,
+      "dir": "R",
+      "seq": "S5"
+    },
+    {
+      "id": "C15",
+      "entryD": 0.95103,
+      "apexD": 0.955343,
+      "exitD": 0.95917,
+      "dir": "L",
+      "seq": "S5"
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C6",
+        "C7"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C9",
+        "C10"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S4",
+      "cornerIds": [
+        "C11",
+        "C12"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S5",
+      "cornerIds": [
+        "C14",
+        "C15"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 118,
+    "local": 84,
+    "cloud": 34,
+    "cutBy": {
+      "line": 15,
+      "latG": 103
+    },
+    "classes": {
+      "LMP2": 6,
+      "LMP2_ELMS": 82,
+      "HYPERCAR": 6,
+      "LMP3": 9,
+      "GT3": 11,
+      "GTE": 4
+    },
+    "support": [
+      0.99,
+      0.88,
+      0.97,
+      1,
+      0.98,
+      0.89,
+      0.96,
+      0.92,
+      0.93,
+      0.94,
+      0.96,
+      1,
+      0.84,
+      1,
+      0.99
+    ]
+  }
+}

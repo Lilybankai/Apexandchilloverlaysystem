@@ -400,7 +400,10 @@ contextBridge.exposeInMainWorld('apex', {
   reviewPendingAck: (sessionId) => ipcRenderer.invoke('review:pendingAck', sessionId),
 
   /** One practice session's debrief: `sessionId` → `{ ok, review: PracticeReview | null, error? }`. */
-  reviewPractice: (sessionId) => ipcRenderer.invoke('review:practice', sessionId),
+  reviewPractice: (sessionId, opts) => ipcRenderer.invoke('review:practice', sessionId, opts),
+  // Fair comparison laps (fair-ipc.js): board laps to measure a session against, and Review's chips.
+  practiceTargets: (req) => ipcRenderer.invoke('practice:targets', req),
+  reviewFairChips: (req) => ipcRenderer.invoke('review:fairChips', req),
 
   /**
    * One practice lap against its session's target: `{ sessionId, lapId, at, haveMapKey }`
@@ -414,6 +417,25 @@ contextBridge.exposeInMainWorld('apex', {
    * bestScore, bestLapSec }[], error? }`, oldest first (phase 3).
    */
   practiceTrend: (args) => ipcRenderer.invoke('practice:trend', args),
+
+  /* ---- AI driving coach (electron/coach-ipc.js) ---- */
+
+  /** `{ sessionId, targetLapId? }` → `{ ok, report: CoachReport | null }`: template words, fast. */
+  practiceCoach: (args) => ipcRenderer.invoke('practice:coach', args),
+  /** `{ sessionId, targetLapId? }` → `{ ok, report, ai, cached }`, `report.source === 'ai'`; ok:false → keep the template. */
+  practiceCoachAi: (args) => ipcRenderer.invoke('practice:coachAi', args),
+  /** `{ sessionId, lapId, at, targetLapId? }` → `{ ok, report, breakdown: LapLossBreakdown | null, show: ShowStep[] }`. */
+  practiceCoachLap: (args) => ipcRenderer.invoke('practice:coachLap', args),
+  /** The same object `reviewLap` takes → `{ ok, report, breakdown, show }`. */
+  reviewCoach: (args) => ipcRenderer.invoke('review:coach', args),
+  /** A CoachAiRequest (or `{ report, context }`) → `{ ok, ai: CoachAiResult | null, cached }`. */
+  coachAi: (req) => ipcRenderer.invoke('coach:ai', req),
+  /**
+   * "Your driving" — habits across sessions at one track in one class:
+   * `{ trackKey, carClass }` → `{ ok, report: HabitsReport | null, error? }`
+   * (electron/habits-ipc.js, src/telemetry/drivingHabits.ts).
+   */
+  practiceHabits: (args) => ipcRenderer.invoke('practice:habits', args),
 
   /** Hear a review become pending (or be cleared) while the panel is open. Returns an unsubscribe. */
   onReviewPending: (callback) => {

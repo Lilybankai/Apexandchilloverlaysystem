@@ -4855,12 +4855,37 @@ function registerIpc() {
     return { ok: true };
   });
 
-  /** One practice session's debrief: laps against the lap that was chased. */
-  ipcMain.handle('review:practice', (_evt, sessionId) => {
+  // Fair comparison laps (coach): `practice:targets`, `review:fairChips`, and
+  // the board-lap target behind `opts.targetLapId` below. See fair-ipc.js.
+  const fairIpc = require('./fair-ipc').register(ipcMain, { auth: authService, userData: () => app.getPath('userData') });
+
+  /**
+   * One practice session's debrief: laps against the lap that was chased —
+   * or, with `opts.targetLapId` (`board:<driverId>:<lapMs>`), against that
+   * leaderboard lap. A board target that cannot be had (offline, signed out)
+   * falls back to the usual target and says why in `targetError`.
+   */
+  /**
+   * What a Practice `targetLapId` means for the loaders: 'sessionBest' = the
+   * session's own best even when a lap was chased; a board id = that
+   * leaderboard lap, fetched (fair-ipc.js). `error` when a board lap cannot
+   * be had — the caller falls back to the usual target and says why.
+   */
+  async function practiceTargetOpts(sessionId, want) {
+    if (!want) return { opts: undefined, error: null };
+    if (want === 'sessionBest') return { opts: { sessionBest: true }, error: null };
+    const board = await fairIpc.boardTarget(sessionId, want);
+    return board && board.ok ? { opts: { target: board.target }, error: null } : { opts: undefined, error: (board && board.error) || 'unknown target' };
+  }
+
+  ipcMain.handle('review:practice', async (_evt, sessionId, opts) => {
     if (typeof sessionId !== 'string' || !sessionId) return { ok: false, review: null, error: 'no session' };
     try {
       const { loadPracticeReview } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js'));
-      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() });
+      const want = opts && typeof opts.targetLapId === 'string' ? opts.targetLapId : '';
+      const t = await practiceTargetOpts(sessionId, want);
+      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() }, t.opts);
+      if (review && t.error) return { ok: true, review, targetError: t.error };
       return review ? { ok: true, review } : { ok: false, review: null, error: 'session not found' };
     } catch (err) {
       console.error('[app] practice review unavailable:', err.message);
@@ -4874,7 +4899,7 @@ function registerIpc() {
    * micro-sectors, both laps' channels — plus a row per corner. The circuit
    * is not resent when the panel already holds `haveMapKey`, as `review:lap`.
    */
-  ipcMain.handle('practice:lap', (_evt, req) => {
+  ipcMain.handle('practice:lap', async (_evt, req) => {
     const sessionId = req && typeof req.sessionId === 'string' ? req.sessionId : '';
     const lapId = req && typeof req.lapId === 'string' ? req.lapId : '';
     const at = req && typeof req.at === 'string' ? req.at : '';
@@ -4882,13 +4907,19 @@ function registerIpc() {
     try {
       const { loadPracticeLap } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceLap.js'));
       const haveMapKey = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
-      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey }, { reviewDir: practiceReviewsDir() });
+      // `targetLapId`: the board lap the debrief was measured against (as `review:practice`).
+      const t = await practiceTargetOpts(sessionId, typeof req.targetLapId === 'string' ? req.targetLapId : '');
+      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey, ...(t.opts || {}) }, { reviewDir: practiceReviewsDir() });
+      if (result && t.error) return { ok: true, result, targetError: t.error };
       return result ? { ok: true, result } : { ok: false, result: null, error: 'lap not found' };
     } catch (err) {
       console.error('[app] practice lap unavailable:', err.message);
       return { ok: false, result: null, error: err.message };
     }
   });
+
+  // "Your driving": habits across sessions at one track/class (electron/habits-ipc.js).
+  require('./habits-ipc').register(ipcMain, { allowed: () => practiceOnThisChannel(loadSettings()), reviewDir: practiceReviewsDir });
 
   /**
    * The accuracy score across practice sessions at one track in one class,
@@ -4907,6 +4938,9 @@ function registerIpc() {
       return { ok: false, sessions: [], error: err.message };
     }
   });
+
+  // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
+  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
   ipcMain.handle('review:sessions', () => {
     try {

@@ -683,6 +683,9 @@
 
     const out = { x0, x1, bands: [], window: [wFrom, wTo] };
     let y = padT;
+    // Which channels each band carries, for "Show me" to find the band a mark
+    // belongs on. Kept out of `out.bands`, which is the panel's to read.
+    const slots = [];
 
     for (const band of drawable) {
       const src = band.from === 'delta' ? o.delta : trace;
@@ -692,6 +695,7 @@
       const y1 = y + bh;
       const placed = { y0, y1, label: band.label };
       out.bands.push(placed);
+      slots.push({ y0, y1, label: String(band.label), keys: band.series.map((s) => s.key) });
 
       // Each band sits on its own faint plate, so a glance separates them
       // without a border per band shouting for attention.
@@ -879,6 +883,12 @@
     const bottom = y - gap;
     out.top = top;
     out.bottom = bottom;
+
+    // "Show me": the coach's marks as ticks on the channel they are about.
+    // Only when asked for — without `opts.marks` not one call changes.
+    if (Array.isArray(o.marks)) {
+      out.marks = drawChannelMarks(ctx, o.marks, slots, px, inWindow, x0, x1);
+    }
 
     // Sector lines, drawn across every band at once — the reason these share a
     // canvas. S1 starts at the line, so the first mark is the lap's start.
@@ -1958,7 +1968,9 @@
       // same short name the readout and the strip use. At whole-lap the bars
       // are a few pixels apart and the words would pile up, so the outline
       // colour carries it there.
-      const labelled = g.zoom > 2.5;
+      // With "Show me" marks on the map the coach's own labels say whose
+      // brake is whose, and these would sit under them in fragments.
+      const labelled = g.zoom > 2.5 && !(Array.isArray(o.marks) && o.marks.length);
       const tick = (tr, colour, label) => {
         if (!Array.isArray(tr.x) || !Array.isArray(tr.z)) return;
         const half = lineW * 1.6 + 3;
@@ -2007,6 +2019,15 @@
       if (mine) tick(trace, CSS.cyan, 'YOU');
     }
 
+    // "Show me": the coach's marks and arrows, over the lines and under the
+    // cars. Only when asked for — without them not one call changes.
+    let showme = null;
+    if (Array.isArray(o.marks) || Array.isArray(o.arrows)) {
+      showme = drawMapShowMe(ctx, g, pts, trace, o, {
+        wFrom, wTo, lineW, halo: HALO, panX, panY, w, h,
+      });
+    }
+
     // The cars: where each lap was at this point of the road. The real
     // position when the lap was placed, otherwise the point on the centreline
     // at that distance.
@@ -2036,7 +2057,7 @@
     if (g.zoom > 1.05) drawLocator(ctx, cached.probe, w, h, wFrom, wTo, o.cursorD);
     drawScaleBar(ctx, g, w, h);
 
-    return {
+    const result = {
       minY: g.minEl,
       maxY: g.maxEl,
       shaded: g.rise > 0.5,
@@ -2049,6 +2070,467 @@
       colours: { mine: mineStyle, vs: vsStyle },
       geom: g,
     };
+    if (showme) result.showme = showme;
+    return result;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*  Show me                                                                 */
+  /*                                                                          */
+  /*  2026-10-29, the driving coach: "brake 12 m later" is a sentence; the    */
+  /*  same thing drawn on the corner it is about is an instruction. The coach */
+  /*  hands the painters `ShowMark`s (a point on the road, whose, and what    */
+  /*  happened there) and `ShowArrow`s (from here to there along the studied  */
+  /*  lap's own line) — see src/telemetry/coachContract.ts — and they are     */
+  /*  drawn over the lap the painters already draw. Nothing below runs unless */
+  /*  `opts.marks` / `opts.arrows` is given: without them the map and the     */
+  /*  charts are call-for-call what they were (test:showme pins that).       */
+  /* ------------------------------------------------------------------------ */
+
+  /** What a mark is called when the coach gave it no label of its own. */
+  const MARK_WORD = { brake: 'Brake', turnin: 'Turn-in', apex: 'Apex', throttle: 'Throttle', full: 'Full' };
+  /** The advice colour: neither lap's identity, nor a pedal, nor pace. */
+  const ADVICE = '#ffb020';
+  const ADVICE_INK = '#160f02';
+
+  const markColour = (m) => (m && m.who === 'ref' ? CSS.compare : CSS.cyan);
+  const markText = (m) => String(m && m.label ? m.label : MARK_WORD[m && m.kind] || '');
+  const inSpan = (dd, a, b) => isNum(dd) && dd >= a - 1e-9 && dd <= b + 1e-9;
+
+  /** Width of a string in the current font, or a fair guess without a real canvas. */
+  function textWidth(ctx, text) {
+    if (typeof ctx.measureText === 'function') {
+      const m = ctx.measureText(text);
+      if (m && isNum(m.width)) return m.width;
+    }
+    return String(text).length * 5.6;
+  }
+
+  const overlap = (a, b) => {
+    const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return ox > 0 && oy > 0 ? ox * oy : 0;
+  };
+
+  /**
+   * Pick the first spot for a label that hits nothing already down, or —
+   * when every spot hits something — the one that hits least. `spots` are
+   * the label's CENTRES in preference order; `taken` is every box already
+   * placed, and the pick is added to it. Greedy, and that is enough: a
+   * Show me step draws a handful of marks on one corner, not a census.
+   */
+  function placeLabel(spots, bw, bh, taken, bounds) {
+    let best = null;
+    for (const s of spots) {
+      const box = { x: s.x - bw / 2, y: s.y - bh / 2, w: bw, h: bh };
+      let cost = 0;
+      if (bounds) {
+        // Off the canvas costs as much as sitting on another label.
+        if (box.x < bounds.x0 || box.x + bw > bounds.x1 || box.y < bounds.y0 || box.y + bh > bounds.y1) cost += bw * bh;
+      }
+      for (const t of taken) cost += overlap(box, t);
+      if (cost === 0) { best = { box, cost }; break; }
+      if (!best || cost < best.cost) best = { box, cost };
+    }
+    if (best) taken.push(best.box);
+    return best ? best.box : null;
+  }
+
+  /** A rounded pill, filled and stroked — the chips on the map and the charts. */
+  function chip(ctx, box, fill, stroke) {
+    const r = Math.min(4, box.h / 2);
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(box.x, box.y, box.w, box.h, r);
+    else if (typeof ctx.rect === 'function') ctx.rect(box.x, box.y, box.w, box.h);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  /** The lap's position at a lap distance, interpolated, or null. */
+  function lineAt(tr, dd) {
+    const d = tr.d;
+    const n = Math.min(d.length, tr.x.length, tr.z.length);
+    if (n < 2) return null;
+    if (dd <= d[0]) return { x: tr.x[0], z: tr.z[0] };
+    if (dd >= d[n - 1]) return { x: tr.x[n - 1], z: tr.z[n - 1] };
+    let lo = 0;
+    let hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (d[mid] <= dd) lo = mid;
+      else hi = mid;
+    }
+    const f = d[hi] > d[lo] ? (dd - d[lo]) / (d[hi] - d[lo]) : 0;
+    return { x: tr.x[lo] + (tr.x[hi] - tr.x[lo]) * f, z: tr.z[lo] + (tr.z[hi] - tr.z[lo]) * f };
+  }
+
+  /**
+   * The marks and arrows on the map.
+   *
+   * A mark sits at its own `x`/`z` when the coach gave one; otherwise on the
+   * line of the lap it belongs to at `d`, and failing that on the centreline
+   * at `d` — the cursor's own fallback. Each kind has its own glyph, so a
+   * reader can tell the brake from the apex without the words:
+   *
+   *   brake     a bar across the line (longer than the inputs-mode bars)
+   *   turnin    a tick off one side, leaning the way the car is going
+   *   apex      a dot
+   *   throttle  a chevron pointing down the road; `full` a double one
+   *
+   * Arrows run along the STUDIED lap's own line (its x/z between `fromD` and
+   * `toD`; the centreline when it has none), alongside it rather than on top
+   * of it — the line under an instruction is the thing being instructed —
+   * with a head at `toD` and the words in an amber chip.
+   *
+   * Labels avoid each other, the glyphs and the arrows: arrows' chips go down
+   * first (they are the instruction), then each mark's label tries the side of
+   * the line that lap's labels normally use, the other side, then ahead and
+   * behind, and settles for the least crowded spot. Every mark inside the
+   * window is labelled, at any zoom: a Show me step frames its corner, so the
+   * "zoom > 2.5" rule the inputs-mode bars use would hide them on a small map.
+   */
+  function drawMapShowMe(ctx, g, pts, trace, o, env) {
+    const { wFrom, wTo, lineW, halo } = env;
+    const n = pts.length;
+    const hasLine = (tr) => !!tr && Array.isArray(tr.x) && Array.isArray(tr.z) && Array.isArray(tr.d)
+      && tr.x.length >= 2 && tr.x.length === tr.z.length;
+    const centre = (dd) => {
+      const k = Math.min(n - 1, Math.max(0, Math.floor(dd * n)));
+      return g.project(pts[k][0], pts[k][1]);
+    };
+    // The direction of the road at a distance, on screen, from the centreline
+    // a couple of stations either side: the same for every mark at that spot,
+    // whichever lap it belongs to, so two marks on one corner agree on "across".
+    const tangentAt = (dd) => {
+      const k = Math.round(dd * n);
+      const a = pts[((k - 2) % n + n) % n];
+      const b = pts[((k + 2) % n + n) % n];
+      const p = g.project(a[0], a[1]);
+      const q = g.project(b[0], b[1]);
+      const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      return { x: (q.x - p.x) / len, y: (q.y - p.y) / len };
+    };
+    const placeMark = (m) => {
+      if (isNum(m.x) && isNum(m.z)) return g.project(m.x, m.z);
+      const tr = m.who === 'ref' ? o.vs : trace;
+      if (hasLine(tr)) {
+        const p = lineAt(tr, m.d);
+        if (p) return g.project(p.x, p.z);
+      }
+      return centre(m.d);
+    };
+
+    const half = lineW * 1.6 + 3;
+    const taken = [];
+    const bounds = { x0: 2 - env.panX, x1: env.w - 2 - env.panX, y0: 2 - env.panY, y1: env.h - 2 - env.panY };
+    const shown = { marks: [], arrows: [] };
+
+    // Where everything goes, before anything is drawn: the glyphs and the
+    // arrow shafts are obstacles for every label.
+    const marks = [];
+    for (const m of Array.isArray(o.marks) ? o.marks : []) {
+      if (!m || !MARK_WORD[m.kind] || !inSpan(m.d, wFrom, wTo)) continue;
+      const p = placeMark(m);
+      if (!p || !isNum(p.x) || !isNum(p.y)) continue;
+      const t = tangentAt(m.d);
+      marks.push({ m, p, t, nrm: { x: -t.y, y: t.x } });
+      taken.push({ x: p.x - half * 0.7, y: p.y - half * 0.7, w: half * 1.4, h: half * 1.4 });
+    }
+
+    const arrows = [];
+    for (const a of Array.isArray(o.arrows) ? o.arrows : []) {
+      if (!a || !isNum(a.fromD) || !isNum(a.toD)) continue;
+      const lo = Math.max(wFrom, Math.min(a.fromD, a.toD));
+      const hi = Math.min(wTo, Math.max(a.fromD, a.toD));
+      if (hi < lo) continue;
+      // The road between the two distances, in lap order; reversed after the
+      // offset so "brake earlier" points back up the road.
+      const world = [];
+      if (hasLine(trace)) {
+        const s = lineAt(trace, lo);
+        if (s) world.push(s);
+        for (let i = 0; i < trace.d.length; i++) {
+          if (trace.d[i] > lo && trace.d[i] < hi) world.push({ x: trace.x[i], z: trace.z[i] });
+        }
+        const e = lineAt(trace, hi);
+        if (e) world.push(e);
+      } else {
+        for (let k = Math.floor(lo * n); k <= Math.ceil(hi * n); k++) {
+          const q = pts[Math.min(n - 1, Math.max(0, k))];
+          world.push({ x: q[0], z: q[1] });
+        }
+      }
+      const scr = world.map((q) => g.project(q.x, q.z));
+      if (scr.length < 2) continue;
+      // Beside the line, not on it, on the side away from YOUR labels.
+      const off = -(lineW * 1.4 + 7);
+      const path = scr.map((q, i) => {
+        const pa = scr[Math.max(0, i - 1)];
+        const pb = scr[Math.min(scr.length - 1, i + 1)];
+        const len = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1;
+        return { x: q.x + (-(pb.y - pa.y) / len) * off, y: q.y + ((pb.x - pa.x) / len) * off };
+      });
+      if (a.toD < a.fromD) path.reverse();
+      arrows.push({ a, path });
+      for (let i = 0; i < path.length; i += Math.max(1, Math.floor(path.length / 12))) {
+        taken.push({ x: path[i].x - 3, y: path[i].y - 3, w: 6, h: 6 });
+      }
+    }
+
+    // Nothing inside the window: not one call, so an empty step draws the
+    // map exactly as it was.
+    if (!marks.length && !arrows.length) return shown;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // The arrows: shaft, head, and the words.
+    ctx.font = '600 10px "Bahnschrift", "Segoe UI Semibold", system-ui, sans-serif';
+    for (const { a, path } of arrows) {
+      const end = path[path.length - 1];
+      let k = path.length - 2;
+      while (k > 0 && Math.hypot(end.x - path[k].x, end.y - path[k].y) < 6) k--;
+      const back = path[Math.max(0, k)];
+      const len = Math.hypot(end.x - back.x, end.y - back.y) || 1;
+      const ux = (end.x - back.x) / len;
+      const uy = (end.y - back.y) / len;
+      const stroked = (colour, width) => {
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+        ctx.stroke();
+      };
+      stroked(halo, 5);
+      stroked(ADVICE, 2.4);
+      const hs = 7;
+      ctx.beginPath();
+      ctx.moveTo(end.x + ux * 2, end.y + uy * 2);
+      ctx.lineTo(end.x - ux * hs - uy * hs * 0.6, end.y - uy * hs + ux * hs * 0.6);
+      ctx.lineTo(end.x - ux * hs + uy * hs * 0.6, end.y - uy * hs - ux * hs * 0.6);
+      ctx.closePath();
+      ctx.strokeStyle = halo;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = ADVICE;
+      ctx.fill();
+
+      const text = String(a.label || '');
+      let box = null;
+      if (text) {
+        const mid = path[Math.floor(path.length / 2)];
+        const pa = path[Math.max(0, Math.floor(path.length / 2) - 1)];
+        const pb = path[Math.min(path.length - 1, Math.floor(path.length / 2) + 1)];
+        const l2 = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1;
+        const nx = -(pb.y - pa.y) / l2;
+        const ny = (pb.x - pa.x) / l2;
+        const bw = textWidth(ctx, text) + 12;
+        const bh = 16;
+        // Far enough along the normal for the WHOLE box to clear the shaft,
+        // whichever way the road runs across the screen.
+        const ext = Math.abs(nx) * bw / 2 + Math.abs(ny) * bh / 2;
+        const spots = [];
+        for (const k2 of [1, -1, 2, -2, 3, -3]) {
+          const r = Math.sign(k2) * (ext + 8 + (Math.abs(k2) - 1) * 18);
+          spots.push({ x: mid.x + nx * r, y: mid.y + ny * r });
+        }
+        box = placeLabel(spots, bw, bh, taken, bounds);
+        if (box) {
+          chip(ctx, box, ADVICE, halo);
+          ctx.fillStyle = ADVICE_INK;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, box.x + box.w / 2, box.y + box.h / 2 + 0.5);
+        }
+      }
+      shown.arrows.push({ label: text, from: path[0], to: end, box });
+    }
+
+    // The glyphs.
+    for (const { m, p, t, nrm } of marks) {
+      const colour = markColour(m);
+      const line = (x0, y0, x1, y1, width) => {
+        ctx.strokeStyle = halo;
+        ctx.lineWidth = width + 2.6;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      };
+      if (m.kind === 'brake') {
+        const L = half * 1.45;
+        line(p.x - nrm.x * L, p.y - nrm.y * L, p.x + nrm.x * L, p.y + nrm.y * L, 3.2);
+      } else if (m.kind === 'turnin') {
+        const side = m.who === 'ref' ? -1 : 1;
+        const a0 = half * 0.35;
+        const a1 = half * 1.5;
+        line(p.x + nrm.x * a0 * side, p.y + nrm.y * a0 * side,
+          p.x + nrm.x * a1 * side + t.x * half * 0.6, p.y + nrm.y * a1 * side + t.y * half * 0.6, 2.6);
+      } else if (m.kind === 'apex') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4.6, 0, Math.PI * 2);
+        ctx.fillStyle = colour;
+        ctx.fill();
+        ctx.strokeStyle = halo;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        // throttle / full: chevrons pointing down the road.
+        const s = 5;
+        const heads = m.kind === 'full' ? [3, -3] : [0];
+        for (const k of heads) {
+          const cx = p.x + t.x * k;
+          const cy = p.y + t.y * k;
+          for (const [col, width] of [[halo, 4.6], [colour, 2.2]]) {
+            ctx.strokeStyle = col;
+            ctx.lineWidth = width;
+            ctx.beginPath();
+            ctx.moveTo(cx - t.x * s + nrm.x * s, cy - t.y * s + nrm.y * s);
+            ctx.lineTo(cx + t.x * s * 0.4, cy + t.y * s * 0.4);
+            ctx.lineTo(cx - t.x * s - nrm.x * s, cy - t.y * s - nrm.y * s);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // The words, last, so no glyph is drawn over a label.
+    ctx.font = '600 10px "Bahnschrift", "Segoe UI Semibold", system-ui, sans-serif';
+    for (const { m, p, t, nrm } of marks) {
+      const text = markText(m);
+      const colour = markColour(m);
+      let box = null;
+      if (text) {
+        const bw = textWidth(ctx, text) + 10;
+        const bh = 15;
+        const side = m.who === 'ref' ? -1 : 1;
+        const r = half * 1.6 + 6;
+        // How far from the glyph the box's CENTRE must be for its edge to
+        // clear `r`, along a direction (ux, uy).
+        const reach = (ux, uy) => r + Math.abs(ux) * bw / 2 + Math.abs(uy) * bh / 2;
+        const across = (k) => {
+          const dist = reach(nrm.x, nrm.y) + (Math.abs(k) - 1) * (bh + 4);
+          return { x: p.x + nrm.x * dist * Math.sign(k), y: p.y + nrm.y * dist * Math.sign(k) };
+        };
+        const along = (k) => {
+          const dist = reach(t.x, t.y);
+          return { x: p.x + t.x * dist * k, y: p.y + t.y * dist * k };
+        };
+        const spots = [across(side), across(-side), along(-1), along(1),
+          across(side * 2), across(-side * 2), across(side * 3), across(-side * 3)];
+        box = placeLabel(spots, bw, bh, taken, bounds);
+        if (box) {
+          // A hairline back to the glyph when the label had to move away.
+          const cx = box.x + box.w / 2;
+          const cy = box.y + box.h / 2;
+          const gx = Math.max(box.x - p.x, 0, p.x - (box.x + box.w));
+          const gy = Math.max(box.y - p.y, 0, p.y - (box.y + box.h));
+          if (Math.hypot(gx, gy) > r + 6) {
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(cx, cy);
+            ctx.stroke();
+          }
+          chip(ctx, box, 'rgba(6, 10, 18, 0.9)', colour);
+          ctx.fillStyle = colour;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, cx, cy + 0.5);
+        }
+      }
+      shown.marks.push({ kind: m.kind, who: m.who === 'ref' ? 'ref' : 'you', x: p.x, y: p.y, label: text, box });
+    }
+    ctx.restore();
+    return shown;
+  }
+
+  /**
+   * The marks on the channel charts: a tick through the band the mark is
+   * about — brake on the pedal band's brake, throttle and full on its
+   * throttle, the apex on speed, turn-in on steering — with a small chip of
+   * words. Yours from the top of the band down, theirs from the bottom up,
+   * and a chip that would land on another drops a row (three rows, then it
+   * is left as a bare tick: the tick is the information, the chip the name).
+   */
+  function drawChannelMarks(ctx, marks, slots, px, inWindow, x0, x1) {
+    const want = {
+      brake: ['brake'], throttle: ['throttle'], full: ['throttle'],
+      apex: ['speedKph'], turnin: ['steer', 'speedKph'],
+    };
+    const slotFor = (kind) => {
+      for (const key of want[kind] || []) {
+        const s = slots.find((b) => b.keys.includes(key));
+        if (s) return s;
+      }
+      return null;
+    };
+    const drawn = [];
+    const taken = new Map();
+    const todo = [];
+    for (const m of marks) {
+      if (!m || !MARK_WORD[m.kind] || !inWindow(m.d)) continue;
+      const slot = slotFor(m.kind);
+      if (slot) todo.push({ m, slot });
+    }
+    if (!todo.length) return drawn;
+    ctx.save();
+    ctx.font = '600 9px "Bahnschrift", "Segoe UI Semibold", system-ui, sans-serif';
+    for (const { m, slot } of todo) {
+      const colour = markColour(m);
+      const x = Math.round(px(m.d)) + 0.5;
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(m.who === 'ref' ? [3, 2] : []);
+      ctx.beginPath();
+      ctx.moveTo(x, slot.y0);
+      ctx.lineTo(x, slot.y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (!taken.has(slot)) {
+        // The band's own name in its top-left corner is already there.
+        taken.set(slot, [{ x: x0 + 4, y: slot.y0 + 1, w: slot.label.length * 5.4 + 6, h: 12 }]);
+      }
+      const list = taken.get(slot);
+      const text = markText(m);
+      const bw = textWidth(ctx, text) + 8;
+      const bh = 12;
+      const ref = m.who === 'ref';
+      let box = null;
+      for (let row = 0; row < 3 && !box; row++) {
+        const y = ref ? slot.y1 - 2 - bh - row * (bh + 2) : slot.y0 + 2 + row * (bh + 2);
+        if (y < slot.y0 || y + bh > slot.y1) break;
+        const bx = Math.min(x1 - bw, Math.max(x0, x + 3));
+        const cand = { x: bx, y, w: bw, h: bh };
+        if (!list.some((t) => overlap(cand, t) > 0)) box = cand;
+      }
+      if (box) {
+        list.push(box);
+        chip(ctx, box, 'rgba(6, 10, 18, 0.88)', colour);
+        ctx.fillStyle = colour;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, box.x + 4, box.y + bh / 2 + 0.5);
+      }
+      drawn.push({ kind: m.kind, who: ref ? 'ref' : 'you', x, band: slot.label, box });
+    }
+    ctx.restore();
+    return drawn;
   }
 
   /**

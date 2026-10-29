@@ -20,6 +20,10 @@
        tile shapes the pit wall established and restyles on top of them. -->
   <link rel="stylesheet" href="review-panel.css" />
   <link rel="stylesheet" href="practice-panel.css" />
+  <link rel="stylesheet" href="fair-chips.css" />
+  <link rel="stylesheet" href="show-me.css" />
+  <link rel="stylesheet" href="review-coach.css" />
+  <link rel="stylesheet" href="practice-habits.css" />
   <link rel="stylesheet" href="engineer-panel.css" />
   <link rel="stylesheet" href="schedule-panel.css" />
   <!-- Training ▸ Chase picker (training-reference.js). -->
@@ -2434,37 +2438,53 @@
     </section>
 
     <!-- ======================= PRACTICE REVIEW ========================= -->
-    <!-- docs/PRACTICE-REVIEW-PLAN.md. The Review tab's frame and classes, its
-         own ids and its own painter (practice-panel.js): the rail lists
-         practice and test-day sessions only, the pane is the debrief or one
-         lap studied against the session's target. -->
+    <!-- docs/PRACTICE-REVIEW-PLAN.md; redesigned 2026-10-29 to Carl's mockup.
+         One page painted by practice-panel.js: the header row (session
+         pickers, the target, the session's facts), then the overview or one
+         lap studied against the session's target in #pr-detail, then "Your
+         driving" (practice-habits.js mounts into #pr-habits when present). -->
     <section class="view" data-view="practice">
-      <div class="wrap wrap--wide">
-        <div class="view__head">
-          <div>
-            <h1>Practice</h1>
-            <p>Every practice session against the lap you chased — every lap, every corner,
-               and exactly where the time went.</p>
-          </div>
-          <div class="view__head-actions">
-            <button class="btn btn--ghost btn--sm" id="pr-refresh" type="button"
-                    title="Re-read the lap files">
-              <svg class="icon"><use href="#i-rotate-ccw" /></svg><span>Refresh</span>
+      <div class="wrap wrap--wide prx">
+        <header class="prx-head">
+          <h1 class="prx-title"><svg class="icon"><use href="#i-activity" /></svg>Practice review</h1>
+          <div class="prx-pickers">
+            <span class="prx-pick prx-pick--static" title="Practice reviews are built from Le Mans Ultimate sessions">
+              <b class="prx-sim">LMU</b><span>Le Mans Ultimate</span>
+            </span>
+            <label class="prx-selectwrap prx-selectwrap--session" title="Every practice session at this track in this class">
+              <select class="prx-select" id="pr-session" aria-label="Session"></select>
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+            </label>
+            <label class="prx-selectwrap prx-selectwrap--icon" title="Track">
+              <svg class="icon prx-selectwrap__lead" aria-hidden="true"><use href="#i-circuit" /></svg>
+              <select class="prx-select" id="pr-track" aria-label="Track"></select>
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+            </label>
+            <label class="prx-selectwrap prx-selectwrap--icon" title="Class">
+              <svg class="icon prx-selectwrap__lead" aria-hidden="true"><use href="#i-gauge" /></svg>
+              <select class="prx-select" id="pr-class" aria-label="Class"></select>
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+            </label>
+            <div class="prx-tgt" id="pr-target" hidden></div>
+            <button class="iconbtn prx-refresh" id="pr-refresh" type="button"
+                    title="Re-read the lap files" aria-label="Re-read the lap files">
+              <svg class="icon"><use href="#i-rotate-ccw" /></svg>
             </button>
           </div>
-        </div>
+          <div class="prx-meta" id="pr-meta"></div>
+        </header>
 
-        <div class="rv">
-          <aside class="rv__rail">
-            <div class="rv__find">
-              <input id="pr-search" type="search" placeholder="Find a track or car"
-                     aria-label="Filter practice sessions by track or car" />
-            </div>
-            <div class="rv__list" id="pr-sessions"></div>
-          </aside>
+        <div class="prx-detail" id="pr-detail"></div>
 
-          <div class="rv__detail" id="pr-detail"></div>
-        </div>
+        <section class="prx-card prx-habits" id="pr-habits-box" hidden>
+          <button type="button" class="prx-habits__toggle" id="pr-habits-toggle" aria-expanded="false" aria-controls="pr-habits">
+            <svg class="icon"><use href="#i-trending-up" /></svg>
+            <span class="prx-h">Your driving</span>
+            <span class="prx-card__sub">How you drive this track, across your sessions here</span>
+            <svg class="icon prx-habits__chev" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+          </button>
+          <div id="pr-habits" hidden></div>
+        </section>
       </div>
     </section>
 
@@ -4581,8 +4601,12 @@
 <!-- The race log, painted into Review's Race log tab. Before review-panel.js,
      which asks it for the races to list. -->
 <script src="review-racelog.js"></script>
+<script src="show-me.js"></script>
+<script src="review-coach.js"></script>
 <script src="review-panel.js"></script>
+<script src="practice-habits.js"></script>
 <script src="practice-panel.js"></script>
+<script src="fair-chips.js"></script>
 <script src="review-guide.js"></script>
 <!-- Training ▸ Chase: which lap the training overlays chase. Mounted by
      control-panel.js the first time the Training tab opens. -->

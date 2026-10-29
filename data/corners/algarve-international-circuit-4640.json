@@ -1,0 +1,148 @@
+{
+  "mapKey": "algarve-international-circuit-4640",
+  "trackLengthM": 4635,
+  "builtFrom": 60,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.051732,
+      "apexD": 0.08869,
+      "exitD": 0.09551,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.131715,
+      "apexD": 0.157503,
+      "exitD": 0.16406,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.171405,
+      "apexD": 0.185555,
+      "exitD": 0.196535,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.2794,
+      "apexD": 0.31405,
+      "exitD": 0.31992,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C5",
+      "entryD": 0.392777,
+      "apexD": 0.446953,
+      "exitD": 0.455075,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.50699,
+      "apexD": 0.52584,
+      "exitD": 0.542085,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.554834,
+      "apexD": 0.592044,
+      "exitD": 0.60088,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.62039,
+      "apexD": 0.63801,
+      "exitD": 0.65578,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.660857,
+      "apexD": 0.68825,
+      "exitD": 0.69719,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.716757,
+      "apexD": 0.737333,
+      "exitD": 0.746375,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.79602,
+      "apexD": 0.837275,
+      "exitD": 0.839095,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C2",
+        "C3"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 60,
+    "local": 25,
+    "cloud": 35,
+    "cutBy": {
+      "line": 27,
+      "latG": 33
+    },
+    "classes": {
+      "GTE": 11,
+      "LMP3": 18,
+      "GT3": 22,
+      "LMP2_ELMS": 7,
+      "HYPERCAR": 1,
+      "LMP2": 1
+    },
+    "support": [
+      0.78,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0.97,
+      1,
+      0.98,
+      1,
+      0.9
+    ]
+  }
+}

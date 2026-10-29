@@ -125,7 +125,7 @@
   let subTab = 'overview';
   try {
     const saved = window.localStorage.getItem(TAB_KEY);
-    if (saved === 'overview' || saved === 'laps' || saved === 'tyres' || saved === 'compare') subTab = saved;
+    if (saved === 'overview' || saved === 'laps' || saved === 'tyres' || saved === 'compare' || saved === 'coach') subTab = saved;
   } catch {
     /* storage off: Overview */
   }
@@ -133,6 +133,24 @@
   let selStint = null;
   let selLapNo = null;
   let lapFilter = 'all';
+  /**
+   * The Coach tab and the lap view's "Show me" (BETA, 2026-10-29) — the
+   * markup is review-coach.js, the step-through show-me.js. The tab is shown
+   * only to a driver following beta: control-panel.js pushes that through
+   * `apexReview.setBeta` (and leaves it on `window.apexFollowingBeta` for a
+   * push that lands before this file has run). The coach's answer for a lap
+   * pair is kept, so the tab and the lap view share one `reviewCoach` call.
+   */
+  const COACH = window.APEX_REVIEW_COACH || null;
+  let followingBeta = !!window.apexFollowingBeta;
+  /** `lap|ref` → `{ state, res, error, lapState, lap, map, showIdx }`. */
+  const coachCache = new Map();
+  /** The lap the Coach tab reads, by id; null = the session's quickest. */
+  let coachLapId = null;
+  /** The lap view's "Show me" segment is on. */
+  let showmeOn = false;
+  /** The step-through mounted in the lap view, torn down on every repaint of it. */
+  let lapShowMe = null;
   // The rail used to switch between Sessions and Races and remembered which.
   // Races are their own tab since 2026-09-30, so the remembered choice means
   // nothing; drop it rather than leave it lying in every profile.
@@ -633,11 +651,27 @@
     { id: 'laps', label: 'Laps &amp; stints' },
     { id: 'tyres', label: 'Tyres &amp; fuel' },
     { id: 'compare', label: 'Compare' },
+    // BETA: see review-coach.js for who gets it.
+    { id: 'coach', label: 'Coach', coach: true },
     { id: 'racelog', label: 'Race log', race: true },
   ];
 
-  /** The tabs this session has: Race log only when the game saved the race. */
-  const tabsFor = (s) => TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
+  /** Who the Coach tab is for, as review-coach.js `allowed` reads it. */
+  const coachCtx = (s) => ({
+    followingBeta,
+    hasApi: !!window.apex && typeof window.apex.reviewCoach === 'function',
+    sessionType: s ? s.sessionType : '',
+  });
+  const coachAllowed = (s) => !!COACH && COACH.allowed(coachCtx(s));
+
+  /**
+   * The tabs this session has: Race log only when the game saved the race,
+   * Coach only when following beta (review-coach.js `filterTabs`).
+   */
+  const tabsFor = (s) => {
+    const list = TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
+    return COACH ? COACH.filterTabs(list, coachCtx(s)) : list.filter((t) => !t.coach);
+  };
 
   /** The tab to draw: the one remembered, unless this session lacks it. */
   function tabFor(s) {
@@ -1756,6 +1790,8 @@
     if (note) {
       body = `<p class="rv-board__note">${esc(note)}</p>`;
     } else {
+      // Fairness pills (fair-chips.js): asked once per board, repainted when they land.
+      const fair = window.FairChips ? window.FairChips.sync(s && s.id, board.rows, refreshBoardCards) : null;
       const rows = board.rows.map((row) => {
         const ref = boardRefOf(row);
         const on = !!pin && pin.driverId === row.driver_id;
@@ -1783,7 +1819,7 @@
             <td class="lap">${boardTime(row)}</td>
             <td class="gapc">${gap}</td>
             <td class="ref">${action}</td>
-          </tr>`;
+          </tr>${fair ? fair.rowHtml(row, 6) : ''}`;
       }).join('');
       body = `
         <div class="rv-sheet__scroll rv-board__scroll">
@@ -1867,6 +1903,9 @@
 
   /** The zoom controls, and the stretch of road they have arrived at. */
   function zoomHtml(view) {
+    // A third segment, Show me, once the coach has steps for this pair (beta).
+    const steps = lapCoachSteps(view);
+    const showing = !!steps && showmeOn;
     const [a, b] = view.window;
     const whole = b - a >= 0.999;
     const m = view.lengthM || 0;
@@ -1876,10 +1915,12 @@
     return `
       <div class="rv-zoom">
         <span class="rv-mapmode" role="group" aria-label="How the map colours the line">
-          <button type="button" data-mapmode="pace" data-on="${String(mapMode !== 'inputs')}"
+          <button type="button" data-mapmode="pace" data-on="${String(!showing && mapMode !== 'inputs')}"
                   title="One colour per lap — the quicker lap green, the slower red">Pace</button>
-          <button type="button" data-mapmode="inputs" data-on="${String(mapMode === 'inputs')}"
+          <button type="button" data-mapmode="inputs" data-on="${String(!showing && mapMode === 'inputs')}"
                   title="The pedals along the road — red braking, green on the throttle — with a bar where each lap's braking begins">Inputs</button>
+          ${steps ? `<button type="button" data-mapmode="showme" data-on="${String(showing)}"
+                  title="The coach's worst corners, one at a time, drawn on the map and the charts (beta)">Show me</button>` : ''}
         </span>
         ${linesToggleHtml(view)}
         ${lineStyleHtml(view)}
@@ -2143,6 +2184,7 @@
             ${microHtml(view)}
           </div>
           <aside class="rv-lap__side">
+            ${showmeOn && lapCoachSteps(view) ? '<div class="rv-showme"></div>' : ''}
             <div class="rv-map">${view.map ? '<canvas></canvas>' : `
               <div class="rv-map__none">
                 <svg class="icon"><use href="#i-circuit" /></svg>
@@ -2191,6 +2233,7 @@
 
     const repaint = () => {
       const cursorD = view.cursor === null ? -1 : ch.d[view.cursor];
+      const showme = showmeOn && view.showStep ? view.showStep : null;
       geom = CHARTS.drawChannels(
         canvas, ch,
         CHARTS.channelBands({
@@ -2208,6 +2251,7 @@
           vs: view.vs ? view.vs.channels : null,
           delta: view.delta,
           micro: view.micro,
+          marks: showme ? showme.marks : undefined,
         },
       );
       if (mapCanvas && view.map) {
@@ -2221,7 +2265,11 @@
           lines: lineStyle,
           vs: view.vs ? view.vs.channels : null,
           faster: fasterOf(view),
-          mode: mapMode,
+          // Show me draws on the pedal colours: a braking mark means most
+          // where the road under it says where the brake was.
+          mode: showme ? 'inputs' : mapMode,
+          marks: showme ? showme.marks : undefined,
+          arrows: showme ? showme.arrows : undefined,
           lengthM: view.lengthM,
           // What to write on the other lap's braking bars when zoomed: the
           // same short name the readout and the strip use for it.
@@ -2258,6 +2306,7 @@
     };
     view.repaint = repaint;
     repaint();
+    mountLapShowMe(view);
 
     // Distance -> index by binary search: `d` is sorted and a lap is a couple
     // of thousand points, but this runs on every mouse move.
@@ -2560,6 +2609,23 @@
   }
 
   /**
+   * What `review:lap` is asked for one lap and its comparison — and, the same
+   * object, what `review:coach` is asked (the coach reads the same pair).
+   */
+  function lapCompareArgs(lap, vsLap) {
+    return {
+      id: lap.id,
+      at: lap.at,
+      haveMapKey: heldMapKey,
+      // One of ours by id, or a board lap by the league's own key for it.
+      vs: !vsLap ? null
+        : isBoardRef(vsLap)
+          ? { board: { driverId: vsLap.driverId, trackId: vsLap.trackId, carClass: vsLap.carClass } }
+          : { id: vsLap.id, at: vsLap.at },
+    };
+  }
+
+  /**
    * Open one lap for study, optionally with another laid under it.
    *
    * `lap` is the ReviewLap from the sheet; `vsLap` is the one to compare
@@ -2614,16 +2680,7 @@
     void ensureBoard(current);
     let res = null;
     try {
-      res = await window.apex.reviewLap({
-        id: lap.id,
-        at: lap.at,
-        haveMapKey: heldMapKey,
-        // One of ours by id, or a board lap by the league's own key for it.
-        vs: !vsLap ? null
-          : isBoardRef(vsLap)
-            ? { board: { driverId: vsLap.driverId, trackId: vsLap.trackId, carClass: vsLap.carClass } }
-            : { id: vsLap.id, at: vsLap.at },
-      });
+      res = await window.apex.reviewLap(lapCompareArgs(lap, vsLap));
     } catch {
       res = null;
     }
@@ -2667,6 +2724,16 @@
       || (current && current.trackLengthM) || 0;
     lapView.elevation = elevationRise(lapView.map);
     renderDetail();
+    // BETA: the coach's read of this pair, for the "Show me" segment. Asked
+    // after the lap is on screen — nobody waits for the coach to read a lap.
+    if (lapView.vsLap && coachAllowed(current)) {
+      const entry = coachEntry(lap, lapView.vsLap);
+      if (entry.state !== 'ok') {
+        void fetchCoach(entry, lap, lapView.vsLap).then(() => {
+          if (lapView === mine && entry.state === 'ok' && entry.res.show.length) renderDetail();
+        });
+      }
+    }
   }
 
   /** Where the cursor is on the lap, for a zoom that has no pointer of its own. */
@@ -2704,6 +2771,330 @@
     if (lapOff) { lapOff(); lapOff = null; }
     lapView = null;
     renderDetail();
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /*  Coach (BETA, 2026-10-29)                                              */
+  /*                                                                        */
+  /*  One lap against the reference picked on Compare, read by the coach:  */
+  /*  `apex.reviewCoach(args)` with the very args the lap view sends        */
+  /*  `review:lap` ({@link lapCompareArgs}), answering `{ ok, report,       */
+  /*  breakdown, show }`. The markup is review-coach.js; this is the        */
+  /*  loading, the two canvases and "Show me" driving them.                 */
+  /* ---------------------------------------------------------------------- */
+
+  const refKeyOf = (ref) => (!ref ? '' : isBoardRef(ref) ? `board:${ref.driverId}:${ref.trackId}:${ref.carClass}` : `lap:${ref.id}`);
+
+  /** The cache entry for one lap pair, made on first ask. */
+  function coachEntry(lap, ref) {
+    const key = `${lap.id}|${refKeyOf(ref)}`;
+    let entry = coachCache.get(key);
+    if (!entry) {
+      entry = { key, state: 'idle', res: null, error: '', lapState: 'idle', lap: null, map: null, showIdx: 0, noted: false };
+      coachCache.set(key, entry);
+    }
+    return entry;
+  }
+
+  /** Ask the coach, once per pair (again only after an error and a retry). */
+  async function fetchCoach(entry, lap, ref) {
+    if (entry.state !== 'idle') return entry;
+    if (!window.apex || typeof window.apex.reviewCoach !== 'function') {
+      entry.state = 'error';
+      entry.error = 'This build has no coach.';
+      return entry;
+    }
+    entry.state = 'loading';
+    let res = null;
+    try {
+      res = await window.apex.reviewCoach(lapCompareArgs(lap, ref));
+    } catch (err) {
+      res = { ok: false, error: err && err.message };
+    }
+    if (!res || !res.ok) {
+      entry.state = 'error';
+      entry.error = (res && res.error) || 'The coach could not read this pair of laps.';
+      return entry;
+    }
+    entry.res = {
+      report: res.report || null,
+      breakdown: res.breakdown || null,
+      show: Array.isArray(res.show) ? res.show.filter((st) => st && Array.isArray(st.window)) : [],
+    };
+    entry.state = 'ok';
+    return entry;
+  }
+
+  /** The two traces for the Coach tab's own map and charts — `review:lap`, as the lap view reads them. */
+  async function fetchCoachLap(entry, lap, ref) {
+    if (entry.lapState !== 'idle') return entry;
+    entry.lapState = 'loading';
+    let res = null;
+    try {
+      res = await window.apex.reviewLap(lapCompareArgs(lap, ref));
+    } catch {
+      res = null;
+    }
+    if (!res || !res.detail) {
+      entry.lapState = 'error';
+      return entry;
+    }
+    if (res.map) {
+      heldMap = res.map;
+      heldMapKey = res.detail.mapKey;
+    }
+    entry.lap = res;
+    entry.map = res.detail.mapKey === heldMapKey ? heldMap : null;
+    entry.lapState = 'ok';
+    return entry;
+  }
+
+  /** The steps "Show me" has for the lap view's pair, or null. Beta-gated. */
+  function lapCoachSteps(view) {
+    if (!view || !view.lap || !view.vsLap || !coachAllowed(view.session)) return null;
+    const entry = coachCache.get(`${view.lap.id}|${refKeyOf(view.vsLap)}`);
+    return entry && entry.state === 'ok' && entry.res.show.length ? entry.res.show : null;
+  }
+
+  /**
+   * A step's window, sanitised, with a little road either side — a mark on
+   * the very edge of the frame sits under the map's locator and the charts'
+   * axis — and never tighter than the lap view allows.
+   */
+  function stepWindow(step) {
+    const w = step && Array.isArray(step.window) ? step.window : [0, 1];
+    let a = known(w[0]) ? Math.max(0, Math.min(1, w[0])) : 0;
+    let b = known(w[1]) ? Math.max(0, Math.min(1, w[1])) : 1;
+    if (b < a) [a, b] = [b, a];
+    const pad = (b - a) * 0.1;
+    a = Math.max(0, a - pad);
+    b = Math.min(1, b + pad);
+    if (b - a < MIN_SPAN) {
+      const mid = (a + b) / 2;
+      a = Math.max(0, mid - MIN_SPAN / 2);
+      b = Math.min(1, a + MIN_SPAN);
+    }
+    return [a, b];
+  }
+
+  /**
+   * The lap view's step-through, in the side column above the map. Each step
+   * frames its corner (the shared window, so the charts follow) and the
+   * repaint draws its marks. A re-render keeps the step it was on and does
+   * not re-frame it, so switching a line off does not throw the zoom away.
+   */
+  function mountLapShowMe(view) {
+    if (lapShowMe) { lapShowMe.destroy(); lapShowMe = null; }
+    const el = els.detail && els.detail.querySelector('.rv-showme');
+    const steps = lapCoachSteps(view);
+    if (!el || !steps || !window.ShowMe) return;
+    const entry = coachCache.get(`${view.lap.id}|${refKeyOf(view.vsLap)}`);
+    lapShowMe = window.ShowMe.mount(el, {
+      steps,
+      start: entry ? entry.showIdx : 0,
+      onStep: (step, i) => {
+        const fresh = view.showStep !== step;
+        view.showStep = step;
+        if (entry) entry.showIdx = i;
+        if (fresh) {
+          window.APEX_FEATURE_CATALOG?.note('action:review.showme');
+          const [a, b] = stepWindow(step);
+          setWindow(a, b);
+        } else if (view.repaint) view.repaint();
+      },
+    });
+  }
+
+  /**
+   * The lap the Coach tab reads: the one picked in its own menu, else the
+   * session's quickest lap with telemetry that is not itself the reference.
+   */
+  function coachLaps(s) {
+    const out = [];
+    for (const stint of s.stints) for (const l of stint.laps) if (l.hasTrace && l.timed && l.id) out.push(l);
+    return out.sort((a, b) => a.lapMs - b.lapMs);
+  }
+  function coachLapOf(s) {
+    const laps = coachLaps(s);
+    const picked = coachLapId ? laps.find((l) => l.id === coachLapId) : null;
+    if (picked) return picked;
+    return laps.find((l) => !(refLap && refLap.id === l.id)) || null;
+  }
+
+  function coachPickerHtml(s, lap, ref) {
+    const laps = coachLaps(s).slice(0, 15);
+    if (!laps.some((l) => l.id === lap.id)) laps.unshift(lap);
+    return `
+      <div class="rvc-pick">
+        <label class="rvc-pick__lap">
+          <span>Coach</span>
+          <select data-coachlap aria-label="Which lap the coach reads">
+            ${laps.map((l) => `<option value="${esc(l.id)}"${l.id === lap.id ? ' selected' : ''}>Lap ${l.lapNo} · ${fmtLap(l.lapMs)}${l.clean ? '' : ' (not clean)'}</option>`).join('')}
+          </select>
+        </label>
+        ${ref ? `<span class="rvc-pick__vs">against <b>${esc(refName(ref))}</b>
+          <span>${known(ref.lapMs) ? fmtLap(ref.lapMs) : ''}</span>
+          ${known(ref.lapMs) && known(lap.lapMs) ? `<i>${esc(yourGapWords(lap.lapMs - ref.lapMs))}</i>` : ''}</span>
+          <button type="button" class="rv-refbtn" data-rvtab="compare" title="Choose what the coach measures against">Change</button>` : ''}
+      </div>`;
+  }
+
+  function coachTabHtml(s) {
+    const lap = coachLapOf(s);
+    if (!lap) {
+      return emptyState('activity', 'No lap to coach', 'No lap in this session recorded telemetry, so there is nothing for the coach to read.');
+    }
+    const ref = activeRef(lap);
+    if (!ref) {
+      return `
+        <section class="rv-card rvx-card rvc-top">${coachPickerHtml(s, lap, null)}
+          <p class="rv-card__note">The coach reads one lap against another. Press <b>vs</b> on one of your laps, or pin a
+            driver from the leaderboard, on <button type="button" class="rv-refbtn" data-rvtab="compare">Compare</button> — then come back here.</p>
+        </section>`;
+    }
+    const entry = coachEntry(lap, ref);
+    const top = `<section class="rv-card rvx-card rvc-top">${coachPickerHtml(s, lap, ref)}</section>`;
+    if (entry.state === 'error') {
+      return `${top}${emptyState('activity', 'The coach could not read this lap', `${esc(entry.error)} <button type="button" class="rv-refbtn" data-coachretry>Try again</button>`)}`;
+    }
+    if (entry.state !== 'ok') return `${top}${emptyState('clock', 'The coach is reading the lap…', 'One moment.')}`;
+    const res = entry.res;
+    const steps = new Set(res.show.map((st) => st.cornerId));
+    return `
+      ${top}
+      <div class="rvc-grid">
+        <div class="rvc-col">${res.report ? COACH.reportHtml(res.report, {}) : ''}</div>
+        <section class="rv-card rvx-card rvc-show">
+          <div class="rvx-card__head">
+            <h3>Show me</h3>
+            <button type="button" class="rv-refbtn" data-coachopen title="Open this lap, with Show me on, in the full lap view">Open in the lap view</button>
+          </div>
+          <div class="rvc-showme"></div>
+          <div class="rvc-map">${entry.lapState === 'ok' && !entry.map ? '<p class="rv-card__note">No circuit shape for this track yet.</p>' : '<canvas></canvas>'}</div>
+          <div class="rvc-chan"><canvas></canvas></div>
+        </section>
+      </div>
+      ${COACH.breakdownHtml(res.breakdown, steps)}`;
+  }
+
+  /** A load landed: redraw the tab if the driver is still looking at that pair. */
+  function coachLanded(entry) {
+    if (lapView || !current || tabFor(current) !== 'coach') return;
+    const lap = coachLapOf(current);
+    const ref = lap ? activeRef(lap) : null;
+    if (lap && ref && coachEntry(lap, ref) === entry) renderDetail();
+  }
+
+  /** The step-through on the Coach tab, so a corner click can move it. */
+  let coachShowMe = null;
+
+  /**
+   * Paint the Coach tab: start what still has to load, then mount "Show me"
+   * over the tab's own map and charts — the painters the lap view uses, with
+   * the step's window and marks, and nothing to scrub.
+   */
+  function paintCoach(s) {
+    const lap = coachLapOf(s);
+    const ref = lap ? activeRef(lap) : null;
+    if (!lap || !ref || !els.detail) return;
+    const entry = coachEntry(lap, ref);
+    // Both at once: the traces are on disk and ready long before the coach.
+    if (entry.state === 'idle') void fetchCoach(entry, lap, ref).then(() => coachLanded(entry));
+    if (entry.lapState === 'idle') void fetchCoachLap(entry, lap, ref).then(() => coachLanded(entry));
+    if (entry.state !== 'ok') return;
+    if (!entry.noted) {
+      entry.noted = true;
+      window.APEX_FEATURE_CATALOG?.note('action:review.coach');
+    }
+
+    const mapCanvas = els.detail.querySelector('.rvc-map canvas');
+    const chanCanvas = els.detail.querySelector('.rvc-chan canvas');
+    const holder = els.detail.querySelector('.rvc-showme');
+    let step = null;
+    const repaint = () => {
+      const res = entry.lap;
+      if (!res || !res.detail) return;
+      const ch = res.detail.channels;
+      const pseudo = { lap, detail: res.detail, vs: res.vs || null };
+      const win = step ? stepWindow(step) : [0, 1];
+      const lengthM = (entry.map && entry.map.lengthM) || s.trackLengthM || 0;
+      if (chanCanvas) {
+        CHARTS.drawChannels(chanCanvas, ch, CHARTS.channelBands({
+          mph: speedUnit === 'mph', delta: !!res.delta, aids: false, steerDeg: steerInDegrees(pseudo),
+        }), {
+          sectors: res.detail.sectors, lengthM, window: win,
+          vs: res.vs ? res.vs.channels : null, delta: res.delta || null,
+          marks: step ? step.marks || [] : [],
+        });
+      }
+      if (mapCanvas && entry.map) {
+        CHARTS.drawLapMap(mapCanvas, entry.map, ch, {
+          sectors: res.detail.sectors, window: win, lengthM,
+          vs: res.vs ? res.vs.channels : null, faster: fasterOf(pseudo),
+          mode: 'inputs', lines: lineStyle, show: { mine: true, vs: true },
+          vsLabel: isBoardRef(ref) ? `P${ref.rank}` : `L${ref.lapNo}`,
+          marks: step ? step.marks || [] : [], arrows: step ? step.arrows || [] : [],
+        });
+      }
+    };
+    if (window.ShowMe && holder) {
+      coachShowMe = window.ShowMe.mount(holder, {
+        steps: entry.res.show,
+        start: entry.showIdx,
+        empty: 'The coach found no corner worth showing on this lap.',
+        onStep: (st, i) => {
+          if (step && step !== st) window.APEX_FEATURE_CATALOG?.note('action:review.showme');
+          step = st;
+          entry.showIdx = i;
+          repaint();
+        },
+      });
+    }
+    repaint();
+    const onResize = () => repaint();
+    window.addEventListener('resize', onResize);
+    const mine = coachShowMe;
+    chartOff = () => {
+      window.removeEventListener('resize', onResize);
+      if (mine) mine.destroy();
+      if (coachShowMe === mine) coachShowMe = null;
+    };
+  }
+
+  /** The Coach tab's own controls. True when the click was one of them. */
+  function coachClick(evt) {
+    const t = evt.target;
+    if (!current || lapView || !t || !t.closest) return false;
+    const lap = coachLapOf(current);
+    const ref = lap ? activeRef(lap) : null;
+    if (t.closest('[data-coachretry]')) {
+      if (lap && ref) {
+        const entry = coachEntry(lap, ref);
+        if (entry.state === 'error') { entry.state = 'idle'; entry.error = ''; }
+        if (entry.lapState === 'error') entry.lapState = 'idle';
+      }
+      renderDetail();
+      return true;
+    }
+    if (t.closest('[data-coachopen]')) {
+      if (lap) {
+        showmeOn = true;
+        void openLap(lap, ref);
+      }
+      return true;
+    }
+    const corner = t.closest('[data-coachcorner]');
+    if (corner && lap && ref) {
+      const entry = coachEntry(lap, ref);
+      const k = entry.state === 'ok' ? entry.res.show.findIndex((st) => st.cornerId === corner.dataset.coachcorner) : -1;
+      if (k >= 0 && coachShowMe) {
+        coachShowMe.go(k);
+        const card = els.detail.querySelector('.rvc-show');
+        if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      return true;
+    }
+    return false;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -2801,6 +3192,7 @@
     if (tab === 'laps') body = lapsTabHtml(s);
     else if (tab === 'tyres') body = tyresTabHtml(s);
     else if (tab === 'compare') body = compareTabHtml(s);
+    else if (tab === 'coach') body = coachTabHtml(s);
     else if (tab === 'racelog') body = '<div class="rvx-racelog"></div>';
     else body = overviewHtml(s);
 
@@ -2811,6 +3203,7 @@
     `;
 
     if (tab === 'racelog') showRaceLog(raceOf.get(s.id).id, false);
+    else if (tab === 'coach') paintCoach(s);
     else paintCharts();
   }
 
@@ -3088,6 +3481,7 @@
       els.detail.addEventListener('click', (evt) => {
         // Inside the race log, its own handler (review-racelog.js) has it.
         if (evt.target.closest('.rvx-racelog')) return;
+        if (coachClick(evt)) return;
         // A count on the race result: the race log, on those.
         const raceCount = evt.target.closest('[data-rvrace]');
         if (raceCount && current && RL) {
@@ -3170,9 +3564,19 @@
         // Pace or inputs on the map. Re-rendered rather than repainted: the
         // legend and the braking strip under the map change with it.
         const modeBtn = evt.target.closest('[data-mapmode]');
+        if (modeBtn && lapView && modeBtn.dataset.mapmode === 'showme') {
+          // Show me (beta): not a colouring of its own, so not remembered.
+          if (!showmeOn) {
+            showmeOn = true;
+            lapView.showStep = null;
+            renderDetail();
+          }
+          return;
+        }
         if (modeBtn && lapView) {
           const next = modeBtn.dataset.mapmode === 'inputs' ? 'inputs' : 'pace';
-          if (next !== mapMode) {
+          if (next !== mapMode || showmeOn) {
+            showmeOn = false;
             mapMode = next;
             try { window.localStorage.setItem('apex.review.mapMode', mapMode); } catch {
               /* storage off: the choice lasts the run */
@@ -3277,6 +3681,12 @@
       });
       // The stint picker on Laps & stints.
       els.detail.addEventListener('change', (evt) => {
+        const coachSel = evt.target.closest && evt.target.closest('[data-coachlap]');
+        if (coachSel && current && !lapView) {
+          coachLapId = coachSel.value || null;
+          renderDetail();
+          return;
+        }
         const sel = evt.target.closest && evt.target.closest('[data-rvstint]');
         if (!sel || !current) return;
         selStint = Number(sel.value);
@@ -3298,6 +3708,11 @@
           return;
         }
         if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        // A corner row on the Coach tab: Show me, on that corner.
+        if (evt.target.closest && evt.target.closest('tr[data-coachcorner]') && coachClick(evt)) {
+          evt.preventDefault();
+          return;
+        }
         const row = evt.target.closest && evt.target.closest('tr[data-open]');
         if (!row || !current) return;
         evt.preventDefault();
@@ -3383,6 +3798,18 @@
       refLap = null;
       await openLap(found, ref);
       return true;
+    },
+    /**
+     * Whether this driver follows the beta channel — control-panel.js, from
+     * the update state, the same signal the Practice tab is gated on. The
+     * Coach tab and the lap view's Show me exist only while it is true.
+     */
+    setBeta(on) {
+      const next = !!on;
+      if (next === followingBeta) return;
+      followingBeta = next;
+      if (!next) showmeOn = false;
+      if (ready && (current || currentRace)) renderDetail();
     },
     /** …and this on the way out. Nothing here runs while the tab is hidden. */
     hidden() {

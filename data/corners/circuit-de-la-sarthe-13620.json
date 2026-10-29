@@ -1,0 +1,271 @@
+{
+  "mapKey": "circuit-de-la-sarthe-13620",
+  "trackLengthM": 13624,
+  "builtFrom": 224,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.050105,
+      "apexD": 0.06175,
+      "exitD": 0.0641,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.06452,
+      "apexD": 0.066652,
+      "exitD": 0.068525,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.08622,
+      "apexD": 0.09242,
+      "exitD": 0.09713,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.09784,
+      "apexD": 0.108215,
+      "exitD": 0.11191,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.11427,
+      "apexD": 0.11836,
+      "exitD": 0.12143,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C6",
+      "entryD": 0.133716,
+      "apexD": 0.141133,
+      "exitD": 0.14281,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C7",
+      "entryD": 0.282164,
+      "apexD": 0.29686,
+      "exitD": 0.29793,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.29963,
+      "apexD": 0.301865,
+      "exitD": 0.30499,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.427664,
+      "apexD": 0.44105,
+      "exitD": 0.44225,
+      "dir": "L",
+      "seq": "S4"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.44421,
+      "apexD": 0.446783,
+      "exitD": 0.44966,
+      "dir": "R",
+      "seq": "S4"
+    },
+    {
+      "id": "C11",
+      "entryD": 0.551614,
+      "apexD": 0.567607,
+      "exitD": 0.56992,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C12",
+      "entryD": 0.698583,
+      "apexD": 0.722327,
+      "exitD": 0.725555,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C13",
+      "entryD": 0.73727,
+      "apexD": 0.74558,
+      "exitD": 0.74771,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C14",
+      "entryD": 0.832911,
+      "apexD": 0.848585,
+      "exitD": 0.85061,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C15",
+      "entryD": 0.858295,
+      "apexD": 0.86422,
+      "exitD": 0.868005,
+      "dir": "L",
+      "seq": "S5"
+    },
+    {
+      "id": "C16",
+      "entryD": 0.873805,
+      "apexD": 0.879415,
+      "exitD": 0.881015,
+      "dir": "L",
+      "seq": "S5"
+    },
+    {
+      "id": "C17",
+      "entryD": 0.88443,
+      "apexD": 0.897198,
+      "exitD": 0.90282,
+      "dir": "R",
+      "seq": "S5"
+    },
+    {
+      "id": "C18",
+      "entryD": 0.90635,
+      "apexD": 0.912527,
+      "exitD": 0.914875,
+      "dir": "L",
+      "seq": "S5"
+    },
+    {
+      "id": "C19",
+      "entryD": 0.961823,
+      "apexD": 0.97754,
+      "exitD": 0.97909,
+      "dir": "R",
+      "seq": "S6"
+    },
+    {
+      "id": "C20",
+      "entryD": 0.97935,
+      "apexD": 0.983599,
+      "exitD": 0.98542,
+      "dir": "L",
+      "seq": "S6"
+    },
+    {
+      "id": "C21",
+      "entryD": 0.98559,
+      "apexD": 0.98741,
+      "exitD": 0.98881,
+      "dir": "R",
+      "seq": "S6"
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C7",
+        "C8"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S4",
+      "cornerIds": [
+        "C9",
+        "C10"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S5",
+      "cornerIds": [
+        "C15",
+        "C16",
+        "C17",
+        "C18"
+      ],
+      "kind": "complex"
+    },
+    {
+      "id": "S6",
+      "cornerIds": [
+        "C19",
+        "C20",
+        "C21"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 224,
+    "local": 159,
+    "cloud": 65,
+    "cutBy": {
+      "line": 205,
+      "latG": 19
+    },
+    "classes": {
+      "LMP2_ELMS": 24,
+      "LMP2": 122,
+      "GT3": 53,
+      "LMP3": 10,
+      "HYPERCAR": 13,
+      "GTE": 2
+    },
+    "support": [
+      1,
+      0.99,
+      1,
+      0.92,
+      1,
+      0.96,
+      0.99,
+      1,
+      0.99,
+      0.99,
+      1,
+      1,
+      1,
+      0.85,
+      0.98,
+      0.93,
+      0.85,
+      0.88,
+      0.78,
+      0.96,
+      1
+    ]
+  }
+}

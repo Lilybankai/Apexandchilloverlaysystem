@@ -1,0 +1,144 @@
+{
+  "mapKey": "autodromo-nazionale-monza-5780",
+  "trackLengthM": 5781,
+  "builtFrom": 55,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.130281,
+      "apexD": 0.16123,
+      "exitD": 0.16362,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C2",
+      "entryD": 0.16422,
+      "apexD": 0.16782,
+      "exitD": 0.17106,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C3",
+      "entryD": 0.344425,
+      "apexD": 0.37111,
+      "exitD": 0.37462,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.375,
+      "apexD": 0.37931,
+      "exitD": 0.38118,
+      "dir": "R",
+      "seq": "S2"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.421503,
+      "apexD": 0.443185,
+      "exitD": 0.4458,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.481433,
+      "apexD": 0.497222,
+      "exitD": 0.5005,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C7",
+      "entryD": 0.656882,
+      "apexD": 0.682463,
+      "exitD": 0.686445,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C8",
+      "entryD": 0.69153,
+      "apexD": 0.69959,
+      "exitD": 0.70609,
+      "dir": "R",
+      "seq": "S3"
+    },
+    {
+      "id": "C9",
+      "entryD": 0.71055,
+      "apexD": 0.71795,
+      "exitD": 0.72206,
+      "dir": "L",
+      "seq": "S3"
+    },
+    {
+      "id": "C10",
+      "entryD": 0.864564,
+      "apexD": 0.89438,
+      "exitD": 0.90077,
+      "dir": "R",
+      "seq": null
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C1",
+        "C2"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C3",
+        "C4"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S3",
+      "cornerIds": [
+        "C7",
+        "C8",
+        "C9"
+      ],
+      "kind": "complex"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 55,
+    "local": 23,
+    "cloud": 32,
+    "cutBy": {
+      "line": 47,
+      "latG": 8
+    },
+    "classes": {
+      "GT3": 43,
+      "LMP2_ELMS": 2,
+      "GTE": 4,
+      "LMP3": 2,
+      "HYPERCAR": 4
+    },
+    "support": [
+      1,
+      1,
+      1,
+      1,
+      0.85,
+      1,
+      0.98,
+      1,
+      0.96,
+      1
+    ]
+  }
+}

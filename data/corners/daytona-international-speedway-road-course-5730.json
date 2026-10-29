@@ -1,0 +1,108 @@
+{
+  "mapKey": "daytona-international-speedway-road-course-5730",
+  "trackLengthM": 5734,
+  "builtFrom": 289,
+  "corners": [
+    {
+      "id": "C1",
+      "entryD": 0.040403,
+      "apexD": 0.079575,
+      "exitD": 0.08573,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C2",
+      "entryD": 0.140655,
+      "apexD": 0.167747,
+      "exitD": 0.17433,
+      "dir": "R",
+      "seq": null
+    },
+    {
+      "id": "C3",
+      "entryD": 0.24088,
+      "apexD": 0.252895,
+      "exitD": 0.26253,
+      "dir": "L",
+      "seq": "S1"
+    },
+    {
+      "id": "C4",
+      "entryD": 0.274215,
+      "apexD": 0.306276,
+      "exitD": 0.312295,
+      "dir": "R",
+      "seq": "S1"
+    },
+    {
+      "id": "C5",
+      "entryD": 0.354756,
+      "apexD": 0.37397,
+      "exitD": 0.38026,
+      "dir": "L",
+      "seq": null
+    },
+    {
+      "id": "C6",
+      "entryD": 0.639435,
+      "apexD": 0.666635,
+      "exitD": 0.67187,
+      "dir": "L",
+      "seq": "S2"
+    },
+    {
+      "id": "C7",
+      "entryD": 0.673729,
+      "apexD": 0.684185,
+      "exitD": 0.69202,
+      "dir": "R",
+      "seq": "S2"
+    }
+  ],
+  "sequences": [
+    {
+      "id": "S1",
+      "cornerIds": [
+        "C3",
+        "C4"
+      ],
+      "kind": "chicane"
+    },
+    {
+      "id": "S2",
+      "cornerIds": [
+        "C6",
+        "C7"
+      ],
+      "kind": "chicane"
+    }
+  ],
+  "built": {
+    "at": "2026-10-29",
+    "tool": "scripts/build-corner-catalog.js",
+    "laps": 289,
+    "local": 244,
+    "cloud": 45,
+    "cutBy": {
+      "line": 92,
+      "latG": 197
+    },
+    "classes": {
+      "GT3": 105,
+      "LMP2": 164,
+      "HYPERCAR": 12,
+      "LMP2_ELMS": 4,
+      "LMP3": 4
+    },
+    "support": [
+      0.99,
+      0.98,
+      0.98,
+      1,
+      0.99,
+      0.95,
+      0.94
+    ]
+  }
+}
