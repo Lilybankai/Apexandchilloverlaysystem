@@ -270,7 +270,16 @@ function prepare(args: CoachSessionArgs, deps: CoachLoadDeps): SessionWork | nul
   const traces = readTraces(laps, tdir);
   const L = review.trackLengthM > 0 ? review.trackLengthM : session.trackLengthM;
   const ref = targetInput(review, session, traces, deps);
-  const { corners, catalog } = ref && L > 0 ? cornersOf(ref, mapKeyOf(session, lapDir), L, deps) : { corners: [], catalog: null };
+  const found = ref && L > 0 ? cornersOf(ref, mapKeyOf(session, lapDir), L, deps) : { corners: [], catalog: null };
+  const catalog = found.catalog;
+  // Measure by the debrief's own corners when it has them. A chased target
+  // keeps the corners the live card numbered (practiceReview.ts), which can
+  // predate the catalogue; cutting again here would let the coach call a
+  // corner C12 that the grid beside it calls C13.
+  const own = review.corners.filter((c) => [c.entryD, c.apexD, c.exitD].every((v) => Number.isFinite(v)));
+  const corners: LossCorner[] = own.length
+    ? own.map((c) => ({ id: c.id || `C${c.index + 1}`, entryD: c.entryD, apexD: c.apexD, exitD: c.exitD }))
+    : found.corners;
 
   // Sector lines off the best valid traced lap that has splits.
   let sectorD: SessionWork['sectorD'] = null;
