@@ -5,7 +5,8 @@
  *
  * Phase colours, in road order — the same five everywhere the coach draws a
  * phase: braking red, turn-in amber, mid-corner violet, exit cyan, exit run
- * blue. Tow/car (not the driver's) is grey, hatched.
+ * navy (dark, so it never reads as the exit's cyan). Tow/car (not the
+ * driver's) is grey, hatched.
  */
 
 .rvx-body[data-tab='coach'] {
@@ -13,7 +14,7 @@
   --rvc-turnIn: #ffb020;
   --rvc-midCorner: #b388ff;
   --rvc-exit: #26bbf4;
-  --rvc-exitRun: #309be1;
+  --rvc-exitRun: #3d5a99;
   --rvc-advice: #ffb020;
 }
 
@@ -201,7 +202,7 @@
 .rvc-seg[data-phase='turnIn'] { background: var(--rvc-turnIn, #ffb020); }
 .rvc-seg[data-phase='midCorner'] { background: var(--rvc-midCorner, #b388ff); }
 .rvc-seg[data-phase='exit'] { background: var(--rvc-exit, #26bbf4); }
-.rvc-seg[data-phase='exitRun'] { background: var(--rvc-exitRun, #309be1); }
+.rvc-seg[data-phase='exitRun'] { background: var(--rvc-exitRun, #3d5a99); }
 .rvc-seg[data-notyou='true'] {
   background: repeating-linear-gradient(135deg, #4a5468 0 3px, #2a3448 3px 6px);
 }
@@ -224,3 +225,6 @@
   border-radius: var(--radius-sm);
   padding: 8px 10px;
 }
+/* The side column's first row is the map's 1fr; with Show me above it, the
+   step-through takes its own height and the map keeps the stretch. */
+.rv-lap__side:has(> .rv-showme) { grid-template-rows: auto minmax(0, 1fr) repeat(4, auto); }

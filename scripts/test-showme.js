@@ -199,6 +199,19 @@ console.log('drawLapMap — marks and arrows');
   check('labels show at whole-lap zoom too',
     wout.zoom < 1.05 && wout.showme.marks.every((m) => m.box), `zoom ${wout.zoom}`);
 
+  // Zoomed past 2.5 the inputs-mode bars name themselves YOU / VS; with the
+  // coach's labels on the map those give way rather than sit in fragments
+  // under them.
+  const zoomedIn = (o) => {
+    const fz = fakeCanvas();
+    const r = CHARTS.drawLapMap(fz.canvas, road, mine, { mode: 'inputs', vs, lengthM: 400, window: [0.18, 0.24], ...o });
+    return { zoom: r.zoom, texts: fz.calls.filter((c) => c[0] === 'fillText').map((c) => c[1]) };
+  };
+  const bare0 = zoomedIn({});
+  const marked = zoomedIn({ marks });
+  check('zoomed in, the inputs bars say YOU on their own', bare0.zoom > 2.5 && bare0.texts.includes('YOU'), `zoom ${bare0.zoom}`);
+  check('…and leave the naming to the coach when it has marks', !marked.texts.includes('YOU') && marked.texts.includes('You brake'));
+
   const boxes = [...sm.marks.map((m) => m.box), ...sm.arrows.map((a) => a.box)];
   check('every label found a spot', boxes.every(Boolean));
   let clash = 0;

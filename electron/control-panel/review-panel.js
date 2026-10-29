@@ -2854,12 +2854,19 @@
     return entry && entry.state === 'ok' && entry.res.show.length ? entry.res.show : null;
   }
 
-  /** A step's window, sanitised and never tighter than the lap view allows. */
+  /**
+   * A step's window, sanitised, with a little road either side — a mark on
+   * the very edge of the frame sits under the map's locator and the charts'
+   * axis — and never tighter than the lap view allows.
+   */
   function stepWindow(step) {
     const w = step && Array.isArray(step.window) ? step.window : [0, 1];
     let a = known(w[0]) ? Math.max(0, Math.min(1, w[0])) : 0;
     let b = known(w[1]) ? Math.max(0, Math.min(1, w[1])) : 1;
     if (b < a) [a, b] = [b, a];
+    const pad = (b - a) * 0.1;
+    a = Math.max(0, a - pad);
+    b = Math.min(1, b + pad);
     if (b - a < MIN_SPAN) {
       const mid = (a + b) / 2;
       a = Math.max(0, mid - MIN_SPAN / 2);

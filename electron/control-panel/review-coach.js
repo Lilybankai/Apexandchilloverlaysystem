@@ -235,9 +235,10 @@
     const corners = breakdown.corners;
     const scale = scaleOf(corners);
     const rows = corners.map((c) => {
-      const main = mainPhase(c);
       const notYou = c.straightFlag && isNum(c.straightSec) && c.straightSec > 0;
       const yours = notYou ? c.lossSec - c.straightSec : c.lossSec;
+      // "Mostly" names where a LOSS sits; a corner gained overall has none.
+      const main = isNum(yours) && yours > 0.01 ? mainPhase(c) : null;
       return `
         <tr data-coachcorner="${esc(c.id)}"${steps.has(c.id) ? ' data-step="true" tabindex="0"' : ''}>
           <th scope="row">${esc(c.id)}</th>

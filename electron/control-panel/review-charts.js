@@ -1968,7 +1968,9 @@
       // same short name the readout and the strip use. At whole-lap the bars
       // are a few pixels apart and the words would pile up, so the outline
       // colour carries it there.
-      const labelled = g.zoom > 2.5;
+      // With "Show me" marks on the map the coach's own labels say whose
+      // brake is whose, and these would sit under them in fragments.
+      const labelled = g.zoom > 2.5 && !(Array.isArray(o.marks) && o.marks.length);
       const tick = (tr, colour, label) => {
         if (!Array.isArray(tr.x) || !Array.isArray(tr.z)) return;
         const half = lineW * 1.6 + 3;
