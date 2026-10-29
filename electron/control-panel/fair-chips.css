@@ -1,0 +1,45 @@
+/* fair-chips.css — fairness pills on a board row (fair-chips.js).
+   Small and quiet: a row of their own under the driver's row, spanning the
+   table, so a narrow card wraps them rather than cutting them off. */
+
+/* The driver's row and its pills read as one: no rule between them. */
+.rv-sheet tr:has(+ tr.fairrow) td { border-bottom: 0; }
+.rv-sheet tr.fairrow td { padding-top: 0; text-align: left; white-space: normal; }
+.rv-sheet tr.fairrow:hover td { background: transparent; }
+
+.fairchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+  white-space: normal;
+}
+
+.fairchip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fairchip[data-sev='warn'] {
+  color: var(--warn);
+  border-color: rgba(255, 176, 32, 0.45);
+}
+
+.fairchip[data-sev='drop'] {
+  color: var(--bad);
+  border-color: rgba(255, 84, 112, 0.45);
+}
+
+.fairchip[data-sev='pick'] {
+  color: var(--ok);
+  border-color: rgba(53, 208, 127, 0.45);
+}

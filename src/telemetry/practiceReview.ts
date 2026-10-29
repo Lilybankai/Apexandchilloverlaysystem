@@ -47,7 +47,8 @@ import type { TraceFile } from './lapTrace';
 /* -------------------------------------------------------------------------- */
 
 export interface PracticeTargetInfo {
-  kind: 'chased' | 'sessionBest';
+  /** `'board'`: a leaderboard lap picked to measure against afterwards (fairTarget / `targetLapId`). */
+  kind: 'chased' | 'sessionBest' | 'board';
   label: string;
   lapId: string;
   lapSec: number;
@@ -121,7 +122,7 @@ export interface PracticeReview {
  * Only the columns this module reads are typed; the rest ride along.
  */
 export interface PracticeTargetSnapshot {
-  kind: 'chased' | 'sessionBest';
+  kind: 'chased' | 'sessionBest' | 'board';
   label: string;
   lapId: string;
   lapSec: number;

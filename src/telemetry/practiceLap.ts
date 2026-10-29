@@ -42,6 +42,7 @@ import {
   practiceReference,
   type PracticeColumns,
   type PracticeTargetInfo,
+  type PracticeTargetSnapshot,
 } from './practiceReview';
 import { findSnapshot, type PracticeReviewDeps } from './practiceReviewLoad';
 import { loadSession } from './stintReview';
@@ -51,6 +52,8 @@ export interface PracticeLapArgs {
   lapId: string;
   at: string;
   haveMapKey?: string;
+  /** Measure against this instead of the session's snapshot: a board lap (`practiceReviewLoad.boardTargetSnapshot`). */
+  target?: PracticeTargetSnapshot | null;
 }
 
 /** One corner of the studied lap against the target. Signs as everywhere: positive seconds = slower. */
@@ -215,7 +218,7 @@ export function loadPracticeLap(args: PracticeLapArgs, deps: PracticeReviewDeps)
 
   // The reference, resolved exactly as the debrief resolves it. Without a
   // snapshot that is the session's best lap, whose trace is the only one read.
-  const snap = findSnapshot(args.sessionId, session, deps.reviewDir);
+  const snap = args.target ? { target: args.target } : findSnapshot(args.sessionId, session, deps.reviewDir);
   const cols = new Map<string, PracticeColumns>();
   let bestFile: TraceFile | null = null;
   const best = snap && snap.target ? null : bestValidLap(session);

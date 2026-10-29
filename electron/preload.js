@@ -400,7 +400,10 @@ contextBridge.exposeInMainWorld('apex', {
   reviewPendingAck: (sessionId) => ipcRenderer.invoke('review:pendingAck', sessionId),
 
   /** One practice session's debrief: `sessionId` → `{ ok, review: PracticeReview | null, error? }`. */
-  reviewPractice: (sessionId) => ipcRenderer.invoke('review:practice', sessionId),
+  reviewPractice: (sessionId, opts) => ipcRenderer.invoke('review:practice', sessionId, opts),
+  // Fair comparison laps (fair-ipc.js): board laps to measure a session against, and Review's chips.
+  practiceTargets: (req) => ipcRenderer.invoke('practice:targets', req),
+  reviewFairChips: (req) => ipcRenderer.invoke('review:fairChips', req),
 
   /**
    * One practice lap against its session's target: `{ sessionId, lapId, at, haveMapKey }`

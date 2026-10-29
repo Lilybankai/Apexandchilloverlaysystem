@@ -15,6 +15,19 @@
  *   snapshot is measured against its own best lap (`target.kind ===
  *   'sessionBest'`), which the debrief says.
  *
+ *   loadPracticeReview(sessionId, deps, { target })
+ *     Measure the session against `target` instead of its snapshot — a
+ *     leaderboard lap the driver picked afterwards (`review:practice` with
+ *     `opts.targetLapId`, fair-ipc.js). Build `target` with
+ *     {@link boardTargetSnapshot}. The snapshot is still read for `endedAt`.
+ *
+ *   boardTargetSnapshot(payload, meta): PracticeTargetSnapshot | null
+ *     A board lap's trace (`get_lap_trace`'s answer, as trainingRefCache keeps
+ *     it) shaped EXACTLY as the snapshot of a chased board lap would have been:
+ *     through the server's own `makeGhostReference` → `ghostFromReference` →
+ *     `ghostJson`. So a session measured against a board lap afterwards sees
+ *     the same columns and corners as one that chased that lap on track.
+ *
  *   sessionFileKey(sessionId: string): string
  *     The snapshot's file name (without `.json`) for a session id. Session ids
  *     carry an ISO time (`2026-10-08T10:20:43.000Z~michelin-raceway-…`), and
@@ -37,6 +50,8 @@ import * as path from 'node:path';
 import { lapDir as defaultLapDir } from './lapLog';
 import { readTrace, traceDir as defaultTraceDir, type TraceFile } from './lapTrace';
 import { loadSession } from './stintReview';
+import { ghostJson } from './ghostLap';
+import { ghostFromReference, makeGhostReference } from './ghostReference';
 import {
   buildPracticeReview,
   type PracticeReview,
@@ -117,8 +132,63 @@ export function findSnapshot(
   return best;
 }
 
+/** Options for {@link loadPracticeReview}. */
+export interface PracticeReviewOptions {
+  /** Measure against this instead of the session's snapshot (a board lap picked afterwards). */
+  target?: PracticeTargetSnapshot | null;
+}
+
+/** What {@link boardTargetSnapshot} needs besides the trace. */
+export interface BoardTargetMeta {
+  driverId: string;
+  lapMs: number;
+  /** Shown as the target, e.g. "J. Smith · 1:47.831". */
+  label: string;
+  /** The SESSION's circuit: the board row was looked up from its key, so its length is the lap's. */
+  trackKey: string;
+  trackLengthM: number;
+  carClass: string;
+  sim?: string;
+}
+
+/**
+ * A board lap's trace as a {@link PracticeTargetSnapshot} — see the header.
+ * `data` is `lap_traces.data` (the columns). `null` when the columns cannot
+ * make a lap (too few points, no time, no track length).
+ */
+export function boardTargetSnapshot(data: unknown, meta: BoardTargetMeta): PracticeTargetSnapshot | null {
+  if (!meta || !(meta.lapMs > 0) || !(meta.trackLengthM > 0) || !meta.driverId) return null;
+  const refId = `board:${meta.driverId}:${Math.round(meta.lapMs)}`;
+  const ref = makeGhostReference(data, {
+    sim: meta.sim || 'lmu',
+    trackKey: meta.trackKey,
+    carClass: meta.carClass,
+    // Board traces exist for the dry board only (lap_traces has no surface).
+    condition: 'dry',
+    refId,
+    label: meta.label,
+    lapMs: meta.lapMs,
+  });
+  const lap = ref ? ghostFromReference(ref, meta.trackLengthM) : null;
+  const columns = ghostJson(lap);
+  if (!columns) return null;
+  return {
+    kind: 'board',
+    label: meta.label,
+    lapId: refId,
+    // The board's official time: the trace's own crossing-to-crossing clock
+    // can differ by a few ms, and the board time is what the driver saw.
+    lapSec: meta.lapMs / 1000,
+    columns,
+  };
+}
+
 /** The Practice Review for one session, or `null` when no session has that id. */
-export function loadPracticeReview(sessionId: string, deps: PracticeReviewDeps): PracticeReview | null {
+export function loadPracticeReview(
+  sessionId: string,
+  deps: PracticeReviewDeps,
+  opts?: PracticeReviewOptions,
+): PracticeReview | null {
   const session = loadSession(sessionId, deps.lapDir || defaultLapDir());
   if (!session) return null;
 
@@ -135,7 +205,7 @@ export function loadPracticeReview(sessionId: string, deps: PracticeReviewDeps):
   return buildPracticeReview({
     session,
     traces,
-    target: snap ? snap.target : null,
+    target: opts && opts.target ? opts.target : snap ? snap.target : null,
     endedAt: snap && snap.endedAt ? snap.endedAt : undefined,
   });
 }

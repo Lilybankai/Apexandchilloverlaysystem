@@ -4855,12 +4855,24 @@ function registerIpc() {
     return { ok: true };
   });
 
-  /** One practice session's debrief: laps against the lap that was chased. */
-  ipcMain.handle('review:practice', (_evt, sessionId) => {
+  // Fair comparison laps (coach): `practice:targets`, `review:fairChips`, and
+  // the board-lap target behind `opts.targetLapId` below. See fair-ipc.js.
+  const fairIpc = require('./fair-ipc').register(ipcMain, { auth: authService, userData: () => app.getPath('userData') });
+
+  /**
+   * One practice session's debrief: laps against the lap that was chased —
+   * or, with `opts.targetLapId` (`board:<driverId>:<lapMs>`), against that
+   * leaderboard lap. A board target that cannot be had (offline, signed out)
+   * falls back to the usual target and says why in `targetError`.
+   */
+  ipcMain.handle('review:practice', async (_evt, sessionId, opts) => {
     if (typeof sessionId !== 'string' || !sessionId) return { ok: false, review: null, error: 'no session' };
     try {
       const { loadPracticeReview } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceReviewLoad.js'));
-      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() });
+      const want = opts && typeof opts.targetLapId === 'string' ? opts.targetLapId : '';
+      const board = want ? await fairIpc.boardTarget(sessionId, want) : null;
+      const review = loadPracticeReview(sessionId, { reviewDir: practiceReviewsDir() }, board && board.ok ? { target: board.target } : undefined);
+      if (review && board && !board.ok) return { ok: true, review, targetError: board.error };
       return review ? { ok: true, review } : { ok: false, review: null, error: 'session not found' };
     } catch (err) {
       console.error('[app] practice review unavailable:', err.message);
@@ -4874,7 +4886,7 @@ function registerIpc() {
    * micro-sectors, both laps' channels — plus a row per corner. The circuit
    * is not resent when the panel already holds `haveMapKey`, as `review:lap`.
    */
-  ipcMain.handle('practice:lap', (_evt, req) => {
+  ipcMain.handle('practice:lap', async (_evt, req) => {
     const sessionId = req && typeof req.sessionId === 'string' ? req.sessionId : '';
     const lapId = req && typeof req.lapId === 'string' ? req.lapId : '';
     const at = req && typeof req.at === 'string' ? req.at : '';
@@ -4882,7 +4894,11 @@ function registerIpc() {
     try {
       const { loadPracticeLap } = require(path.join(__dirname, '..', 'dist', 'telemetry', 'practiceLap.js'));
       const haveMapKey = req && typeof req.haveMapKey === 'string' ? req.haveMapKey : '';
-      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey }, { reviewDir: practiceReviewsDir() });
+      // `targetLapId`: the board lap the debrief was measured against (as `review:practice`).
+      const board = typeof req.targetLapId === 'string' && req.targetLapId ? await fairIpc.boardTarget(sessionId, req.targetLapId) : null;
+      const target = board && board.ok ? board.target : undefined;
+      const result = loadPracticeLap({ sessionId, lapId, at, haveMapKey, target }, { reviewDir: practiceReviewsDir() });
+      if (result && board && !board.ok) return { ok: true, result, targetError: board.error };
       return result ? { ok: true, result } : { ok: false, result: null, error: 'lap not found' };
     } catch (err) {
       console.error('[app] practice lap unavailable:', err.message);

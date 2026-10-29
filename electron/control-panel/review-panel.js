@@ -1756,6 +1756,8 @@
     if (note) {
       body = `<p class="rv-board__note">${esc(note)}</p>`;
     } else {
+      // Fairness pills (fair-chips.js): asked once per board, repainted when they land.
+      const fair = window.FairChips ? window.FairChips.sync(s && s.id, board.rows, refreshBoardCards) : null;
       const rows = board.rows.map((row) => {
         const ref = boardRefOf(row);
         const on = !!pin && pin.driverId === row.driver_id;
@@ -1783,7 +1785,7 @@
             <td class="lap">${boardTime(row)}</td>
             <td class="gapc">${gap}</td>
             <td class="ref">${action}</td>
-          </tr>`;
+          </tr>${fair ? fair.rowHtml(row, 6) : ''}`;
       }).join('');
       body = `
         <div class="rv-sheet__scroll rv-board__scroll">
