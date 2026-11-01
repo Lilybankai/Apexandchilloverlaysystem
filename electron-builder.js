@@ -23,7 +23,7 @@ const TARGET = require('./scripts/lib/release-target.js');
 /** Azure Trusted Signing account `apex26`, North Europe. */
 const ENDPOINT = 'https://neu.codesigning.azure.net/';
 const ACCOUNT_NAME = 'apex26';
-const CERTIFICATE_PROFILE = 'ApexAIOSystem26';
+const CERTIFICATE_PROFILE = 'ApexAIOSystem26b';
 
 /**
  * Trusted Signing's own timestamp authority. This is not optional: the

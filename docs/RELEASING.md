@@ -265,9 +265,18 @@ is the release history.
 ## Code signing
 
 Windows builds are signed with **Azure Trusted Signing** (account `apex26`,
-North Europe, certificate profile `ApexAIOSystem26`, subject
+North Europe, certificate profile `ApexAIOSystem26b`, subject
 `CN=The Lilybank Agency Ltd`). It is configured in `electron-builder.js`, and
-turns itself on only when the credentials are present:
+turns itself on only when the credentials are present.
+
+The original profile `ApexAIOSystem26` stopped signing after the subscription
+was suspended for an unpaid bill (Oct 2026): auth and role were fine, a
+certificate was issued and Active, but every request came back HTTP 200 with
+`{"status":"Failed"}`. A new profile on the same account and identity
+validation signed first time. If that happens again, try a fresh profile
+before anything else.
+
+The credentials:
 
 ```bash
 AZURE_TENANT_ID=…      # Directory (tenant) ID
