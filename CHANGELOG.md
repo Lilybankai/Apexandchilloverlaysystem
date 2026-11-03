@@ -5,83 +5,16 @@
      app until it is renamed.
 -->
 
-## 1.3.15-beta.2 — 2026-11-03
+## 1.3.15 — 2026-11-03
 
-The coach now talks to you while you drive: after each practice lap, the
-engineer tells you the one corner to work on and what to change there.
+Beta testers can find the beta channel again.
 
-### Added
+### Fixed
 
-- **Live coaching on the radio.** In a practice session or test day, the
-  engineer picks the corner costing you the most over your last few laps
-  and says what to change — "Corner four, you're braking about ten metres
-  early, worth a tenth and a half." It stays on that corner until you've
-  fixed it, tells you when it's better, then moves on to the next one. Every
-  few laps you also hear how consistent you are, and a short AI summary.
-  It only speaks on the straights, "keep quiet" silences it, and it never
-  runs in qualifying or a race. Corners use the same numbers as the
-  Practice tab. Switch it off under **Engineer → Live practice coach**.
-
-- **Focus card.** A small in-game card shows the corner the coach is
-  working on, what to change and what it's costing you a lap, with that
-  corner highlighted on a track outline. It lights up as you approach the
-  corner, and ticks it off when it's sorted. It works in Race mode as well
-  as Training mode, and only appears while the coach is running.
-
-- **Ask the coach.** Push to talk and ask "how was that lap?", "where am I
-  losing time?", "what should I work on?", "what about corner seven?" or
-  "am I consistent?". Outside practice these questions go to the race
-  engineer as before.
-
-## 1.3.15-beta.1 — 2026-10-29
-
-A driving coach in Practice: where each lap loses time, in which part of
-which corner, and what to change — on a Practice tab rebuilt from scratch.
-
-### Added
-
-- **AI Coach.** After a practice session the coach gives you three
-  takeaways for your next run — the habit costing you most, the part of the
-  lap with the most to gain, and a realistic lap time to aim for. It starts
-  from plain sentences built from your own numbers, then an AI rewrites them
-  into a short debrief. The AI may only talk about numbers the app measured;
-  anything else is thrown away and the plain sentences stay.
-
-- **Time lost, corner by corner and phase by phase.** Every corner is split
-  into braking, turn-in, mid-corner, exit and the straight after it, so the
-  coach can tell braking too early from a slow exit. Time lost to a tow or a
-  quicker car on the straight is shown, but never blamed on you. Linked
-  corners — chicanes, the Porsche Curves, the Esses — are coached as one.
-
-- **Show me.** From "Where time is lost", or in any lap, Show me walks you
-  through the corners that cost most, with your braking, turn-in, apex and
-  throttle points drawn against the target's on the map and the charts, and
-  an arrow for what to change ("brake 12 m later").
-
-- **Your driving.** Habits across all your sessions at a track: how much
-  your braking points wander corner by corner, coasting, pedal overlap,
-  trail braking, traction control and ABS use, and how your pace and
-  accuracy have moved session to session.
-
-- **Practise against a leaderboard lap.** Pick any lap from the leaderboard
-  as the target for a session. Laps that are not a fair comparison — much
-  less fuel, a hotter or cooler track, a different car or tyre, a tow — are
-  marked, and the leaderboard in Review shows the same marks.
-
-- **Review: a Coach tab for race and qualifying laps,** with the same
-  breakdown and Show me against the lap you compare with.
-
-### Changed
-
-- **The Practice tab is rebuilt.** One page: your session's best lap,
-  theoretical best, accuracy, consistency and gap to the leaderboard at the
-  top, then the coach, the corners that cost most, every lap with its
-  corners at a glance, a corner-by-corner heatmap and your pace through the
-  session. Pick any session, track or class from the bar along the top.
-
-- **Corners keep their numbers.** C5 is now the same corner every session
-  at every circuit with enough laps driven, in Practice and on the live
-  Corner Analysis card alike.
+- **Beta testers can switch to the beta channel.** If the team gave your
+  account free access as a beta tester, Settings → Updates now shows the
+  release channel picker, so you can follow the beta builds. Before, it
+  only appeared once you were already running a beta.
 
 ## 1.3.14 — 2026-10-26
 
