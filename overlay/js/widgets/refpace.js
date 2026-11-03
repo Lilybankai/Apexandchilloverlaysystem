@@ -242,11 +242,16 @@
     setAttr(els.gap.value, "data-state", gap < 0 ? "ahead" : gap > 0 ? "behind" : "flat");
   }
 
-  window.ApexOverlay.registerWidget("refpace", {
+  var def = {
     // A session best moves a handful of times an hour. Anything faster than this
     // is redrawing an identical panel.
     throttleMs: 500,
     init: init,
     update: update,
-  });
+  };
+  window.ApexOverlay.registerWidget("refpace", def);
+  // The same card on the training layer (training.html, and widget.html for
+  // OBS). One module, one set of state: no page ever hosts both ids — the race
+  // pages have no training shells and the training page no race ones.
+  window.ApexOverlay.registerWidget("trainingrefpace", def);
 })();

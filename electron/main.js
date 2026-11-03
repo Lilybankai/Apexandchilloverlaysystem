@@ -277,7 +277,7 @@ const TRAINING_CATALOG = [
     label: 'Ghost HUD',
     gated: 'beta',
     group: 'training',
-    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta',
     ingameDefault: false,
     obs: { w: 640, h: 307, note: 'Height follows width — the camera’s field of view fixes the two together.' },
   },
@@ -331,7 +331,8 @@ const TRAINING_CATALOG = [
     // nothing until the live coach (its own switch) publishes `player.coach`
     // in a practice session, so that switch is the opt-in; this one only
     // decides whether the coach has an in-game half. It needs no reference
-    // lap, and opens the training layer by itself in Race mode — see
+    // lap. Training mode only, like every card here (focusGate's mode input);
+    // on its own it waits for the coach before opening the layer — see
     // `trainingWindowPlan`.
     id: 'trainingfocus',
     label: 'Focus',
@@ -340,6 +341,20 @@ const TRAINING_CATALOG = [
     description: 'The live coach’s one corner to work on, what to change there, and a light as you come to it',
     ingameDefault: true,
     obs: { w: 400, h: 200 },
+  },
+  {
+    // The race overlay's Reference Pace (overlay/js/widgets/refpace.js, which
+    // registers itself under both ids), on the training layer: the race layer
+    // steps aside while training is live, and pace against the class
+    // benchmark is a practice question too. Same paceScore, same Ohne Speed
+    // credit on the card.
+    id: 'trainingrefpace',
+    label: 'Reference Pace',
+    gated: 'beta',
+    group: 'training',
+    description: "Your lap vs the class benchmark — Alien to Offline (times by Ohne Speed)",
+    ingameDefault: false,
+    obs: { w: 340, h: 190 },
   },
 ];
 const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);
@@ -3180,6 +3195,10 @@ function destroyOverlayWindow() {
  *     that distinction is why this checks settings rather than the feed flag.
  *   - Otherwise the feed decides: live frames whose session says the driver
  *     is at the wheel (see setFeedOnTrack).
+ *
+ * The desktop race layer also steps aside while training is live
+ * (raceLayerShouldBeVisible): one layer on screen at a time. VR has no
+ * training layer, so the headset keeps this rule alone.
  */
 function ingameShouldBeVisible(settings) {
   if (ingameEditing || ingameInteractive) return true;
@@ -3198,11 +3217,37 @@ function ingameShouldBeVisible(settings) {
   return feedOnTrack || feedReplay;
 }
 
-/** Reflect ingameShouldBeVisible on the layer window, if there is one. */
+/**
+ * Whether training is live, for the race layer. Called from paths that can run
+ * before the training gate below is constructed (a `const`, so touching it
+ * early would throw): that early answer is "no training".
+ */
+function trainingLiveForRaceLayer() {
+  try {
+    return trainingActive();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The desktop race layer: ingameShouldBeVisible, except that it is hidden
+ * while training is live (Training mode, in a practice or test session).
+ * Carl, 2026-11-03: in training the race overlays don't show, in a race the
+ * training ones don't. Edit and interact mode still show it — the driver
+ * asked to look at it.
+ */
+function raceLayerShouldBeVisible(settings) {
+  if (ingameEditing || ingameInteractive) return true;
+  if (trainingLiveForRaceLayer()) return false;
+  return ingameShouldBeVisible(settings);
+}
+
+/** Reflect the visibility rules on the layer window (and VR), if there is one. */
 function applyIngameVisibility(settings) {
   vrOverlay.setVisible(ingameShouldBeVisible(settings));
   if (!overlayWin || overlayWin.isDestroyed()) return;
-  const want = ingameShouldBeVisible(settings);
+  const want = raceLayerShouldBeVisible(settings);
   if (want === overlayWin.isVisible()) return;
   // showInactive, never show: the window is non-focusable and must not take
   // input from the game even for the moment it appears.
@@ -3644,6 +3689,8 @@ function onTrainingActiveChanged(fn) {
 
 // The window follows the gate; the panel's status line follows the reason too.
 onTrainingActiveChanged(() => syncTrainingWindow());
+// …and the race layer steps aside while training is live (and back after).
+onTrainingActiveChanged(() => applyIngameVisibility());
 // …and the Focus card's gate.
 focusGate.subscribe((next, prev) => {
   if (next.active !== prev.active) syncTrainingWindow();
@@ -3672,7 +3719,9 @@ function syncTrainingLayer(settings) {
   );
   focusGate.update(
     {
-      mode: trainingIds(s).includes('trainingfocus'),
+      // Training mode only (Carl, 2026-11-03): Race mode shows race overlays
+      // alone. The coach still talks on the radio in Race mode.
+      mode: !!s.trainingMode && trainingIds(s).includes('trainingfocus'),
       beta: trainingOnThisChannel(s),
       running: !!status.running,
     },

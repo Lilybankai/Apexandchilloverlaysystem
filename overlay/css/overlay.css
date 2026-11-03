@@ -983,7 +983,7 @@
   max-width: 330px;
 }
 
-#widget-refpace { --band: var(--text-muted); }
+:is(#widget-refpace, #widget-trainingrefpace) { --band: var(--text-muted); }
 
 /* "Reference Pace" plus a class-and-layout meta is the longest header any
    widget carries, and at the panel's default width both were wrapping to two
@@ -996,12 +996,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#widget-refpace[data-band="alien"]       { --band: var(--pos-gain); }
-#widget-refpace[data-band="competitive"] { --band: var(--pos-gain); }
-#widget-refpace[data-band="good"]        { --band: var(--text-primary); }
-#widget-refpace[data-band="midpack"]     { --band: var(--warn); }
-#widget-refpace[data-band="tail"]        { --band: var(--pos-loss); }
-#widget-refpace[data-band="offline"]     { --band: var(--pos-loss); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="alien"]       { --band: var(--pos-gain); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="competitive"] { --band: var(--pos-gain); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="good"]        { --band: var(--text-primary); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="midpack"]     { --band: var(--warn); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="tail"]        { --band: var(--pos-loss); }
+:is(#widget-refpace, #widget-trainingrefpace)[data-band="offline"]     { --band: var(--pos-loss); }
 
 .refpace__head {
   display: flex;

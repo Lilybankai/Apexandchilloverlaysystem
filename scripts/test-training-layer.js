@@ -366,7 +366,11 @@ console.log('\ntraining layer: the pages');
     training.includes('js/ghost-geom.js') && training.includes('js/widgets/ghosthud.js'),
   );
   const TRAINING_WIDGETS = ['ghosthud', 'traininginputs', 'trainingcorner', 'trainingsectors', 'trainingcoach', 'trainingbrake', 'trainingfocus'].map((id) => 'js/widgets/' + id + '.js');
-  const raceWidgets = training.filter((s) => s.startsWith('js/widgets/') && !TRAINING_WIDGETS.includes(s));
+  // refpace.js is the one race module the training page loads on purpose: it
+  // registers as trainingrefpace too (the Reference Pace training card).
+  const SHARED_WIDGETS = ['js/widgets/refpace.js'];
+  const raceWidgets = training.filter((s) => s.startsWith('js/widgets/') && !TRAINING_WIDGETS.includes(s) && !SHARED_WIDGETS.includes(s));
+  check('training.html loads refpace.js for the Reference Pace card', training.includes('js/widgets/refpace.js'));
   check('training.html loads every training widget', TRAINING_WIDGETS.every((w) => training.includes(w)));
   check(
     'ingame.html loads no training widget',
@@ -440,13 +444,29 @@ console.log('\ntraining layer: one list of training widgets');
   const bench = /const INGAME_OFF_BY_DEFAULT = new Set\(\[([\s\S]*?)\]\);/.exec(src('scripts', 'bench-widgets.js'));
   const benchOff = bench ? Array.from(bench[1].replace(/\/\/.*$/gm, '').matchAll(/'([^']+)'/g), (m) => m[1]) : [];
 
-  check('training-shells.js lists the seven training widgets', pageIds === 'ghosthud,trainingbrake,trainingcoach,trainingcorner,trainingfocus,traininginputs,trainingsectors', pageIds);
+  check('training-shells.js lists the eight training widgets', pageIds === 'ghosthud,trainingbrake,trainingcoach,trainingcorner,trainingfocus,traininginputs,trainingrefpace,trainingsectors', pageIds);
   check("…and every one has a shell on the training page", (page.ApexTrainingWidgets || []).every((id) => id === 'ghosthud' || !!page.ApexShells[id]));
   check("main.js's TRAINING_CATALOG is the same list", catalogIds === pageIds, catalogIds);
   check("ingame.js places the same list on the training layer", placedIds === pageIds, placedIds);
   check('the bench keeps every one off the race layer', pageIds.split(',').every((id) => benchOff.includes(id)), benchOff.join(','));
   check('training.html takes its whitelist from training-shells.js', /window\.ApexTrainingWidgets/.test(src('overlay', 'training.html')) &&
     !/"traininginputs"/.test(src('overlay', 'training.html')));
+
+  // One layer at a time (Carl, 2026-11-03): the race layer hides while training
+  // is live, and no training card (the Focus card included) opens in Race mode.
+  const body = (name) => {
+    const m = new RegExp('function ' + name + '\\(settings\\) \\{([\\s\\S]*?)\\r?\\n\\}').exec(main);
+    return m ? m[1] : '';
+  };
+  const vis = body('raceLayerShouldBeVisible');
+  check('the race layer hides while training is live', vis.includes('if (trainingLiveForRaceLayer()) return false;'));
+  check('…but edit and interact mode still show it',
+    vis.indexOf('ingameEditing || ingameInteractive') >= 0 && vis.indexOf('ingameEditing || ingameInteractive') < vis.indexOf('trainingLiveForRaceLayer'));
+  const apply = body('applyIngameVisibility');
+  check('the desktop window follows that rule, VR keeps the plain one',
+    apply.includes('const want = raceLayerShouldBeVisible(settings)') && apply.includes('vrOverlay.setVisible(ingameShouldBeVisible(settings))'));
+  check('…and re-applies when training starts or stops', main.includes('onTrainingActiveChanged(() => applyIngameVisibility())'));
+  check('the Focus card gate needs Training mode', main.includes("mode: !!s.trainingMode && trainingIds(s).includes('trainingfocus')"));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

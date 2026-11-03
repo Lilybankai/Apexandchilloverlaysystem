@@ -312,7 +312,7 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
   const trainingOverlays = [{ id: 'ghosthud', label: 'Ghost HUD', enabled: true, ingame: true,
     url: 'http://127.0.0.1:8082/widget.html?w=ghosthud', group: 'training', gated: 'beta',
-    description: 'A fast lap’s racing line on the road ahead, with the live delta (Powered by Alien-GT)',
+    description: 'A fast lap’s racing line on the road ahead, with the live delta',
     obs: { w: 640, h: 307 } }];
   const overlays = overlayCatalog.concat(streamingOverlays, trainingOverlays);
   /*
