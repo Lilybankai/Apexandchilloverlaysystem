@@ -232,6 +232,8 @@
       // The live coach's Focus card: left, above Corner analysis, so the
       // corner being worked on sits beside the one just driven.
       trainingfocus: { x: Math.round(vw / 2 - 900), y: Math.round(vh * 0.36), w: 400 },
+      // Reference Pace: right, where the race layer keeps it.
+      trainingrefpace: { x: vw - 364, y: Math.round(vh * 0.36), w: 340 },
     };
   }
 

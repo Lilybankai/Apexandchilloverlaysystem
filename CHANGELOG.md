@@ -5,6 +5,26 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.1 — 2026-11-03
+
+One set of overlays at a time, and Reference Pace on the training layer.
+
+### Changed
+
+- **Training and race overlays no longer mix.** While Training mode is
+  running in a practice session or test day, the race overlays step aside
+  and only the training ones show. In Race mode only the race overlays
+  show: the Focus card now needs Training mode too (the coach still talks
+  on the radio in Race mode).
+
+- **The Ghost HUD credit line is gone** from the Training tab.
+
+### Added
+
+- **Reference Pace for training.** Switch it on in the Training tab to see
+  your best lap against the class benchmark, Alien to Offline, on the
+  training layer. Times by Ohne Speed.
+
 ## 1.3.15 — 2026-11-03
 
 Beta testers can find the beta channel again.

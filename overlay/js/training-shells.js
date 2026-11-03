@@ -53,6 +53,10 @@
   add("trainingcoach", "Coach", "Coach — your inputs, speed and gear against the reference right now");
   add("trainingbrake", "Brake Cue", "Brake cue — lights up at the reference lap's braking point", "bare");
   add("trainingfocus", "Focus", "Focus — the corner the live coach is working on, lit as you come to it");
+  // The race overlay's Reference Pace, on the training layer (refpace.js
+  // registers under both ids). Times and band names are Ohne Speed's; the
+  // card carries their credit.
+  add("trainingrefpace", "Reference Pace", "Reference pace — your best lap against the class benchmark, Alien to Offline");
 
   window.ApexTrainingWidgets = ids;
 })();

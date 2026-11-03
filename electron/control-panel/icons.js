@@ -220,6 +220,7 @@
     trainingcoach: 'gauge',
     trainingbrake: 'alert',
     trainingfocus: 'target',
+    trainingrefpace: 'target',
     refpace: 'target',
     weather: 'cloud-rain',
     fuel: 'fuel',
