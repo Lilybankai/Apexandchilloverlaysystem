@@ -74,7 +74,7 @@ if (canSign) {
     'Invoke-TrustedSigning' +
     " -Endpoint 'https://neu.codesigning.azure.net/'" +
     " -CodeSigningAccountName 'apex26'" +
-    " -CertificateProfileName 'ApexAIOSystem26'" +
+    " -CertificateProfileName 'ApexAIOSystem26b'" +
     ' -FileDigest SHA256' +
     " -TimestampRfc3161 'http://timestamp.acs.microsoft.com'" +
     ' -TimestampDigest SHA256' +
