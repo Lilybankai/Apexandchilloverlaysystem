@@ -1791,7 +1791,8 @@
       body = `<p class="rv-board__note">${esc(note)}</p>`;
     } else {
       // Fairness pills (fair-chips.js): asked once per board, repainted when they land.
-      const fair = window.FairChips ? window.FairChips.sync(s && s.id, board.rows, refreshBoardCards) : null;
+      // Beta only, like the leaderboard-lap target they come with (1.3.15).
+      const fair = followingBeta && window.FairChips ? window.FairChips.sync(s && s.id, board.rows, refreshBoardCards) : null;
       const rows = board.rows.map((row) => {
         const ref = boardRefOf(row);
         const on = !!pin && pin.driverId === row.driver_id;
