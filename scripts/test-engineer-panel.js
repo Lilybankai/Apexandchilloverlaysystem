@@ -132,6 +132,14 @@ async function run(engineerSettings) {
 }
 
 (async () => {
+  console.log('\nThe live practice coach switch renders and shows the saved value');
+  for (const [label, eng, want] of [['older settings (no field)', {}, true], ['switched off', { liveCoach: false }, false], ['switched on', { liveCoach: true }, true]]) {
+    const { errors, elements, status } = await run(eng);
+    check(`${label}: render() runs without throwing`, errors.length === 0, errors.map((e) => String(e && e.message || e)).join(' | ') || 'clean');
+    const box = elements.get('#eng-live-coach');
+    check(`${label}: status says ${want}, the switch shows it`, status.liveCoach === want && !!box && box.checked === want, box && String(box.checked));
+  }
+
   for (const tone of ['clean', 'banter', 'savage']) {
     console.log(`\n${tone}: the Engineer tab renders end to end`);
     const { errors, elements, status } = await run({ radioTone: tone });

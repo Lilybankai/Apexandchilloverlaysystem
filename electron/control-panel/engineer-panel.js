@@ -37,6 +37,7 @@
   const readoutsHint = $('#eng-readouts-hint');
   const paceReminder = $('#eng-pace-reminder');
   const straights = $('#eng-straights');
+  const liveCoachToggle = $('#eng-live-coach'); // beta; control-panel.js shows its field
   const toneSelect = $('#eng-tone'); // not `tone`: render() has its own
   const toneHint = $('#eng-tone-hint');
   const volume = $('#eng-volume');
@@ -142,6 +143,11 @@
     weather: 'Weather & rain risk',
     brakeBias: 'Brake bias',
     tractionControl: 'Traction control setting',
+    coachLap: 'Practice: that lap against your reference, and where it went',
+    coachLoss: 'Practice: where the time goes, lap after lap',
+    coachWorkOn: 'Practice: the corner to work on, and what to change',
+    coachCorner: 'Practice: one corner — say its number (corner four …)',
+    coachSpread: 'Practice: how consistent your laps are',
     radioQuiet: 'Radio silence — flags, penalties and box calls only',
     radioTalk: 'Radio back on',
     radioRepeat: 'Repeat the last line',
@@ -491,6 +497,7 @@
     if (s.readouts && readouts.value !== s.readouts) readouts.value = s.readouts;
     renderReadoutsHint();
     if (straights && typeof s.onlyStraights === 'boolean') straights.checked = s.onlyStraights;
+    if (liveCoachToggle && typeof s.liveCoach === 'boolean') liveCoachToggle.checked = s.liveCoach;
     if (toneSelect && s.radioTone && toneSelect.value !== s.radioTone) toneSelect.value = s.radioTone;
     renderToneHint();
     if (
@@ -736,6 +743,11 @@
   if (straights) {
     straights.addEventListener('change', () => {
       void api.updateSettings({ engineer: { onlyStraights: straights.checked } });
+    });
+  }
+  if (liveCoachToggle) {
+    liveCoachToggle.addEventListener('change', () => {
+      void api.updateSettings({ engineer: { liveCoach: liveCoachToggle.checked } });
     });
   }
   if (toneSelect) {

@@ -6670,6 +6670,9 @@
   function applyPracticeTabVisibility() {
     const tab = tabButtons.find((t) => t.dataset.tab === 'practice');
     if (tab) tab.hidden = !followingBeta;
+    // The Engineer tab's "Live practice coach" switch rides with the Practice tab.
+    const liveCoachField = document.getElementById('eng-live-coach-field');
+    if (liveCoachField) liveCoachField.hidden = !followingBeta;
     if (!followingBeta) {
       const view = views.find((v) => v.dataset.view === 'practice');
       if (view && view.getAttribute('data-active') === 'true') showView('dashboard');

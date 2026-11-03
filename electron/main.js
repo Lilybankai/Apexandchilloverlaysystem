@@ -65,7 +65,7 @@ const stallWatch = require('./stall-watch');
 // ordering is the guarantee, so it stays at the top rather than in whenReady.
 stallWatch.installCensus();
 const { createLayerWatch, createLayerDiagnosis } = require('./layer-watch');
-const { createTrainingGate, sessionOfFrame } = require('./trainingGate');
+const { createTrainingGate, sessionOfFrame, coachSessionOfFrame } = require('./trainingGate');
 const { createPracticeWatch } = require('./practiceSession');
 const { createTrainingLayer, layerOfSender } = require('./trainingLayer');
 const { migrateTrainingSettings } = require('./trainingSettings');
@@ -325,6 +325,21 @@ const TRAINING_CATALOG = [
     description: 'A red light that comes on at the reference lap’s braking point',
     ingameDefault: false,
     obs: { w: 360, h: 84 },
+  },
+  {
+    // The live coach's card. ON by default, unlike the cards above: it shows
+    // nothing until the live coach (its own switch) publishes `player.coach`
+    // in a practice session, so that switch is the opt-in; this one only
+    // decides whether the coach has an in-game half. It needs no reference
+    // lap, and opens the training layer by itself in Race mode — see
+    // `trainingWindowPlan`.
+    id: 'trainingfocus',
+    label: 'Focus',
+    gated: 'beta',
+    group: 'training',
+    description: 'The live coach’s one corner to work on, what to change there, and a light as you come to it',
+    ingameDefault: true,
+    obs: { w: 400, h: 200 },
   },
 ];
 const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);
@@ -1186,6 +1201,17 @@ function requireServer() {
     );
   }
   serverModule = require(entry);
+  // The live practice coach measures each lap AT THE LINE from the server's
+  // own copy (trace + verdict so far), not 40 s later from the lap log.
+  if (typeof serverModule.setLapCompleteListener === 'function') {
+    serverModule.setLapCompleteListener((lap) => {
+      try {
+        liveCoach.onLapAtLine(lap);
+      } catch {
+        /* never the frame loop's problem */
+      }
+    });
+  }
   // The server runs IN this process, on the thread that composites every
   // overlay, so its pollers are stall suspects like any of ours — but it also
   // runs under the bench and test harnesses where Electron does not exist, so
@@ -1684,9 +1710,18 @@ function dialStatusFeed() {
       // Which session this is decides whether the training layer runs. A
       // field read and a compare; it does work only when the answer changes.
       trainingGate.update({ session: sessionOfFrame(frame) }, now);
+      // The Focus card's gate: the same, while the live coach publishes.
+      focusGate.update({ session: coachSessionOfFrame(frame) }, now);
       // Whether a practice session just finished (the Practice Review). A
       // type compare and a lap-time compare per frame.
       practiceWatch.update(frame, now);
+      // The live practice coach: a session-type compare per frame; its work
+      // is per lap, on a worker. Fenced: it must never cost the feed a frame.
+      try {
+        liveCoach.update(frame, now);
+      } catch {
+        /* never the feed's problem */
+      }
       // A string compare while Ghost HUD is wanted, nothing otherwise. Last,
       // and fenced, so it can never cost the consumers above their frame.
       try {
@@ -1724,8 +1759,16 @@ function dialStatusFeed() {
       // A silent feed is no session; this beat is also what lets the training
       // gate's held answer run out between sessions.
       trainingGate.update(stale ? { session: null } : {}, Date.now());
+      focusGate.update(stale ? { session: null } : {}, Date.now());
       // The same beat lets a silent feed end a practice session.
       if (stale) practiceWatch.update(null, Date.now());
+      if (stale) {
+        try {
+          liveCoach.update(null, Date.now());
+        } catch {
+          /* never the watchdog's problem */
+        }
+      }
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -2177,6 +2220,17 @@ function getEngineer() {
         }
       },
     });
+    // The live practice coach's state, for the driver's questions about the
+    // session so far (liveCoachVoice.ts). Null whenever the coach is off.
+    if (typeof engineerService.setLiveCoachSnapshot === 'function') {
+      engineerService.setLiveCoachSnapshot(() => {
+        try {
+          return liveCoach.snapshot();
+        } catch {
+          return null;
+        }
+      });
+    }
   }
   return engineerService;
 }
@@ -3502,9 +3556,57 @@ const practiceWatch = createPracticeWatch({
     const t = setTimeout(() => finishPracticeSession(ended), PRACTICE_END_SETTLE_MS);
     if (typeof t.unref === 'function') t.unref();
   },
+  onLap: (lap) => liveCoach.onLap(lap),
+});
+
+/**
+ * The live practice coach (electron/live-coach.js): after each practice lap,
+ * one line on the radio about the corner costing the most and the in-game
+ * Focus card (`player.coach`). Beta only, practice and test days only, the
+ * Engineer tab's switch. Measuring runs on a worker thread.
+ */
+let coachIpcApi = null; // coach-ipc.js register(): { askAi }
+const liveCoachMeasurer = require('./live-coach-measure').createWorkerClient({
+  reviewDir: () => practiceReviewsDir(),
+  log: (line) => stallWatch.note(line),
+});
+const liveCoach = require('./live-coach').createLiveCoach({
+  loadSettings,
+  betaOk: (settings) => practiceOnThisChannel(settings),
+  currentSession: () => practiceWatch.current(),
+  // What the Practice tab will measure against: the chased lap, when the
+  // snapshot is the lap the session is chasing; else the session's own best.
+  target: (lap) => (lap.ghostLapId && practiceTarget && practiceTarget.lapId === lap.ghostLapId ? practiceTarget : null),
+  measure: (req) => liveCoachMeasurer.measure(req),
+  // The lap at the line, when this build's server hands it over (else the lap log).
+  lapAtLine: () => !!(serverModule && typeof serverModule.setLapCompleteListener === 'function'),
+  verify: (req) => liveCoachMeasurer.verify(req),
+  say: (text, meta) =>
+    !!(engineerService && engineerService.running && typeof engineerService.sayTiered === 'function' && engineerService.sayTiered(text, meta)),
+  dropHeld: (kinds) => {
+    if (engineerService && typeof engineerService.dropHeld === 'function') engineerService.dropHeld(kinds);
+  },
+  publish: (overlay) => {
+    if (serverModule && typeof serverModule.setLiveCoach === 'function') serverModule.setLiveCoach(overlay);
+  },
+  askAi: (req) => (coachIpcApi ? coachIpcApi.askAi(req) : Promise.resolve({ ok: false, error: 'coach not registered' })),
+  log: (line) => stallWatch.note(line),
 });
 
 const trainingGate = createTrainingGate();
+
+/**
+ * The live coach's Focus card (trainingfocus) has a gate of its own, so a
+ * driver in Race mode who is practising — chasing nothing — still sees the
+ * corner the coach is on. Same rules as the training gate (beta, server up,
+ * practice or test day, 10 s hold), with "the Focus card is switched on" for
+ * the mode and "the live coach is publishing `player.coach`" folded into the
+ * session (trainingGate.js `coachSessionOfFrame`). It only ever opens the
+ * training layer with the Focus card alone on it; it does not make
+ * trainingActive() true, so no ghost lap is chosen and no other training
+ * widget draws. See trainingWindowPlan.
+ */
+const focusGate = createTrainingGate();
 
 const trainingLayer = createTrainingLayer({
   BrowserWindow,
@@ -3542,6 +3644,10 @@ function onTrainingActiveChanged(fn) {
 
 // The window follows the gate; the panel's status line follows the reason too.
 onTrainingActiveChanged(() => syncTrainingWindow());
+// …and the Focus card's gate.
+focusGate.subscribe((next, prev) => {
+  if (next.active !== prev.active) syncTrainingWindow();
+});
 // The ghost lap is chosen while, and only while, training is live — window or
 // no window, so a training widget in OBS has one as well.
 onTrainingActiveChanged((active) => syncGhostWanted(active));
@@ -3555,6 +3661,7 @@ trainingGate.subscribe(() => pushStatus());
 function syncTrainingLayer(settings) {
   const s = settings || loadSettings();
   const was = trainingActive();
+  const wasFocus = focusGate.state().active;
   trainingGate.update(
     {
       mode: !!s.trainingMode,
@@ -3563,8 +3670,16 @@ function syncTrainingLayer(settings) {
     },
     Date.now(),
   );
-  // A flip has already re-synced the window through the subscriber above.
-  if (trainingActive() === was) syncTrainingWindow(s);
+  focusGate.update(
+    {
+      mode: trainingIds(s).includes('trainingfocus'),
+      beta: trainingOnThisChannel(s),
+      running: !!status.running,
+    },
+    Date.now(),
+  );
+  // A flip has already re-synced the window through the subscribers above.
+  if (trainingActive() === was && focusGate.state().active === wasFocus) syncTrainingWindow(s);
 }
 
 /**
@@ -3607,13 +3722,30 @@ function trainingShouldBeVisible(s) {
   return feedOnTrack;
 }
 
+/**
+ * Whether the training window should exist, and with which widgets.
+ *
+ * Training live (trainingActive) with any widget on: the window, every widget
+ * switched on — as always. The one exception is the Focus card: it shows only
+ * what the live coach publishes, so on its own it does not open the window
+ * just because Training mode is on; it waits for the coach (focusGate), as it
+ * does in Race mode. In Race mode the coach's gate opens the window with the
+ * Focus card ALONE on it. Pure over the two gates and the switches.
+ */
+function trainingWindowPlan(s) {
+  const ids = trainingIds(s);
+  const focusOn = ids.includes('trainingfocus');
+  if (trainingActive() && ids.some((id) => id !== 'trainingfocus')) return { wanted: true, ids };
+  if (focusOn && focusGate.state().active) return { wanted: true, ids: ['trainingfocus'] };
+  return { wanted: false, ids };
+}
+
 function syncTrainingWindow(settings) {
   const s = settings || loadSettings();
-  const ids = trainingIds(s);
-  const wanted = trainingActive() && ids.length > 0;
+  const plan = trainingWindowPlan(s);
   trainingLayer.sync({
-    wanted,
-    url: trainingUrl(ids),
+    wanted: plan.wanted,
+    url: trainingUrl(plan.ids),
     visible: trainingShouldBeVisible(s),
   });
 }
@@ -3676,7 +3808,7 @@ function creditTrainingScreenTime(seconds) {
   try {
     const win = trainingLayer.window();
     if (!win || !win.isVisible()) return;
-    const ids = trainingIds(loadSettings());
+    const ids = trainingWindowPlan(loadSettings()).ids;
     if (ids.length) featureUsage.overlaysOnScreen(ids, seconds);
   } catch {
     /* a counter must never be the thing that stops the layer */
@@ -4940,7 +5072,7 @@ function registerIpc() {
   });
 
   // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
-  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
+  coachIpcApi = require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
   ipcMain.handle('review:sessions', () => {
     try {

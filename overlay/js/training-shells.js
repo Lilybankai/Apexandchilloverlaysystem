@@ -52,6 +52,7 @@
   add("trainingsectors", "Lap Strip", "Lap strip — sectors and every corner of this lap against the reference");
   add("trainingcoach", "Coach", "Coach — your inputs, speed and gear against the reference right now");
   add("trainingbrake", "Brake Cue", "Brake cue — lights up at the reference lap's braking point", "bare");
+  add("trainingfocus", "Focus", "Focus — the corner the live coach is working on, lit as you come to it");
 
   window.ApexTrainingWidgets = ids;
 })();

@@ -219,6 +219,7 @@
     trainingsectors: 'list-ordered',
     trainingcoach: 'gauge',
     trainingbrake: 'alert',
+    trainingfocus: 'target',
     refpace: 'target',
     weather: 'cloud-rain',
     fuel: 'fuel',

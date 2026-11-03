@@ -20,8 +20,9 @@
                  tyres, pedals, pedalsv, motion, damage, radar, trackmap, limits,
                  racecontrol, mfd — and the training widgets: ghosthud,
                  traininginputs, trainingcorner, trainingsectors, trainingcoach,
-                 trainingbrake, which have
+                 trainingbrake, trainingfocus, which have
                  data only while Training mode is live in a practice session
+                 (trainingfocus: while the live coach runs one)
 
     It reuses the exact same widget runtime (client.js) and widget modules as
     the combined page. client.js binds a widget only if its section is present,
@@ -37,6 +38,7 @@
   <link rel="stylesheet" href="css/training-telemetry.css" />
   <link rel="stylesheet" href="css/training-coach.css" />
   <link rel="stylesheet" href="css/training-brake.css" />
+  <link rel="stylesheet" href="css/training-focus.css" />
   <link rel="stylesheet" href="css/training-ghost.css" />
 
   <!-- Audio cues (synthesised, no assets). Before appearance.js, which hands it
@@ -127,6 +129,7 @@
   <script src="js/widgets/trainingsectors.js" defer></script>
   <script src="js/widgets/trainingcoach.js" defer></script>
   <script src="js/widgets/trainingbrake.js" defer></script>
+  <script src="js/widgets/trainingfocus.js" defer></script>
   <script src="js/widgets/racecontrol.js" defer></script>
   <script src="js/widgets/mfd.js" defer></script>
   <script src="js/widgets/chat.js" defer></script>

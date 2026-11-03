@@ -32,6 +32,7 @@
 export const TELEMETRY_SCHEMA_VERSION = 1 as const;
 
 import type { DamageGrade } from './raceLogTypes';
+import type { LiveCoachOverlay } from './liveCoachContract';
 
 /** Sentinel used for unknown / not-yet-available numeric values. */
 export const UNKNOWN_VALUE = -1 as const;
@@ -980,6 +981,13 @@ export interface PlayerState {
    * start/finish crossing arms the lap clock. See {@link GhostState}.
    */
   ghost?: GhostState;
+  /**
+   * The live practice coach's card: the corner being worked on and what to
+   * change there. Put on the frame by the server (`setLiveCoach`) while the
+   * desktop app's coach is running a practice session; absent otherwise. See
+   * `liveCoachContract.ts` {@link LiveCoachOverlay}.
+   */
+  coach?: LiveCoachOverlay;
   /**
    * Where this driver's best clean lap sits against the reference pace for their
    * class at this track — the Alien → Offline ladder from Ohne Speed's

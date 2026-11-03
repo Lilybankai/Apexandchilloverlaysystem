@@ -141,6 +141,10 @@ const PANEL_CONTRACT = {
   'eng-voice-reclaim-btn': 'button',
   // Radio etiquette (2026-10-02): the "Only talk on straights" switch.
   'eng-straights': 'input:checkbox',
+  // The live practice coach's switch (2026-11-03, beta): on by default, so an
+  // unwired one would look right and never let a driver turn it off.
+  'eng-live-coach': 'input:checkbox',
+  'eng-live-coach-field': 'label',
   // Mature radio (2026-10-08): off by default, so an unwired picker would
   // look fine — and quietly leave a driver who chose Savage on clean.
   'eng-tone': 'select',

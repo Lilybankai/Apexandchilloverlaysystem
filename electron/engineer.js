@@ -325,6 +325,35 @@ const GRAMMAR = [
     // wins), or "track temps" would read the tyres.
     phrases: ['weather', 'weather update', 'whats the weather', 'any rain', 'is it going to rain', 'rain coming', 'track temp', 'track temps', 'track temperature', 'air temperature'],
   },
+  // -- Practice coach ----------------------------------------------------------
+  // The live practice coach (2026-11-03, src/telemetry/liveCoachVoice.ts).
+  // Not engineerCommands questions: ask() hands the words to
+  // liveCoachVoice.answerCoachQuestion BEFORE the phrase list (its own parser
+  // reads the corner number, which no phrase can carry), and COACH_INTENTS
+  // tells the grammar/commands parity check they have no command answer.
+  // These phrases are for SAPI's closed grammar and the panel card. "how was
+  // my last lap" out-lengths lastLap's 'last lap'; with the coach not live it
+  // falls back to the lastLap answer (COACH_FALLBACK). "last lap" and "lap
+  // time" stay lastLap's in every session. "where am i losing time"
+  // out-lengths position's 'where am i'. Corners are the Practice tab's C1..
+  // ("corner seven"), never "turn seven".
+  {
+    intent: 'coachLap',
+    group: 'Practice coach',
+    phrases: ['how was that lap', 'how was my last lap', 'how did that lap go', "how's that lap"],
+  },
+  {
+    intent: 'coachLoss',
+    group: 'Practice coach',
+    phrases: ['where am i losing time', "where's the time", 'where do i lose time', "what's costing me time"],
+  },
+  {
+    intent: 'coachWorkOn',
+    group: 'Practice coach',
+    phrases: ['what should i work on', "what's the focus", 'what should i focus on', "what's my focus"],
+  },
+  { intent: 'coachCorner', group: 'Practice coach', phrases: ['what about corner seven', "how's corner seven", 'corner seven'] },
+  { intent: 'coachSpread', group: 'Practice coach', phrases: ['am i consistent', 'how consistent am i', 'consistency'] },
   // -- Radio -------------------------------------------------------------------
   // The driver's controls over the radio itself (2026-10-02, radio etiquette).
   // Not questions: ask() handles them before engineerCommands (radioControl),
@@ -363,6 +392,16 @@ const GRAMMAR = [
  * by EngineerService.radioControl, never by engineerCommands, never the cloud.
  */
 const RADIO_CONTROL_INTENTS = new Set(['radioQuiet', 'radioTalk', 'radioRepeat']);
+
+/**
+ * GRAMMAR intents the live practice coach answers (liveCoachVoice.ts), never
+ * engineerCommands. When the coach has no answer (not in a practice session
+ * with the coach on), an intent listed in COACH_FALLBACK is answered as that
+ * command instead ("how was my last lap" → the lap time); the rest go on to
+ * the cloud exactly as an unmatched question would.
+ */
+const COACH_INTENTS = new Set(['coachLap', 'coachLoss', 'coachWorkOn', 'coachCorner', 'coachSpread']);
+const COACH_FALLBACK = { coachLap: 'lastLap' };
 
 /** The engineer's two-word acknowledgements — never what "repeat that" repeats. */
 const RADIO_ACKS = { radioQuiet: 'Copy, quiet.', radioTalk: 'Copy, back on.' };
@@ -457,6 +496,17 @@ const TRIGGER_TIERS = {
   qualiGrid: 'essential',
   practiceLap: 'essential',
   sectorImproved: 'standard',
+  // The live practice coach (electron/live-coach.js). Essential, so it speaks
+  // in every preset but Quiet: it already has its own switch (Engineer tab,
+  // "Live practice coach", beta only), it only ever runs in practice and test
+  // days, and it says one line a lap at most. Under 'standard' it would be
+  // silent at the default preset, so a driver who turned the coach on would
+  // hear nothing and not know why. The radio gate still holds each line for
+  // a straight ('normal' urgency) and "keep quiet" still silences it.
+  coachFocus: 'essential',
+  coachProgress: 'essential',
+  coachConsistency: 'essential',
+  coachSummary: 'essential',
 };
 
 /**
@@ -1178,6 +1228,11 @@ class EngineerService {
     this.triggersMod = tryRequire('telemetry/triggers.js');
     this.phrasesMod = tryRequire('telemetry/engineerPhrases.js');
     this.summaryMod = tryRequire('telemetry/engineerSummary.js');
+    // The live practice coach's questions (liveCoachVoice.ts). The snapshot
+    // comes from the live-coach service via setLiveCoachSnapshot(); none →
+    // the coach is not live and its questions say so.
+    this.coachVoiceMod = tryRequire('telemetry/liveCoachVoice.js');
+    this.liveCoachSnapshot = null;
     // The radio gate: when a proactive line may start (straights, urgency,
     // the one held line). Missing dist → the old brake/alongside rule.
     this.gateMod = tryRequire('telemetry/radioGate.js');
@@ -1510,6 +1565,8 @@ class EngineerService {
       readouts: this.readoutsPreset(),
       practicePaceReminderLaps: this.practicePaceReminderLaps(),
       onlyStraights: this.onlyStraights(),
+      // The live practice coach's switch (beta; the panel hides it off beta).
+      liveCoach: !(settings.engineer && settings.engineer.liveCoach === false),
       radioTone: this.radioTone(),
       radioQuiet: this.radioQuiet,
       volume: this.volumePct(),
@@ -2254,6 +2311,31 @@ class EngineerService {
   }
 
   /**
+   * A proactive line from outside the trigger layer (the live practice coach,
+   * electron/live-coach.js), through the same preset gate as {@link onCue}
+   * — its kind's TRIGGER_TIERS tier against the readouts dial — and then the
+   * same busy/hold path as every readout. A kind missing from the table never
+   * speaks. Returns whether the line was handed on (spoken or held).
+   *
+   * @param {string} text
+   * @param {{ kind: string, priority?: number }} meta
+   */
+  sayTiered(text, meta) {
+    if (!this.running || !text) return false;
+    const kind = meta && meta.kind;
+    const tier = kind ? TRIGGER_TIERS[kind] : undefined;
+    const preset = this.readoutsPreset();
+    if (preset === 'off' || !tier || (tier === 'standard' && preset !== 'standard')) return false;
+    this.sayReadout(text, { kind, priority: (meta && Number(meta.priority)) || 0 });
+    return true;
+  }
+
+  /** Forget a held line of one of these kinds (the live coach leaving practice). */
+  dropHeld(kinds) {
+    if (this.heldReadout && Array.isArray(kinds) && kinds.includes(this.heldReadout.kind)) this.heldReadout = null;
+  }
+
+  /**
    * "Save one lap" / "fuel target" / "stop saving" — parsed off the words
    * (the lap count is a number, not a phrase). Speaks and returns the ask()
    * result when the words were a fuel-target request, else null.
@@ -2264,6 +2346,47 @@ class EngineerService {
     if (!answer) return null;
     this.speak(answer.text);
     this.lastExchange = { question: text, answer: answer.text, atMs: Date.now() };
+    return { ok: true, outcome: this.noteOutcome('tier1') };
+  }
+
+  /**
+   * The live practice coach's snapshot source: main.js passes
+   * `() => liveCoach.snapshot()` (a LiveCoachSnapshot, or null when no
+   * practice session with the coach on is running). Anything but a function
+   * clears it.
+   */
+  setLiveCoachSnapshot(fn) {
+    this.liveCoachSnapshot = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * "How was that lap", "where am I losing time", "what about corner seven"
+   * — the live coach's questions (liveCoachVoice.ts), answered before the
+   * phrase list for coach-question words only. Speaks and returns the ask()
+   * result, or null when the words are not a coach question or the coach
+   * has no answer (then the caller goes on as before). A snapshot source that
+   * throws is the coach not being live, never a dead press.
+   */
+  answerCoach(text) {
+    const m = this.coachVoiceMod;
+    if (!m || typeof m.answerCoachQuestion !== 'function') return null;
+    if (typeof m.coachQuestionOf === 'function' && !m.coachQuestionOf(text)) return null;
+    let snap = null;
+    try {
+      snap = this.liveCoachSnapshot ? this.liveCoachSnapshot() || null : null;
+    } catch {
+      snap = null;
+    }
+    let answer = null;
+    try {
+      answer = m.answerCoachQuestion(text, snap);
+    } catch (err) {
+      this.log(`[engineer] coach answer failed: ${err && err.message}`);
+      answer = null;
+    }
+    if (!answer) return null;
+    this.speak(answer);
+    this.lastExchange = { question: text, answer, atMs: Date.now() };
     return { ok: true, outcome: this.noteOutcome('tier1') };
   }
 
@@ -2554,7 +2677,28 @@ class EngineerService {
       const fuelSet =
         heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.answerFuelTarget(heard.text);
       if (fuelSet) return fuelSet; // "save two laps": the number rides SAPI's text
-      if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.commands) {
+      // A coach phrase ("how was that lap"): the coach answers it, or — not
+      // live — its fallback command does; with neither, whisper below has a
+      // go. Never "corner N": the closed grammar holds one example number,
+      // and SAPI hearing "corner eight" as a confident "corner seven" would
+      // coach the wrong corner — the number is whisper's to read.
+      if (
+        heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE &&
+        COACH_INTENTS.has(heard.intent) && heard.intent !== 'coachCorner'
+      ) {
+        const g = GRAMMAR.find((x) => x.intent === heard.intent);
+        const said = heard.text || (g && g.phrases[0]) || '';
+        const coached = this.answerCoach(said);
+        if (coached) return coached;
+        const fallback = COACH_FALLBACK[heard.intent];
+        if (fallback && this.commands) {
+          const answer = this.commands.answer(fallback);
+          this.speak(answer.text);
+          this.lastExchange = { question: said || fallback, answer: answer.text, atMs: Date.now() };
+          return { ok: true, outcome: this.noteOutcome('tier1') };
+        }
+      }
+      if (heard.kind === 'HEARD' && !heard.wrapped && heard.confidence >= MIN_CONFIDENCE && this.commands && !COACH_INTENTS.has(heard.intent)) {
         const answer = this.commands.answer(heard.intent);
         this.speak(answer.text);
         const g = GRAMMAR.find((x) => x.intent === heard.intent);
@@ -2605,6 +2749,11 @@ class EngineerService {
           if (noise !== 'echo') this.speak('Say again?');
           return { ok: true, noise, outcome: this.noteOutcome('noise') };
         }
+        // The live practice coach: "how was that lap", "corner seven" (a
+        // number no phrase can carry). Its parser is narrow on purpose and
+        // answers only its own questions; null → on as before.
+        const coached = this.answerCoach(text);
+        if (coached) return coached;
         // "Save one lap of fuel": a number the phrase list can't carry, and
         // its 'fuel' stem would otherwise be answered as the fuel state.
         const fuelAsk = this.answerFuelTarget(text);
@@ -2620,7 +2769,10 @@ class EngineerService {
         }
         // The phrase list wins wherever it can answer — checked against the
         // whisper transcript first, then SAPI's reading of the same audio.
-        const intent = preferQuestion(question, matchGrammarText(question)) || preferQuestion(sapiText, matchGrammarText(sapiText));
+        let intent = preferQuestion(question, matchGrammarText(question)) || preferQuestion(sapiText, matchGrammarText(sapiText));
+        // A coach phrase the coach did not answer above: its fallback command
+        // ("how was my last lap" → the lap time), else the cloud.
+        if (intent && COACH_INTENTS.has(intent)) intent = COACH_FALLBACK[intent] || null;
         if (intent && RADIO_CONTROL_INTENTS.has(intent)) {
           this.radioControl(intent);
           return { ok: true, outcome: this.noteOutcome('tier1') };
@@ -2847,6 +2999,8 @@ module.exports = {
   ENGINEER_CALLOUTS,
   ENGINEER_OUTCOMES,
   RADIO_CONTROL_INTENTS,
+  COACH_INTENTS,
+  COACH_FALLBACK,
   TRIGGER_TIERS,
   OUTCOME_SLUG_PREFIX,
   sampleUrl,

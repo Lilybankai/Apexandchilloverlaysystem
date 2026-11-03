@@ -555,6 +555,19 @@ export class LapRecorder {
   private enteredPit = false;
 
   /**
+   * The finished lap waiting for its verdict, as judged SO FAR — a copy, or
+   * `null` when nothing is held. Everything known at the line is on it (out-
+   * and in-lap, a pit visit, a partial lap, a cut or a penalty already
+   * charged); a cut the trace reports later is not, yet. Its `id` is the one
+   * the record will be written under, so a provisional reader can match the
+   * verdict to it when the record lands (the live practice coach).
+   */
+  public pending(): LapRecord | null {
+    const h = this.held;
+    return h ? { ...h.record, dirty: [...h.record.dirty] } : null;
+  }
+
+  /**
    * Feed one poll's state. Returns a record once a lap has completed **and** its
    * verdict has settled, otherwise `null`.
    */

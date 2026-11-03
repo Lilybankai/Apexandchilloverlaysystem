@@ -229,6 +229,9 @@
       trainingcoach: { x: Math.round(vw / 2 - 330), y: Math.round(vh * 0.645), w: 660 },
       trainingcorner: { x: Math.round(vw / 2 - 900), y: Math.round(vh * 0.6), w: 430 },
       traininginputs: { x: Math.round(vw / 2 + 410), y: Math.round(vh * 0.63), w: 830 },
+      // The live coach's Focus card: left, above Corner analysis, so the
+      // corner being worked on sits beside the one just driven.
+      trainingfocus: { x: Math.round(vw / 2 - 900), y: Math.round(vh * 0.36), w: 400 },
     };
   }
 

@@ -27,6 +27,8 @@
  *     cornerDir?      the corner catalogue folder (cornerCatalog default otherwise)
  *     targetColumns?  (lapId) → columns of a leaderboard target the session is
  *                     measured against, once the fair builder resolves one
+ *     extraLap?       a lap not in the log yet, with its trace (the live
+ *                     coach's lap at the line); loadLapCoach measures it
  *
  * ## The target
  * The reference is resolved the way the debrief resolved it, so "C5" is the
@@ -69,6 +71,15 @@ export interface CoachLoadDeps extends PracticeReviewDeps {
   target?: PracticeTargetSnapshot | null;
   /** Measure against the session's own best even when a lap was chased. */
   sessionBest?: boolean;
+  /**
+   * A lap of this session that is not in the lap log YET, with its trace —
+   * the live practice coach's lap at the line, ~40 s before the log writes it
+   * (lapLog.ts VERDICT_HOLD_MS). Used only when `args.lapId` names it and the
+   * log does not have it: it is measured against the same target and corners
+   * as any logged lap, from the laps already on disk. It has no debrief row,
+   * so the words' fallback rows are empty.
+   */
+  extraLap?: { lapId: string; at: string; lapMs: number; trace: CompletedTrace } | null;
 }
 
 export interface CoachSessionArgs {
@@ -377,10 +388,12 @@ function safeShow(b: LapLossBreakdown | null, mine: LossLapInput | null, ref: Lo
 export function loadLapCoach(args: CoachLapArgs, deps: CoachLoadDeps): CoachLapResult | null {
   const w = prepare(args, deps);
   if (!w) return null;
-  const lap = w.laps.find((l) => l.id === args.lapId && (!args.at || l.at === args.at));
-  if (!lap) return null;
+  const logged = w.laps.find((l) => l.id === args.lapId && (!args.at || l.at === args.at));
+  const extra = !logged && deps.extraLap && deps.extraLap.lapId === args.lapId ? deps.extraLap : null;
+  if (!logged && !extra) return null;
+  const lap = logged || { id: extra!.lapId, at: extra!.at, lapMs: extra!.lapMs, lapNo: -1 };
   const { review, traces, ref, corners, L } = w;
-  const f = lap.id ? traces.get(lap.id) : undefined;
+  const f = logged ? (lap.id ? traces.get(lap.id) : undefined) : { trace: extra!.trace };
   const mine = f ? lossInput(lap.id!, lap.lapMs / 1000, f.trace as unknown as Record<string, unknown>) : null;
   const breakdown = mine && ref && corners.length && L > 0 ? safeLoss(mine, ref, corners, L) : null;
 

@@ -145,6 +145,20 @@ import { RaceosRanksClient, type DriverRanks } from './raceosRanks';
 import { rememberDriverName } from './raceLog';
 
 /** Config subset this provider needs. */
+/**
+ * One lap of the driven car at the line: the lap record as judged so far
+ * (`LapRecorder.pending` — the verdict hold has not run, so a cut the trace
+ * reports later is not on it yet) and the driving trace recorded for it.
+ * `record.id` is the id the lap log will write it under. For the live
+ * practice coach, which cannot wait the ~40 s the log does.
+ */
+export interface LapAtLine {
+  record: LapRecord;
+  trace: CompletedTrace;
+  /** The wall clock the trace stamped at the crossing. */
+  wallMs: number;
+}
+
 export interface LmuRestConfig {
   /** Localhost port the LMU REST API listens on (default 6397). */
   lmuApiPort?: number;
@@ -801,6 +815,9 @@ export class LmuRestProvider implements TelemetryProvider {
    * clock both sides stamped at the crossing. A handful deep at most.
    */
   private pendingTraces: { trace: CompletedTrace; wallMs: number }[] = [];
+  /** Who hears each lap at the line ({@link setLapCompleteListener}), and the last lap they heard. */
+  private lapListener: ((lap: LapAtLine) => void) | null = null;
+  private lapAnnounced = '';
   /** Learns the circuit's shape from the driven car; see `trackMap.ts`. */
   private readonly trackMap = new TrackMapBuilder();
   /**
@@ -1127,6 +1144,52 @@ export class LmuRestProvider implements TelemetryProvider {
    */
   public setGhostReference(ref: GhostReference | null): void {
     this.ghost.setReference(ref);
+  }
+
+  /**
+   * Hear each lap of the DRIVEN car the moment it completes, with its trace —
+   * ~40 s before the lap log writes it (the verdict hold). `null` stops it.
+   * See {@link LapAtLine} and {@link emitLapAtLine}.
+   */
+  public setLapCompleteListener(fn: ((lap: LapAtLine) => void) | null): void {
+    this.lapListener = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * Hand the listener the lap the recorder has just started holding, once the
+   * trace recorded for it is here too. The two land within a poll of each
+   * other (the trace on the frame the road position wraps, the record on the
+   * REST poll `lapsCompleted` moves on) and are paired exactly as
+   * {@link attachTrace} will pair them: by the wall clock both stamped at the
+   * crossing, and the lap times agreeing. A lap with no trace after a few
+   * seconds is never announced — a listener falls back to the lap log.
+   * Once per lap; a listener that throws is the listener's problem.
+   */
+  private emitLapAtLine(nowMs: number): void {
+    if (!this.lapListener) return;
+    const rec = this.lapRecorder.pending();
+    if (!rec || !rec.id || rec.id === this.lapAnnounced) return;
+    const atMs = Date.parse(rec.at);
+    if (!Number.isFinite(atMs)) return;
+    let best: { trace: CompletedTrace; wallMs: number } | null = null;
+    let bestGap = 5000;
+    for (const p of this.pendingTraces) {
+      const gap = Math.abs(atMs - p.wallMs);
+      if (gap < bestGap && !(rec.lapMs > 0 && Math.abs(p.trace.lapSec * 1000 - rec.lapMs) > 2000)) {
+        bestGap = gap;
+        best = p;
+      }
+    }
+    if (!best) {
+      if (nowMs - atMs > 5000) this.lapAnnounced = rec.id; // no trace is coming
+      return;
+    }
+    this.lapAnnounced = rec.id;
+    try {
+      this.lapListener({ record: rec, trace: best.trace, wallMs: best.wallMs });
+    } catch {
+      /* a listener must never take a frame down */
+    }
   }
 
   public stop(): void {
@@ -2376,6 +2439,8 @@ export class LmuRestProvider implements TelemetryProvider {
       local,
       player.tyres,
     );
+    // …and the lap that just finished, to whoever wants it before the log does.
+    this.emitLapAtLine(nowMs);
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
