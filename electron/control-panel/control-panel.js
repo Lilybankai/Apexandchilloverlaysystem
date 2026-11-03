@@ -132,10 +132,18 @@
   // Whether the update state has landed at all. Until it has, followingBeta is
   // only its boot-time `false`, not an answer (see adoptTrainingMode).
   let updateStateSeen = false;
+  // An account an admin comped as a beta tester (Admin → free access, reason
+  // 'beta'). That grant is the "this person tests betas" switch, so it must
+  // reveal the channel picker too — before this it only waived billing, and a
+  // comped tester on a stable build had no way onto the beta feed.
+  let betaTesterAccount = false;
 
-  /** League staff can switch channel; anyone already ON beta can switch back. */
+  /**
+   * League staff and comped beta testers can switch channel; anyone already ON
+   * beta can switch back.
+   */
   function applyUpdatesCardVisibility() {
-    if (updatesCard) updatesCard.hidden = !(isStaffAccount || followingBeta);
+    if (updatesCard) updatesCard.hidden = !(isStaffAccount || betaTesterAccount || followingBeta);
   }
 
   // Human-readable label + dot colour per feed state.
@@ -7175,6 +7183,10 @@
     // Before any early return: the banner lives outside the card, and a driver
     // signing out must not leave a stale "pay by the 4th" bar on screen.
     renderOverdueBanner(b);
+    // Also before any early return: signing out (b = null) must take the beta
+    // tester's channel picker away with the rest of the account.
+    betaTesterAccount = !!(authSignedIn && b && b.source === 'free' && b.freeReason === 'beta');
+    applyUpdatesCardVisibility();
     if (!subCard) return;
     subCard.hidden = !authSignedIn || !b;
     if (subCard.hidden) return;
