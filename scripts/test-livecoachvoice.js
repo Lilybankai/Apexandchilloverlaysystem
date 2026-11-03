@@ -282,9 +282,9 @@ async function main() {
   /* ======================================================================== */
   {
     for (const q of ['where am I losing time', 'what should I work on', 'what about corner seven', 'am I consistent']) {
-      check(`null snapshot: "${q}" → the plain line`, V.answerCoachQuestion(q, null) === V.NOT_LIVE_LINE);
+      check(`null snapshot: "${q}" → null (the engineer takes it as before)`, V.answerCoachQuestion(q, null) === null);
     }
-    check('the plain line', V.NOT_LIVE_LINE === "Live coaching's only on in practice sessions.");
+    check('no "only in practice" line is exported any more', V.NOT_LIVE_LINE === undefined);
     check('null snapshot: "how was that lap" → null (lastLap answers it)', V.answerCoachQuestion('how was that lap', null) === null);
     for (const q of ['gap ahead', 'fuel', 'last lap', 'lap time', 'box this lap', '', '   ']) {
       check(`"${q}" → null with a snapshot`, V.answerCoachQuestion(q, snapshot()) === null);
@@ -456,11 +456,11 @@ async function main() {
 
     r = rig({ line: FREE, whisper: 'where am I losing time?', snap: null });
     res = await r.svc.ask();
-    check('not live: a coach-only question gets the plain line', r.spoken[0] === V.NOT_LIVE_LINE && r.sent.length === 0, r.spoken.join('|'));
+    check('not live: a coach-only question goes on to the cloud, as before the coach', r.sent.length === 1 && r.spoken[0] === 'cloud says', r.spoken.join('|'));
 
     r = rig({ line: FREE, whisper: 'where am I losing time?', snap: () => { throw new Error('boom'); } });
     await r.svc.ask();
-    check('a snapshot source that throws is "not live", not a dead press', r.spoken[0] === V.NOT_LIVE_LINE, r.spoken.join('|'));
+    check('a snapshot source that throws is "not live", not a dead press', r.sent.length === 1, r.spoken.join('|'));
 
     r = rig({ line: FREE, whisper: "what's the gap ahead", snap: snapshot() });
     await r.svc.ask();
@@ -491,8 +491,8 @@ async function main() {
 
     r = rig({ line: 'HEARD\tcoachSpread\t0.95\tC:\\w\\h.wav\tam i consistent', snap: null });
     await r.svc.ask();
-    check('SAPI exact coachSpread, not live → the plain line, never commands.answer(coachSpread)',
-      r.spoken[0] === V.NOT_LIVE_LINE, r.spoken.join('|'));
+    check('SAPI exact coachSpread, not live → on to whisper/the cloud, never commands.answer(coachSpread)',
+      !r.spoken.some((s) => /^answer:coachSpread/.test(s)), r.spoken.join('|'));
 
     r = rig({ line: FREE, whisper: 'what gear for turn five', snap: snapshot() });
     await r.svc.ask();

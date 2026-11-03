@@ -29,8 +29,11 @@
  *   - "last lap", "lap time", "what was my last lap" never come here: no
  *     "how", so the time readout keeps them in every session.
  *   - "where am I losing time", "what should I work on", "corner seven", "am
- *     I consistent" exist only for the coach. With no snapshot they get the
- *     one plain line {@link NOT_LIVE_LINE} rather than a cloud guess.
+ *     I consistent" are the coach's while it is live. With no snapshot (a
+ *     race, qualifying, the coach off) they are not: null, and the engineer
+ *     takes them exactly as before the coach existed — "where am I losing
+ *     time" in a race is a fair question for the race engineer (Carl's
+ *     integrator, 2026-11-03).
  *   - "turn seven" is never read as a corner: the coach's corners are the
  *     Practice tab's C1..Cn, not the official turns, so "what gear for turn
  *     five" stays a cloud question.
@@ -72,7 +75,6 @@ import { speakableTenths } from './sessionPhrases';
 /* -------------------------------------------------------------------------- */
 
 /** What the driver hears when the coach is not live (a race, the setting off). */
-export const NOT_LIVE_LINE = "Live coaching's only on in practice sessions.";
 
 /** Smallest differences worth a word: the coach's own (coachReport.ts). */
 const BRAKE_M = 3;
@@ -563,7 +565,7 @@ function answerSpread(snap: LiveCoachSnapshot): string {
 export function answerCoachQuestion(text: string, snap: LiveCoachSnapshot | null): string | null {
   const q = coachQuestionOf(text);
   if (!q) return null;
-  if (!snap || !snap.state) return q.intent === 'coachLap' ? null : NOT_LIVE_LINE;
+  if (!snap || !snap.state) return null;
   switch (q.intent) {
     case 'coachLap':
       return answerLap(snap);
