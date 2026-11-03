@@ -68,8 +68,8 @@
   /** How long the once-only flash on a new focus lasts, ms (the CSS animation's). */
   var FLASH_MS = 1400;
   /** The map's box, CSS px (the SVG scales with the card). */
-  var MW = 128;
-  var MH = 84;
+  var MW = 150;
+  var MH = 96;
   var MPAD = 6;
   /** Points the faint outline is drawn with; the bright span keeps them all. */
   var OUTLINE_PTS = 240;
@@ -449,7 +449,8 @@
     if (f) {
       set("corner", ui.corner, f.cornerId || "C" + f.cornerNo);
       set("short", ui.short, f.short || "");
-      set("cost", ui.cost, costWords(f.lossSec));
+      // A sorted corner's cost is history: say what happens next instead.
+      set("cost", ui.cost, f.status === "fixed" ? "On to the next corner" : costWords(f.lossSec));
       var chip = CHIP[f.status] || CHIP.holding;
       set("chip", ui.chip, chip.text);
       setAttr("chipTone", ui.chip, "data-tone", chip.tone);

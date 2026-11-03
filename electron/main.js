@@ -339,7 +339,7 @@ const TRAINING_CATALOG = [
     group: 'training',
     description: 'The live coach’s one corner to work on, what to change there, and a light as you come to it',
     ingameDefault: true,
-    obs: { w: 400, h: 190 },
+    obs: { w: 400, h: 200 },
   },
 ];
 const TRAINING_IDS = TRAINING_CATALOG.map((o) => o.id);

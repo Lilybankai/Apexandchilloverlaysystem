@@ -239,6 +239,8 @@ console.log('\n4) Status chips');
     const chip = p.q('tfoc__chip');
     check(`${status}: "${text}", ${tone}`, chip.textContent === text && chip.getAttribute('data-tone') === tone && p.card.getAttribute('data-status') === status, `${chip.textContent} ${chip.getAttribute('data-tone')}`);
   }
+  p.update(frame(coachWith({}, { status: 'fixed' }), 0.6));
+  check('sorted: the cost line says what comes next, not an old loss', p.text('tfoc__cost') === 'On to the next corner', p.text('tfoc__cost'));
   p.update(frame(coachWith({}, { status: 'whatever' }), 0.6));
   check('an unknown status reads as holding, never blank', p.q('tfoc__chip').textContent === 'WORKING ON IT');
 }
@@ -350,7 +352,7 @@ console.log('\n7) The map');
   check('the same revision is not fetched again', p.fetches.length === 1);
   const cx = Number(dot.getAttribute('cx'));
   const cy = Number(dot.getAttribute('cy'));
-  check('inside the 128×84 box', cx >= 0 && cx <= 128 && cy >= 0 && cy <= 84, `${cx},${cy}`);
+  check('inside the 150×96 box', cx >= 0 && cx <= 150 && cy >= 0 && cy <= 96, `${cx},${cy}`);
   p.update(frame(coachWith({}, { entryD: 0.7, exitD: 0.72 }), 0.6, { trackMap: tm }));
   check('a new focus corner moves the span', p.q('tfoc__span').getAttribute('d') !== span);
 

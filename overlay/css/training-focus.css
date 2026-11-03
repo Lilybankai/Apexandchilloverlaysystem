@@ -91,7 +91,7 @@ body.ig-editing #widget-trainingfocus[data-coach="none"] {
 /* --- The corner and what to change. */
 .tfoc__main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px;
+  grid-template-columns: minmax(0, 1fr) 150px;
   gap: 14px;
   align-items: center;
   margin-top: 6px;
@@ -139,11 +139,9 @@ body.ig-editing #widget-trainingfocus[data-coach="none"] {
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.tfoc[data-status="fixed"] .tfoc__cost,
-.tfoc[data-status="improving"] .tfoc__cost { color: var(--pos-gain); }
 
 /* --- The map: the circuit faint, the focus corner bright, the car a dot. */
-.tfoc__map { display: block; width: 128px; height: 84px; overflow: visible; }
+.tfoc__map { display: block; width: 150px; height: 96px; overflow: visible; }
 .tfoc[data-map="none"] .tfoc__map { visibility: hidden; }
 .tfoc__outline {
   fill: none;
@@ -154,7 +152,7 @@ body.ig-editing #widget-trainingfocus[data-coach="none"] {
 .tfoc__span {
   fill: none;
   stroke: var(--ac-cyan);
-  stroke-width: 4.5;
+  stroke-width: 5.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.85));
