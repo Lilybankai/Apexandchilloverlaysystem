@@ -5,6 +5,34 @@
      app until it is renamed.
 -->
 
+## 1.3.15-beta.2 — 2026-11-03
+
+The coach now talks to you while you drive: after each practice lap, the
+engineer tells you the one corner to work on and what to change there.
+
+### Added
+
+- **Live coaching on the radio.** In a practice session or test day, the
+  engineer picks the corner costing you the most over your last few laps
+  and says what to change — "Corner four, you're braking about ten metres
+  early, worth a tenth and a half." It stays on that corner until you've
+  fixed it, tells you when it's better, then moves on to the next one. Every
+  few laps you also hear how consistent you are, and a short AI summary.
+  It only speaks on the straights, "keep quiet" silences it, and it never
+  runs in qualifying or a race. Corners use the same numbers as the
+  Practice tab. Switch it off under **Engineer → Live practice coach**.
+
+- **Focus card.** A small in-game card shows the corner the coach is
+  working on, what to change and what it's costing you a lap, with that
+  corner highlighted on a track outline. It lights up as you approach the
+  corner, and ticks it off when it's sorted. It works in Race mode as well
+  as Training mode, and only appears while the coach is running.
+
+- **Ask the coach.** Push to talk and ask "how was that lap?", "where am I
+  losing time?", "what should I work on?", "what about corner seven?" or
+  "am I consistent?". Outside practice these questions go to the race
+  engineer as before.
+
 ## 1.3.15-beta.1 — 2026-10-29
 
 A driving coach in Practice: where each lap loses time, in which part of
