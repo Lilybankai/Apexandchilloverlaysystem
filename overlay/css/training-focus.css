@@ -1,0 +1,195 @@
+/* training-focus.css: the Focus card (trainingfocus) — its own file so the
+   training widgets can be restyled independently. Linked from training.html
+   and widget.html after training.css.
+
+   The live coach's one corner: "FOCUS" and a status chip, the corner id big
+   with what to change under it, what it costs, a small map with that corner
+   bright, and the last lap in the foot. As the car comes to the corner the
+   card's edge lights cyan and a NEXT / NOW pill sits beside the id — readable
+   at a glance, so big type and few words. Brand cyan is identity and the
+   light; green is only for a corner that got better. No backdrop blur: the
+   overlay window has nothing behind it to blur. */
+
+#widget-trainingfocus > .tw__body {
+  padding: 14px 18px 14px;
+}
+
+/* No coach on the frame: not there at all, except while placing it. */
+#widget-trainingfocus[data-coach="none"] {
+  visibility: hidden;
+}
+body.ig-editing #widget-trainingfocus[data-coach="none"] {
+  visibility: visible;
+  opacity: 0.55;
+}
+
+/* --- The light: the card's edge glows cyan from ~3 s before the corner. */
+#widget-trainingfocus {
+  transition: box-shadow 160ms ease-out, border-color 160ms ease-out;
+}
+#widget-trainingfocus:is([data-approach="next"], [data-approach="now"]) {
+  border-color: rgba(34, 211, 238, 0.85);
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.7),
+    0 0 26px rgba(34, 211, 238, 0.5),
+    0 0 70px rgba(34, 211, 238, 0.22),
+    0 18px 40px rgba(0, 0, 0, calc(0.45 * var(--panel-alpha, 1)));
+}
+
+/* --- A new focus: one flash. Two names so a second one restarts it. */
+#widget-trainingfocus[data-flash="a"] { animation: tfoc-flash-a 1400ms ease-out 1; }
+#widget-trainingfocus[data-flash="b"] { animation: tfoc-flash-b 1400ms ease-out 1; }
+@keyframes tfoc-flash-a {
+  0%, 30% { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.95), 0 0 44px rgba(139, 92, 246, 0.65); }
+  100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0), 0 0 0 rgba(139, 92, 246, 0); }
+}
+@keyframes tfoc-flash-b {
+  0%, 30% { box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.95), 0 0 44px rgba(139, 92, 246, 0.65); }
+  100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0), 0 0 0 rgba(139, 92, 246, 0); }
+}
+
+.tfoc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.tfoc__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+}
+.tfoc__label { color: var(--text-secondary); }
+
+/* --- The status chip: NEW (accent), WORKING ON IT (quiet), BETTER / SORTED (green). */
+.tfoc__chip {
+  padding: 5px 9px;
+  border-radius: 8px;
+  font: 700 12px/1 var(--tw-ui);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+.tfoc__chip[data-tone="new"] {
+  color: #061218;
+  background: var(--ac-cyan);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
+}
+.tfoc__chip[data-tone="hold"] {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  font-weight: 600;
+}
+.tfoc__chip[data-tone="gain"] {
+  color: var(--pos-gain);
+  background: rgba(53, 208, 127, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(53, 208, 127, 0.45), 0 0 16px rgba(53, 208, 127, 0.25);
+}
+.tfoc:not([data-mode="focus"]) .tfoc__chip { display: none; }
+
+/* --- The corner and what to change. */
+.tfoc__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 14px;
+  align-items: center;
+  margin-top: 6px;
+}
+.tfoc__words { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tfoc__head { display: flex; align-items: center; gap: 12px; }
+.tfoc__corner {
+  font-size: 50px;
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+.tfoc__call {
+  display: none;
+  padding: 6px 10px 5px;
+  border-radius: 9px;
+  color: #061218;
+  background: var(--ac-cyan);
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.6);
+  font: 700 20px/1 var(--tw-num);
+  letter-spacing: 0.12em;
+}
+#widget-trainingfocus:is([data-approach="next"], [data-approach="now"]) .tfoc__call { display: inline-block; }
+#widget-trainingfocus[data-approach="now"] .tfoc__call {
+  color: #061218;
+  background: #fff;
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.55);
+}
+.tfoc__short {
+  font: 600 24px/1.15 var(--tw-ui);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#widget-trainingfocus:is([data-approach="next"], [data-approach="now"]) .tfoc__short {
+  color: #fff;
+  text-shadow: 0 0 18px rgba(34, 211, 238, 0.55);
+}
+.tfoc__cost {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* --- The map: the circuit faint, the focus corner bright, the car a dot. */
+.tfoc__map { display: block; width: 150px; height: 96px; overflow: visible; }
+.tfoc[data-map="none"] .tfoc__map { visibility: hidden; }
+.tfoc__outline {
+  fill: none;
+  stroke: rgba(244, 246, 251, 0.22);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+.tfoc__span {
+  fill: none;
+  stroke: var(--ac-cyan);
+  stroke-width: 5.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(34, 211, 238, 0.85));
+}
+.tfoc[data-status="fixed"] .tfoc__span,
+.tfoc[data-status="improving"] .tfoc__span {
+  stroke: var(--pos-gain);
+  filter: drop-shadow(0 0 3px rgba(53, 208, 127, 0.8));
+}
+.tfoc__dot {
+  fill: #fff;
+  stroke: rgba(8, 9, 16, 0.9);
+  stroke-width: 1.5;
+}
+.tfoc__dot[data-on="false"] { display: none; }
+
+/* --- Before there is a focus: one calm line, and the card stays small. */
+.tfoc__note {
+  display: none;
+  margin: 8px 0 2px;
+  color: var(--text-secondary);
+  font: 500 17px/1.25 var(--tw-ui);
+}
+.tfoc:not([data-mode="focus"]) .tfoc__note { display: block; }
+.tfoc:not([data-mode="focus"]) .tfoc__main { display: none; }
+
+/* --- The last lap. */
+.tfoc__foot {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tfoc__foot:empty { display: none; }

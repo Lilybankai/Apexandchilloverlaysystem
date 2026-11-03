@@ -49,6 +49,25 @@ function sessionOfFrame(frame) {
 }
 
 /**
+ * The session as the Focus card's gate reads it (main.js `focusGate`).
+ *
+ * The live coach's Focus card (trainingfocus) may open the training layer on
+ * its own, in Race mode, but only while there is something to show: while the
+ * coach is publishing `frame.player.coach`. So a practice frame WITHOUT a coach
+ * reads as a gap — the same 10 s hold a loading screen gets, then the layer
+ * goes — and a session that says what it is (a race, qualifying) still closes
+ * it at once, coach or no coach. A coached practice frame is the frame's own
+ * session, so a replay or a demo frame is refused exactly as above.
+ */
+function coachSessionOfFrame(frame) {
+  const s = sessionOfFrame(frame);
+  if (!s) return null;
+  const coach = frame.player && frame.player.coach;
+  if (coach && typeof coach === 'object') return s;
+  return ELIGIBLE_SESSIONS.has(s.type) ? null : s;
+}
+
+/**
  * Evaluate the gate once. Exported for the tests; the stateful wrapper below is
  * what main uses.
  *
@@ -150,4 +169,4 @@ function createTrainingGate() {
   };
 }
 
-module.exports = { createTrainingGate, evaluate, sessionOfFrame, HOLD_MS, ELIGIBLE_SESSIONS };
+module.exports = { createTrainingGate, evaluate, sessionOfFrame, coachSessionOfFrame, HOLD_MS, ELIGIBLE_SESSIONS };
