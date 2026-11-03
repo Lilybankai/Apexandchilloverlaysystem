@@ -1201,6 +1201,17 @@ function requireServer() {
     );
   }
   serverModule = require(entry);
+  // The live practice coach measures each lap AT THE LINE from the server's
+  // own copy (trace + verdict so far), not 40 s later from the lap log.
+  if (typeof serverModule.setLapCompleteListener === 'function') {
+    serverModule.setLapCompleteListener((lap) => {
+      try {
+        liveCoach.onLapAtLine(lap);
+      } catch {
+        /* never the frame loop's problem */
+      }
+    });
+  }
   // The server runs IN this process, on the thread that composites every
   // overlay, so its pollers are stall suspects like any of ours — but it also
   // runs under the bench and test harnesses where Electron does not exist, so
@@ -3567,6 +3578,9 @@ const liveCoach = require('./live-coach').createLiveCoach({
   // snapshot is the lap the session is chasing; else the session's own best.
   target: (lap) => (lap.ghostLapId && practiceTarget && practiceTarget.lapId === lap.ghostLapId ? practiceTarget : null),
   measure: (req) => liveCoachMeasurer.measure(req),
+  // The lap at the line, when this build's server hands it over (else the lap log).
+  lapAtLine: () => !!(serverModule && typeof serverModule.setLapCompleteListener === 'function'),
+  verify: (req) => liveCoachMeasurer.verify(req),
   say: (text, meta) =>
     !!(engineerService && engineerService.running && typeof engineerService.sayTiered === 'function' && engineerService.sayTiered(text, meta)),
   dropHeld: (kinds) => {

@@ -11,6 +11,11 @@
  *     track-limits verdict before writing it (lapLog.ts VERDICT_HOLD_MS), and
  *     writes its trace in the same tick. The caller retries; an attempt whose
  *     day file has not grown since the last one is a `stat` and nothing more.
+ *   - At the line instead (`req.extra`, the server's `LapAtLine`): no look
+ *     at all. The record as judged so far is grouped with the logged laps,
+ *     and its in-memory trace is measured (coachLoad `extraLap`) against the
+ *     reference the logged laps give — `lap.provisional`. `verify` then
+ *     watches for the record by id, for its verdict.
  *   - `{ found: true, lap }` once it is: the lap record, the lap-log session
  *     it belongs to (the in-progress counterpart of main.js
  *     `findPracticeSessionId`: the session that CONTAINS this lap, which is
@@ -94,11 +99,12 @@ function coachable(rec, reviewLap) {
   return reviewLap.hasTrace === true;
 }
 
-/** The session's best valid lap so far (the reference when nothing is chased). */
-function sessionBestOf(session) {
+/** The session's best valid lap so far (the reference when nothing is chased), `except` one lap. */
+function sessionBestOf(session, except = null) {
   let best = null;
   for (const st of session.stints) {
     for (const l of st.laps) {
+      if (except && l.id === except) continue;
       if (l.clean === true && l.timed === true && l.lapMs > 0 && (!best || l.lapMs < best.lapMs)) best = l;
     }
   }
@@ -128,8 +134,8 @@ function createMeasurer(io = {}) {
   }
 
   /** The record, if a day file that grew since the last look now holds it. */
-  function lookUp(req) {
-    const key = `${req.atMs}|${req.lapSec}`;
+  function lookUp(req, byId) {
+    const key = `${byId ? 'id:' + byId : ''}${req.atMs}|${req.lapSec}`;
     let sizes = seen.get(key);
     if (!sizes) {
       sizes = new Map();
@@ -145,7 +151,8 @@ function createMeasurer(io = {}) {
       }
       if (sizes.get(day) === size) continue;
       sizes.set(day, size);
-      const rec = matchRecord(lapLog.readDay(day, lapDir()), req);
+      const recs = lapLog.readDay(day, lapDir());
+      const rec = byId ? recs.find((r) => r && r.id === byId) || null : matchRecord(recs, req);
       if (rec) return rec;
     }
     return null;
@@ -163,10 +170,16 @@ function createMeasurer(io = {}) {
   }
 
   /**
-   * One look. `req`: `{ lapSec, atMs, track?, target?, reviewDir? }` with
-   * `target` the chased lap as main snapshots it (`{ kind, label, lapId,
+   * One look. `req`: `{ lapSec, atMs, track?, target?, reviewDir?, extra? }`
+   * with `target` the chased lap as main snapshots it (`{ kind, label, lapId,
    * lapSec, columns }`; columns may be left off once sent) or null for the
    * session's best.
+   *
+   * `extra`: the lap AT THE LINE (`{ record, trace }`, the server's
+   * `LapAtLine`), before the lap log has it. Then nothing is looked up: the
+   * record (its verdict so far) is grouped with the logged laps to find its
+   * session, and the in-memory trace is measured (coachLoad `extraLap`)
+   * against the reference the logged laps give. `lap.provisional` says so.
    */
   function attempt(req) {
     const t0 = Date.now();
@@ -174,15 +187,21 @@ function createMeasurer(io = {}) {
     // has lost (it was replaced) is asked for again, not silently dropped.
     const target = targetOf(req);
     if (req.target && !target) return { found: false, needTarget: true };
-    const rec = lookUp(req);
+    const extra = req.extra && req.extra.record && req.extra.record.id && req.extra.trace ? req.extra : null;
+    const rec = extra ? extra.record : lookUp(req);
     if (!rec) return { found: false };
     const t1 = Date.now();
-    const sessions = stint.groupSessions(stint.readAllLaps(lapDir()), traceDir());
+    const records = stint.readAllLaps(lapDir());
+    // In memory only until the verdict hold lets it out: group it with the rest.
+    const provisional = !!extra && !records.some((r) => r && r.id === rec.id);
+    if (provisional) records.push(rec);
+    const sessions = stint.groupSessions(records, traceDir());
     const hit = findLiveSession(sessions, rec);
     const sessionId = hit ? hit.session.id : null;
-    const reviewLap = hit ? hit.lap : null;
+    const reviewLap = hit ? (provisional ? { ...hit.lap, hasTrace: true } : hit.lap) : null;
     const valid = coachable(rec, reviewLap);
-    const best = hit ? sessionBestOf(hit.session) : null;
+    // The reference is the logged laps' best: the lap at the line is not one of them.
+    const best = hit ? sessionBestOf(hit.session, provisional ? rec.id : null) : null;
     const trackLengthM = Number(rec.trackLengthM) || (hit ? hit.session.trackLengthM : 0) || 0;
 
     let breakdown = null;
@@ -191,7 +210,13 @@ function createMeasurer(io = {}) {
     if (sessionId && rec.id && reviewLap && reviewLap.hasTrace) {
       try {
         const reviewDir = req.reviewDir || io.reviewDir || '';
-        const deps = { reviewDir, lapDir: lapDir(), traceDir: traceDir(), ...(target ? { target } : { sessionBest: true }) };
+        const deps = {
+          reviewDir,
+          lapDir: lapDir(),
+          traceDir: traceDir(),
+          ...(target ? { target } : { sessionBest: true }),
+          ...(provisional ? { extraLap: { lapId: rec.id, at: rec.at, lapMs: rec.lapMs, trace: extra.trace } } : {}),
+        };
         const out = coachLoad.loadLapCoach(
           { sessionId, lapId: rec.id, at: rec.at, targetLapId: target ? target.lapId : 'sessionBest' },
           deps,
@@ -233,6 +258,7 @@ function createMeasurer(io = {}) {
         refSec,
         deltaSec,
         selfRef,
+        provisional,
         breakdown,
         error,
       },
@@ -240,7 +266,28 @@ function createMeasurer(io = {}) {
     };
   }
 
-  return { attempt };
+  /**
+   * The lap log's verdict on a lap measured at the line: `{ found: false }`
+   * until its record lands, then whether it may still be coached. `req`:
+   * `{ lapId, atMs, lapSec }`. A look at an unchanged day file is a `stat`.
+   */
+  function verify(req) {
+    const rec = lookUp(req, req.lapId);
+    if (!rec) return { found: false };
+    return {
+      found: true,
+      lapId: rec.id,
+      clean: rec.clean === true,
+      dirty: Array.isArray(rec.dirty) ? rec.dirty.slice() : [],
+      isOutLap: rec.isOutLap === true,
+      isInLap: rec.isInLap === true,
+      lapMs: rec.lapMs,
+      // The trace was in hand at the line; the rest is the record's.
+      valid: rec.clean === true && rec.isOutLap !== true && rec.isInLap !== true && rec.lapMs > 0,
+    };
+  }
+
+  return { attempt, verify };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -257,7 +304,7 @@ const ATTEMPT_TIMEOUT_MS = 15000;
  * A failure or a timeout answers null, which the service treats as "not
  * there yet" until its own deadline.
  *
- * @param {{ reviewDir?: () => string, log?: (line: string) => void, workerPath?: string }} [o]
+ * @param {{ reviewDir?: () => string, log?: (line: string) => void, workerPath?: string, io?: { lapDir?: string, traceDir?: string } }} [o]
  */
 function createWorkerClient(o = {}) {
   const log = typeof o.log === 'function' ? o.log : () => {};
@@ -279,7 +326,9 @@ function createWorkerClient(o = {}) {
   function ensure() {
     if (worker) return worker;
     const { Worker } = require('node:worker_threads');
-    const w = new Worker(o.workerPath || path.join(__dirname, 'live-coach-worker.js'));
+    // `io` (lapDir / traceDir) only for tests and the replay harness; main
+    // leaves it out and the worker reads the driver's own log.
+    const w = new Worker(o.workerPath || path.join(__dirname, 'live-coach-worker.js'), { workerData: { io: o.io || {} } });
     w.unref();
     w.on('message', (m) => {
       const p = m && pending.get(m.id);
@@ -295,44 +344,51 @@ function createWorkerClient(o = {}) {
     return w;
   }
 
+  function call(op, req) {
+    return new Promise((resolve) => {
+      let w;
+      try {
+        w = ensure();
+      } catch (err) {
+        log(`[livecoach] no measuring worker: ${err && err.message}`);
+        resolve(null);
+        return;
+      }
+      const id = nextId++;
+      const body = { ...req, reviewDir: typeof o.reviewDir === 'function' ? o.reviewDir() : req.reviewDir };
+      if (req.target && req.target.lapId) {
+        if (sent.has(req.target.lapId)) body.target = { lapId: req.target.lapId };
+        else sent.add(req.target.lapId);
+      }
+      const timer = setTimeout(() => {
+        if (pending.delete(id)) resolve(null);
+      }, ATTEMPT_TIMEOUT_MS);
+      if (typeof timer.unref === 'function') timer.unref();
+      pending.set(id, {
+        timer,
+        resolve: (v) => {
+          // The worker lost the columns (it was replaced): send them again next time.
+          if (v && v.needTarget && req.target) sent.delete(req.target.lapId);
+          resolve(v);
+        },
+      });
+      try {
+        w.postMessage({ id, op, req: body });
+      } catch (err) {
+        pending.delete(id);
+        clearTimeout(timer);
+        log(`[livecoach] could not post to the measuring worker: ${err && err.message}`);
+        resolve(null);
+      }
+    });
+  }
+
   return {
     measure(req) {
-      return new Promise((resolve) => {
-        let w;
-        try {
-          w = ensure();
-        } catch (err) {
-          log(`[livecoach] no measuring worker: ${err && err.message}`);
-          resolve(null);
-          return;
-        }
-        const id = nextId++;
-        const body = { ...req, reviewDir: typeof o.reviewDir === 'function' ? o.reviewDir() : req.reviewDir };
-        if (req.target && req.target.lapId) {
-          if (sent.has(req.target.lapId)) body.target = { lapId: req.target.lapId };
-          else sent.add(req.target.lapId);
-        }
-        const timer = setTimeout(() => {
-          if (pending.delete(id)) resolve(null);
-        }, ATTEMPT_TIMEOUT_MS);
-        if (typeof timer.unref === 'function') timer.unref();
-        pending.set(id, {
-          timer,
-          resolve: (v) => {
-            // The worker lost the columns (it was replaced): send them again next time.
-            if (v && v.needTarget && req.target) sent.delete(req.target.lapId);
-            resolve(v);
-          },
-        });
-        try {
-          w.postMessage({ id, req: body });
-        } catch (err) {
-          pending.delete(id);
-          clearTimeout(timer);
-          log(`[livecoach] could not post to the measuring worker: ${err && err.message}`);
-          resolve(null);
-        }
-      });
+      return call('attempt', req);
+    },
+    verify(req) {
+      return call('verify', req);
     },
     close() {
       if (worker) {
