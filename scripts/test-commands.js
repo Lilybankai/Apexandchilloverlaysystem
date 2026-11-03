@@ -1081,10 +1081,16 @@ function unit() {
   // exists on one side only, the button either can't reach an answer or hears
   // a phrase nothing will answer. Checked here so it fails in `npm test`, not
   // in a race.
-  const { GRAMMAR, ENGINEER_CALLOUTS, RADIO_CONTROL_INTENTS, matchGrammarText, matchPositionQuery, radioNoise } = require('../electron/engineer');
+  const { GRAMMAR, ENGINEER_CALLOUTS, RADIO_CONTROL_INTENTS, COACH_INTENTS, COACH_FALLBACK, matchGrammarText, matchPositionQuery, radioNoise } = require('../electron/engineer');
   // Radio controls ("keep quiet", "repeat that") are grammar entries with no
-  // command answer — ask() handles them (test-radio-gate.js).
-  const gIntents = new Set(GRAMMAR.map((g) => g.intent).filter((i) => !RADIO_CONTROL_INTENTS.has(i)));
+  // command answer — ask() handles them (test-radio-gate.js). So are the live
+  // practice coach's questions (liveCoachVoice.ts, test-livecoachvoice.js).
+  const gIntents = new Set(GRAMMAR.map((g) => g.intent).filter((i) => !RADIO_CONTROL_INTENTS.has(i) && !COACH_INTENTS.has(i)));
+  check(
+    'every coach intent is in the grammar, and every fallback is a real command',
+    [...COACH_INTENTS].every((i) => GRAMMAR.some((g) => g.intent === i)) &&
+      Object.values(COACH_FALLBACK).every((i) => COMMAND_INTENTS.includes(i)),
+  );
   check(
     'grammar covers every intent',
     COMMAND_INTENTS.every((i) => gIntents.has(i)),
@@ -1169,6 +1175,16 @@ function unit() {
     ['the leader\'s last lap', 'position:paceOf:1'],
     ['give me one second', 'cloud'],
     ['what gear for turn five', 'cloud'],
+    // The live practice coach's phrases (2026-11-03). "how was my last lap"
+    // out-lengths 'last lap'; ask() falls back to lastLap when the coach is
+    // not live (COACH_FALLBACK). The bare readouts stay lastLap's.
+    ['how was my last lap', 'coachLap'],
+    ['how was that lap', 'coachLap'],
+    ['what was my last lap', 'lastLap'],
+    ['where am i losing time', 'coachLoss'],
+    ['where am i', 'position'],
+    ['what about corner seven', 'coachCorner'],
+    ['am i consistent', 'coachSpread'],
   ];
   for (const [q, want] of ROUTING) {
     const got = routeTo(q);
