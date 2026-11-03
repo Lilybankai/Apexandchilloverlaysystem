@@ -457,6 +457,17 @@ const TRIGGER_TIERS = {
   qualiGrid: 'essential',
   practiceLap: 'essential',
   sectorImproved: 'standard',
+  // The live practice coach (electron/live-coach.js). Essential, so it speaks
+  // in every preset but Quiet: it already has its own switch (Engineer tab,
+  // "Live practice coach", beta only), it only ever runs in practice and test
+  // days, and it says one line a lap at most. Under 'standard' it would be
+  // silent at the default preset, so a driver who turned the coach on would
+  // hear nothing and not know why. The radio gate still holds each line for
+  // a straight ('normal' urgency) and "keep quiet" still silences it.
+  coachFocus: 'essential',
+  coachProgress: 'essential',
+  coachConsistency: 'essential',
+  coachSummary: 'essential',
 };
 
 /**
@@ -1510,6 +1521,8 @@ class EngineerService {
       readouts: this.readoutsPreset(),
       practicePaceReminderLaps: this.practicePaceReminderLaps(),
       onlyStraights: this.onlyStraights(),
+      // The live practice coach's switch (beta; the panel hides it off beta).
+      liveCoach: !(settings.engineer && settings.engineer.liveCoach === false),
       radioTone: this.radioTone(),
       radioQuiet: this.radioQuiet,
       volume: this.volumePct(),
@@ -2251,6 +2264,31 @@ class EngineerService {
     // The driver asked for it: 'requested' urgency, so routine race story
     // landing on the same lap edge cannot take its held slot (radioGate.ts).
     this.sayReadout(line, { kind: 'fuelTargetLap', priority: 0 });
+  }
+
+  /**
+   * A proactive line from outside the trigger layer (the live practice coach,
+   * electron/live-coach.js), through the same preset gate as {@link onCue}
+   * — its kind's TRIGGER_TIERS tier against the readouts dial — and then the
+   * same busy/hold path as every readout. A kind missing from the table never
+   * speaks. Returns whether the line was handed on (spoken or held).
+   *
+   * @param {string} text
+   * @param {{ kind: string, priority?: number }} meta
+   */
+  sayTiered(text, meta) {
+    if (!this.running || !text) return false;
+    const kind = meta && meta.kind;
+    const tier = kind ? TRIGGER_TIERS[kind] : undefined;
+    const preset = this.readoutsPreset();
+    if (preset === 'off' || !tier || (tier === 'standard' && preset !== 'standard')) return false;
+    this.sayReadout(text, { kind, priority: (meta && Number(meta.priority)) || 0 });
+    return true;
+  }
+
+  /** Forget a held line of one of these kinds (the live coach leaving practice). */
+  dropHeld(kinds) {
+    if (this.heldReadout && Array.isArray(kinds) && kinds.includes(this.heldReadout.kind)) this.heldReadout = null;
   }
 
   /**

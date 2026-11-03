@@ -148,5 +148,46 @@ console.log('\npractice session: the lap being chased');
   })());
 }
 
+console.log('\npractice session: every timed lap, as it crosses the line (onLap)');
+{
+  const seen = [];
+  const w = createPracticeWatch({ onLap: (l) => seen.push(l) });
+  w.update(frame('practice', 81.2), 0); // the baseline: a time already on the board
+  w.update(frame('practice', 81.2, { ghost: 'own:x' }), 500);
+  check('the time showing on joining is not a lap', seen.length === 0);
+  w.update(frame('practice', 80.4, { ghost: 'own:x' }), 80000);
+  w.update(frame('practice', 80.4, { ghost: 'own:x' }), 80100); // the same time again is not a lap
+  w.update(frame('practice', 79.9, { ghost: 'own:x' }), 160000);
+  check('one call per new lap time', seen.length === 2, seen.length);
+  const a = seen[0] || {};
+  check('…with the time, the count and when it crossed', a.lapSec === 80.4 && a.lapCount === 1 && a.at === 80000, JSON.stringify(a));
+  check('…the session it belongs to (start time + type) and the track', a.startedAt === 0 && a.sessionType === 'practice' && a.track === 'Road Atlanta');
+  check('…the car, the class and the lap being chased', a.carClass === 'GT3' && a.car === 'Porsche 911 GT3 R' && a.ghostLapId === 'own:x');
+  check('the second lap counts on', seen[1] && seen[1].lapCount === 2 && seen[1].lapSec === 79.9);
+  check('the test list mirrors the calls', w._laps.length === 2);
+  // A loading screen inside the session: laps after it keep the same session.
+  w.update(null, 165000);
+  w.update(frame('practice', 79.9), 170000);
+  w.update(frame('practice', 79.5), 250000);
+  check('a lap after a loading screen keeps the session start', seen[2] && seen[2].startedAt === 0);
+  // A new session: a race, then practice again.
+  w.update(frame('race', 90), 260000);
+  w.update(frame('practice', 90), 900000);
+  w.update(frame('practice', 78.8), 980000);
+  check('a lap of the next session names the new start', seen[3] && seen[3].startedAt === 900000 && seen[3].lapCount === 1, seen[3] && seen[3].startedAt);
+  const q = [];
+  const wq = createPracticeWatch({ onLap: (l) => q.push(l) });
+  drive(wq, 0, [80, 79], 'qualifying');
+  check('qualifying laps are never reported', q.length === 0);
+  check('a throwing onLap does not stop the watch', (() => {
+    const v = createPracticeWatch({ onLap: () => { throw new Error('x'); } });
+    drive(v, 0, [80, 79]);
+    return v.current() && v.current().laps === 2;
+  })());
+  const cap = createPracticeWatch();
+  drive(cap, 0, Array.from({ length: 70 }, (_, i) => 80 + i * 0.01));
+  check('the test list is capped', cap._laps.length === 50 && cap.current().laps === 70, cap._laps.length);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

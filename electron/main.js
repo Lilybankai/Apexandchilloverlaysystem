@@ -1687,6 +1687,13 @@ function dialStatusFeed() {
       // Whether a practice session just finished (the Practice Review). A
       // type compare and a lap-time compare per frame.
       practiceWatch.update(frame, now);
+      // The live practice coach: a session-type compare per frame; its work
+      // is per lap, on a worker. Fenced: it must never cost the feed a frame.
+      try {
+        liveCoach.update(frame, now);
+      } catch {
+        /* never the feed's problem */
+      }
       // A string compare while Ghost HUD is wanted, nothing otherwise. Last,
       // and fenced, so it can never cost the consumers above their frame.
       try {
@@ -1726,6 +1733,13 @@ function dialStatusFeed() {
       trainingGate.update(stale ? { session: null } : {}, Date.now());
       // The same beat lets a silent feed end a practice session.
       if (stale) practiceWatch.update(null, Date.now());
+      if (stale) {
+        try {
+          liveCoach.update(null, Date.now());
+        } catch {
+          /* never the watchdog's problem */
+        }
+      }
       if (stale && status.feed !== 'no-data') {
         status.feed = 'no-data';
         pushStatus();
@@ -2177,6 +2191,17 @@ function getEngineer() {
         }
       },
     });
+    // The live practice coach's state, for the driver's questions about the
+    // session so far (liveCoachVoice.ts). Null whenever the coach is off.
+    if (typeof engineerService.setLiveCoachSnapshot === 'function') {
+      engineerService.setLiveCoachSnapshot(() => {
+        try {
+          return liveCoach.snapshot();
+        } catch {
+          return null;
+        }
+      });
+    }
   }
   return engineerService;
 }
@@ -3502,6 +3527,38 @@ const practiceWatch = createPracticeWatch({
     const t = setTimeout(() => finishPracticeSession(ended), PRACTICE_END_SETTLE_MS);
     if (typeof t.unref === 'function') t.unref();
   },
+  onLap: (lap) => liveCoach.onLap(lap),
+});
+
+/**
+ * The live practice coach (electron/live-coach.js): after each practice lap,
+ * one line on the radio about the corner costing the most and the in-game
+ * Focus card (`player.coach`). Beta only, practice and test days only, the
+ * Engineer tab's switch. Measuring runs on a worker thread.
+ */
+let coachIpcApi = null; // coach-ipc.js register(): { askAi }
+const liveCoachMeasurer = require('./live-coach-measure').createWorkerClient({
+  reviewDir: () => practiceReviewsDir(),
+  log: (line) => stallWatch.note(line),
+});
+const liveCoach = require('./live-coach').createLiveCoach({
+  loadSettings,
+  betaOk: (settings) => practiceOnThisChannel(settings),
+  currentSession: () => practiceWatch.current(),
+  // What the Practice tab will measure against: the chased lap, when the
+  // snapshot is the lap the session is chasing; else the session's own best.
+  target: (lap) => (lap.ghostLapId && practiceTarget && practiceTarget.lapId === lap.ghostLapId ? practiceTarget : null),
+  measure: (req) => liveCoachMeasurer.measure(req),
+  say: (text, meta) =>
+    !!(engineerService && engineerService.running && typeof engineerService.sayTiered === 'function' && engineerService.sayTiered(text, meta)),
+  dropHeld: (kinds) => {
+    if (engineerService && typeof engineerService.dropHeld === 'function') engineerService.dropHeld(kinds);
+  },
+  publish: (overlay) => {
+    if (serverModule && typeof serverModule.setLiveCoach === 'function') serverModule.setLiveCoach(overlay);
+  },
+  askAi: (req) => (coachIpcApi ? coachIpcApi.askAi(req) : Promise.resolve({ ok: false, error: 'coach not registered' })),
+  log: (line) => stallWatch.note(line),
 });
 
 const trainingGate = createTrainingGate();
@@ -4940,7 +4997,7 @@ function registerIpc() {
   });
 
   // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
-  require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
+  coachIpcApi = require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
   ipcMain.handle('review:sessions', () => {
     try {

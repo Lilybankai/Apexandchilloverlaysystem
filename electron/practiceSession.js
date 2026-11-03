@@ -9,7 +9,8 @@
  *
  *   - A session STARTS on the first real (non-demo) frame whose session type
  *     is practice or a test day.
- *   - While it runs, every new positive `player.lap.last` is a timed lap, and
+ *   - While it runs, every new positive `player.lap.last` is a timed lap
+ *     (reported through `onLap` as it crosses the line — the live coach), and
  *     every change of `player.ghost.sourceLapId` is reported — the lap being
  *     chased, which main snapshots as the review's target.
  *   - It ENDS when the feed says plainly that this is another session (a race,
@@ -59,7 +60,7 @@ function playerRow(frame) {
 }
 
 /**
- * @param {{ onEnded?: (s: object) => void, onGhost?: (g: object) => void }} [o]
+ * @param {{ onEnded?: (s: object) => void, onGhost?: (g: object) => void, onLap?: (l: object) => void }} [o]
  */
 function createPracticeWatch(o = {}) {
   /** The session being watched, or null. */
@@ -68,6 +69,8 @@ function createPracticeWatch(o = {}) {
   let lastSeenAt = 0;
   const ended = [];
   const ghosts = [];
+  /** The latest timed laps (tests); capped, it lives as long as the app. */
+  const laps = [];
 
   function emit(list, cb, value) {
     list.push(value);
@@ -144,6 +147,21 @@ function createPracticeWatch(o = {}) {
           cur.lastLap = last;
           cur.laps += 1;
           if (cur.bestLapSec === null || last < cur.bestLapSec) cur.bestLapSec = last;
+          // Every timed lap, as it crosses the line (the live coach,
+          // electron/live-coach.js). `startedAt` names the session it belongs
+          // to, so a listener can tell a new session from a loading screen.
+          emit(laps, o.onLap, {
+            lapSec: last,
+            lapCount: cur.laps,
+            at: now,
+            startedAt: cur.startedAt,
+            sessionType: cur.type,
+            track: cur.track,
+            car: cur.car,
+            carClass: cur.carClass,
+            ghostLapId: cur.ghostLapId,
+          });
+          if (laps.length > 50) laps.splice(0, laps.length - 50);
         }
         const g = p.ghost;
         const gid = g && typeof g.sourceLapId === 'string' ? g.sourceLapId : '';
@@ -172,6 +190,7 @@ function createPracticeWatch(o = {}) {
     /** Everything emitted so far (tests). */
     _ended: ended,
     _ghosts: ghosts,
+    _laps: laps,
   };
 }
 

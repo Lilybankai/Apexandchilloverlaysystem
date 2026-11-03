@@ -26,6 +26,9 @@
  *   coach:ai          a CoachAiRequest (kind 'habits' etc.; inputHash optional),
  *                     or { report, context? } → { ok, ai, cached }
  *
+ * `register` returns `{ askAi }`: the `coach:ai` handler's body, for the live
+ * practice coach's summary in main (electron/live-coach.js).
+ *
  * The three practice ones are beta-gated like the rest of the Practice tab
  * (`practiceOnThisChannel`). `review:coach` and `coach:ai` are not: Review is
  * a stable tab, and the coach function checks membership itself.
@@ -335,7 +338,7 @@ function register(ipcMain, deps) {
   });
 
   /** A CoachAiRequest (or `{ report, context }`) → the validated AI words. */
-  ipcMain.handle('coach:ai', async (_evt, req) => {
+  async function askAi(req) {
     try {
       const R = coachReport();
       const request = req && req.report && Array.isArray(req.report.facts)
@@ -348,7 +351,12 @@ function register(ipcMain, deps) {
       console.error('[app] coach AI unavailable:', err.message);
       return { ok: false, ai: null, error: err.message };
     }
-  });
+  }
+  ipcMain.handle('coach:ai', (_evt, req) => askAi(req));
+
+  // The same call, cache and membership check for main-process callers: the
+  // live practice coach's every-few-laps summary (electron/live-coach.js).
+  return { askAi };
 }
 
 module.exports = {
