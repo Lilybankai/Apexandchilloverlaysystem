@@ -22,6 +22,10 @@ const DEFAULT_ENGINEER_SETTINGS = Object.freeze({
   // Radio etiquette: proactive calls wait for a straight (urgent ones never
   // wait). Off = the old rule, quiet only while braking hard or side by side.
   onlyStraights: true,
+  // The live practice coach (2026-11-03, electron/live-coach.js): one corner
+  // to work on, said on the radio after a lap and shown on the in-game Focus
+  // card. Beta only, practice and test days only; on by default there.
+  liveCoach: true,
   radioTone: 'clean',
   // The microphone the engineer listens on (2026-10-23): a SAPI audio-input
   // token id, '' = System default. The name is kept beside it so a choice
@@ -78,6 +82,11 @@ function sanitizeEngineer(stored, defaults = DEFAULT_ENGINEER_SETTINGS) {
       : typeof base.onlyStraights === 'boolean'
         ? base.onlyStraights
         : DEFAULT_ENGINEER_SETTINGS.onlyStraights,
+    liveCoach: typeof s.liveCoach === 'boolean'
+      ? s.liveCoach
+      : typeof base.liveCoach === 'boolean'
+        ? base.liveCoach
+        : DEFAULT_ENGINEER_SETTINGS.liveCoach,
     radioTone: RADIO_TONES.includes(s.radioTone)
       ? s.radioTone
       : RADIO_TONES.includes(base.radioTone)

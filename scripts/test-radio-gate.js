@@ -124,6 +124,13 @@ console.log('\n1) Urgency: every existing kind has a tier, and unknown kinds are
       HOLD_BUDGET_MS.priority === 25000 && HOLD_BUDGET_MS.requested === 25000);
   const newKinds = Object.keys(TRIGGER_PRIORITY).filter((k) => !classified.has(k));
   if (newKinds.length) console.log('  INFO  kinds added since (tier = ' + newKinds.map((k) => `${k}:${urgencyOf(k)}`).join(', ') + ')');
+  // The live practice coach (2026-11-03): coaching waits for a straight and
+  // goes quiet on "keep quiet"; the readouts dial silences it only at Quiet.
+  const coachKinds = ['coachFocus', 'coachProgress', 'coachConsistency', 'coachSummary'];
+  check('the live coach kinds are listed, all normal',
+    coachKinds.every((k) => Object.prototype.hasOwnProperty.call(gateMod.KIND_URGENCY, k) && urgencyOf(k) === 'normal'));
+  check('…never safety kinds', coachKinds.every((k) => !gateMod.SAFETY_KINDS.has(k) && !gateMod.breaksQuiet(k)));
+  check('…and essential on the readouts dial', coachKinds.every((k) => TRIGGER_TIERS[k] === 'essential'));
 }
 
 /* -------------------------------------------------------------------------- */

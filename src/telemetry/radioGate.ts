@@ -117,6 +117,16 @@ export const KIND_URGENCY: Readonly<Record<string, RadioUrgency>> = {
   positionChange: 'normal',
   rivalPitted: 'normal',
   practicePace: 'normal',
+
+  // The live practice coach (electron/live-coach.js, liveCoachContract.ts):
+  // one corner to work on, "better, two tenths back", the odd consistency
+  // word and the every-few-laps summary. Coaching, never a hazard: it waits
+  // for a straight, expires on the routine budget rather than speaking late,
+  // and "keep quiet" holds it. Never in SAFETY_KINDS.
+  coachFocus: 'normal',
+  coachProgress: 'normal',
+  coachConsistency: 'normal',
+  coachSummary: 'normal',
 };
 
 /** The tier for a trigger kind; unknown and missing kinds are `normal`. */
