@@ -500,7 +500,9 @@
     if (a !== "off") {
       litUntil = now + HOLD_MS;
       setApproach(a);
-    } else if (now >= litUntil) {
+    } else if (!f || now >= litUntil) {
+      // The hold is for position jitter; a focus that went away goes dark now.
+      litUntil = 0;
       setApproach("off");
     }
   }
