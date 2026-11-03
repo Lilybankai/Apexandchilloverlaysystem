@@ -27,7 +27,7 @@ import { StreamBot, insertYouTubeChatMessage, type StreamBotConfig } from './str
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
-import { LmuRestProvider } from '../telemetry/lmuRestProvider';
+import { LmuRestProvider, type LapAtLine } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
 import { getPublishedGhost, ghostJson, type GhostLap } from '../telemetry/ghostLap';
@@ -697,6 +697,19 @@ export function setLiveCoach(overlay: LiveCoachOverlay | null): void {
   liveCoach = overlay && typeof overlay === 'object' ? overlay : null;
 }
 
+/**
+ * Hear every lap of the driven car AT THE LINE, with its trace and its
+ * verdict so far (`LapAtLine`), ~40 s before the lap log has it — the live
+ * practice coach measures the lap from this. Called on the frame loop, so the
+ * listener must only take the object and return. Kept here, like
+ * {@link setGhostWanted}, so it survives a server restart. `null` stops it.
+ */
+let lapCompleteListener: ((lap: LapAtLine) => void) | null = null;
+export function setLapCompleteListener(fn: ((lap: LapAtLine) => void) | null): void {
+  lapCompleteListener = typeof fn === 'function' ? fn : null;
+  ghostProvider?.setLapCompleteListener(lapCompleteListener);
+}
+
 /** Put the coach's card on a frame, or make sure the frame has none. Exported for the tests. */
 export function stampLiveCoach(frame: TelemetryFrame): void {
   const p = frame.player;
@@ -1198,6 +1211,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   ghostProvider = lmu;
   lmu?.setGhostWanted(ghostWanted);
   lmu?.setGhostReference(ghostReference);
+  lmu?.setLapCompleteListener(lapCompleteListener);
   const raceLog = new LiveRaceLog(
     lmu ? { identity: () => lmu.raceIdentity(), fetchIncidents: () => lmu.fetchIncidents() } : {},
   );

@@ -5,19 +5,30 @@
  * (src/telemetry/liveCoachContract.ts). After every timed lap of a practice
  * session or test day this service:
  *
- *   1. finds the lap in the lap log. It is not there at the line: the
- *      recorder holds each lap ~40 s for the stewards' track-limits verdict
- *      (lapLog.ts VERDICT_HOLD_MS) and writes its trace in the same tick. So
- *      the service looks once a second for up to {@link DEFAULTS.retryForMs}
- *      and gives up quietly. Each look runs on a worker thread
- *      (live-coach-measure.js), which also
+ *   1. takes the lap AT THE LINE. The lap log will not have it for ~40 s —
+ *      the recorder holds each lap for the stewards' track-limits verdict
+ *      (lapLog.ts VERDICT_HOLD_MS) — so the server hands main its own copy
+ *      the moment the lap completes (`setLapCompleteListener` → main →
+ *      {@link onLapAtLine}): the record as judged so far (out- and in-lap,
+ *      pit, partial, a cut or penalty already charged) and the trace. The
+ *      practice watcher's lap is matched to it by lap time and crossing
+ *      clock (≤ {@link DEFAULTS.crossingWaitMs}). Without one (another sim,
+ *      no trace, an older server) it falls back to the lap log: a look a
+ *      second for up to {@link DEFAULTS.retryForMs}, then quiet. Either way
+ *      the work runs on a worker thread (live-coach-measure.js), which
  *   2. measures it the way the Practice tab will: coachLoad.ts `loadLapCoach`
  *      against the lap being chased (main's `practiceTarget` snapshot — a
  *      board lap when Ghost HUD chases one) or else the session's own best so
  *      far, inside the lap-log session that holds the lap;
  *   3. steps the engine (liveCoach.ts `stepLiveCoach`, pure and fast) with a
  *      {@link LiveCoachLap}, says each call through the engineer, and
- *      publishes the in-game card ({@link LiveCoachOverlay}, `player.coach`);
+ *      publishes the in-game card ({@link LiveCoachOverlay}, `player.coach`).
+ *      A lap taken at the line is PROVISIONAL: when its record lands with a
+ *      dirty verdict (a cut charged after the line) the lap is taken back
+ *      out — the state before it restored, any later lap stepped again on
+ *      top, the card re-published; what was said stands. A clean verdict
+ *      changes nothing (a lap is never stepped twice). The snapshot follows
+ *      the step at once;
  *   4. when the engine wants one, asks the AI for a short summary in the
  *      background — the voice's request (liveCoachVoice.ts `summaryRequest`,
  *      or the contract's `summaryFacts` filled in) to the `coach` edge
@@ -69,12 +80,19 @@ const DEFAULTS = Object.freeze({
   summaryTimeoutMs: 10000,
   /** How often the gates (setting, channel, the watcher's session) are re-read. */
   gateEveryMs: 2000,
+  /** How long a lap waits for the server's copy at the line before falling back to the log. */
+  crossingWaitMs: 3000,
 });
 
 /** The engine's own default (liveCoachContract.ts LiveCoachOptions.minLaps). */
 const DEFAULT_MIN_LAPS = 2;
 /** Laps remembered for `timings()`. */
 const TIMINGS_KEPT = 20;
+/** Laps a late verdict can still take back (and the ones stepped after it, re-stepped). */
+const HISTORY_KEPT = 6;
+/** A lap at the line and the frame's lap: the same sim reading, the same crossing. */
+const LINE_MATCH_LAP_MS = 150;
+const LINE_MATCH_AT_MS = 15000;
 
 function loadEngine() {
   try {
@@ -197,6 +215,9 @@ function createLiveCoach(deps) {
   let nextGateAt = 0;
   let lastPublished; // undefined = never published
   const timings = [];
+  /** Laps the server handed over at the line (`onLapAtLine`), newest last, and who waits for one. */
+  const crossings = [];
+  const waiters = [];
 
   const sleep = (ms) => new Promise((resolve) => setT(resolve, ms));
 
@@ -247,6 +268,7 @@ function createLiveCoach(deps) {
   function start(cur) {
     const key = String(cur.startedAt);
     gen += 1;
+    crossings.length = 0; // another session's laps
     let state;
     try {
       state = getEngine().initLiveCoach(`live:${new Date(cur.startedAt).toISOString()}~${str(cur.track)}`);
@@ -274,6 +296,7 @@ function createLiveCoach(deps) {
       rev: 0,
       chain: Promise.resolve(),
       summaryBusy: false,
+      history: [],
     };
     log(`[livecoach] on: ${cur.type || 'practice'} at ${s.track || 'an unnamed track'}`);
     publishCard(s);
@@ -347,6 +370,11 @@ function createLiveCoach(deps) {
       return;
     }
     if (!step || !step.state) return;
+    // What the coach looked like before this lap, so a verdict that lands
+    // later (a cut the stewards charge ~25 s on) can take the lap back out.
+    const entry = { lap, pre: mine.state, preLast: mine.last, preLastValid: mine.lastValid, provisional: m.provisional === true };
+    mine.history.push(entry);
+    if (mine.history.length > HISTORY_KEPT) mine.history.shift();
     mine.state = step.state;
     mine.last = lap;
     if (lap.valid) mine.lastValid = lap;
@@ -366,6 +394,9 @@ function createLiveCoach(deps) {
     timings.push({
       lapNo: lap.lapNo,
       valid: lap.valid,
+      atLine: m.provisional === true,
+      // From the crossing (the frame that showed the new lap time) to the calls said.
+      sinceLineMs: Number.isFinite(req.atMs) ? Math.max(0, now() - req.atMs) : null,
       waitedMs: waited.ms,
       attempts: waited.attempts,
       workerMs: found.ms ? found.ms.total : null,
@@ -380,6 +411,88 @@ function createLiveCoach(deps) {
         (said.length ? `, said ${said.join(', ')}` : ''),
     );
     if (step.wantSummary) void summarize(mine, g);
+    if (entry.provisional) void verifyLater(mine, g, entry, req);
+  }
+
+  /**
+   * A lap stepped at the line is judged again when its record lands. Dirty
+   * now (a cut charged after the line, mostly) and clean when stepped: take
+   * it back out — the state before it, every later lap stepped again on top,
+   * the card re-published. What was said stands; nothing is said about it.
+   * Clean as stepped: nothing at all (it is never stepped twice).
+   */
+  async function verifyLater(mine, g, entry, req) {
+    if (typeof deps.verify !== 'function') return;
+    const deadline = now() + opts.retryForMs;
+    for (;;) {
+      await sleep(opts.retryMs);
+      if (!live(mine, g)) return;
+      let v = null;
+      try {
+        v = await deps.verify({ lapId: entry.lap.lapId, atMs: req.atMs, lapSec: req.lapSec });
+      } catch {
+        v = null;
+      }
+      if (!live(mine, g)) return;
+      if (v && v.found) {
+        if (entry.lap.valid && v.valid === false) revert(mine, entry, v);
+        return;
+      }
+      if (now() >= deadline) return; // the provisional verdict stands
+    }
+  }
+
+  function revert(mine, entry, verdict) {
+    const i = mine.history.indexOf(entry);
+    if (i < 0) {
+      log(`[livecoach] lap ${entry.lap.lapNo} turned out dirty, too late to take back`);
+      return;
+    }
+    const later = mine.history.slice(i + 1);
+    mine.history.splice(i);
+    let state = entry.pre;
+    let last = { ...entry.lap, valid: false, breakdown: null };
+    let lastValid = entry.preLastValid;
+    for (const e of later) {
+      try {
+        const step = getEngine().stepLiveCoach(state, e.lap, engineOpts);
+        if (!step || !step.state) continue;
+        e.pre = state;
+        e.preLast = last;
+        e.preLastValid = lastValid;
+        state = step.state;
+        last = e.lap;
+        if (e.lap.valid) lastValid = e.lap;
+        mine.history.push(e);
+      } catch (err) {
+        log(`[livecoach] re-stepping lap ${e.lap.lapNo} failed: ${err && err.message}`);
+      }
+    }
+    mine.state = state;
+    mine.last = last;
+    mine.lastValid = lastValid;
+    publishCard(mine);
+    log(`[livecoach] lap ${entry.lap.lapNo} taken back: ${(verdict.dirty || []).join('+') || 'not a coachable lap'}`);
+  }
+
+  /** The lap the server handed over at the line for this crossing, waiting up to `crossingWaitMs`. */
+  function crossingFor(req) {
+    const want = Math.round(req.lapSec * 1000);
+    const matches = (c) =>
+      !!c && !!c.record && Math.abs(Number(c.record.lapMs) - want) <= LINE_MATCH_LAP_MS &&
+      Math.abs(Date.parse(c.record.at) - req.atMs) <= LINE_MATCH_AT_MS &&
+      (!req.track || !c.record.track || c.record.track === req.track);
+    const k = crossings.findIndex(matches);
+    if (k >= 0) return Promise.resolve(crossings.splice(k, 1)[0]);
+    return new Promise((resolve) => {
+      const w = { matches, resolve };
+      waiters.push(w);
+      setT(() => {
+        const j = waiters.indexOf(w);
+        if (j >= 0) waiters.splice(j, 1);
+        resolve(null);
+      }, opts.crossingWaitMs);
+    });
   }
 
   /** Look for the lap until it lands or the deadline passes. */
@@ -388,6 +501,29 @@ function createLiveCoach(deps) {
     const deadline = t0 + opts.retryForMs;
     let attempts = 0;
     let mainMs = 0;
+    // At the line first: the server's copy of the lap, ~40 s before the log's.
+    if (typeof deps.lapAtLine === 'function' && deps.lapAtLine()) {
+      const c = await crossingFor(req);
+      if (!live(mine, g)) return;
+      if (c) {
+        attempts += 1;
+        let res = null;
+        const p0 = hrMs();
+        try {
+          const pending = deps.measure({ ...req, extra: { record: c.record, trace: c.trace } });
+          mainMs += hrMs() - p0;
+          res = await pending;
+        } catch (err) {
+          log(`[livecoach] measuring at the line failed: ${err && err.message}`);
+        }
+        if (!live(mine, g)) return;
+        if (res && res.found && res.lap) {
+          land(mine, g, res, req, { ms: now() - t0, attempts, mainMs });
+          return;
+        }
+      }
+      // No lap from the server (another sim, no trace): the lap log, as before.
+    }
     for (;;) {
       if (!live(mine, g)) return;
       attempts += 1;
@@ -519,6 +655,23 @@ function createLiveCoach(deps) {
       const req = { lapSec: Number(ev.lapSec), atMs: Number(ev.at), track: str(ev.track), target };
       // One lap at a time, in the order they were driven.
       mine.chain = mine.chain.then(() => chase(mine, g, req)).catch((err) => log(`[livecoach] lap failed: ${err && err.message}`));
+    },
+
+    /**
+     * The server's lap at the line (`setLapCompleteListener`: `{ record,
+     * trace, wallMs }`). Called on the frame loop: kept, matched later, and
+     * only while a session is being coached.
+     */
+    onLapAtLine(lap) {
+      if (!s || !lap || !lap.record || !lap.trace) return;
+      const w = waiters.findIndex((x) => x.matches(lap));
+      if (w >= 0) {
+        const [x] = waiters.splice(w, 1);
+        x.resolve(lap);
+        return;
+      }
+      crossings.push(lap);
+      if (crossings.length > 3) crossings.shift();
     },
 
     /** For the voice: everything a question about this session can be answered from; null when off. */

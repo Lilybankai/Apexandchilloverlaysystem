@@ -7,13 +7,13 @@
  * (electron/live-coach-measure.js). Main composites every overlay on its own
  * thread, so it posts each attempt here instead and waits for the answer.
  *
- * Protocol: `{ id, req }` in, `{ id, ok, result | error }` out — see
+ * Protocol: `{ id, op: 'attempt' | 'verify', req }` in, `{ id, ok, result | error }` out — see
  * `createWorkerClient` in live-coach-measure.js.
  */
 
 'use strict';
 
-const { parentPort } = require('node:worker_threads');
+const { parentPort, workerData } = require('node:worker_threads');
 const { createMeasurer } = require('./live-coach-measure');
 
 let measurer = null;
@@ -21,8 +21,9 @@ let measurer = null;
 parentPort.on('message', (msg) => {
   const id = msg && msg.id;
   try {
-    if (!measurer) measurer = createMeasurer({});
-    parentPort.postMessage({ id, ok: true, result: measurer.attempt(msg.req || {}) });
+    if (!measurer) measurer = createMeasurer((workerData && workerData.io) || {});
+    const op = msg && msg.op === 'verify' ? 'verify' : 'attempt';
+    parentPort.postMessage({ id, ok: true, result: measurer[op](msg.req || {}) });
   } catch (err) {
     parentPort.postMessage({ id, ok: false, error: err && err.message ? err.message : String(err) });
   }

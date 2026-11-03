@@ -154,6 +154,8 @@ function rig(o = {}) {
       if (n <= r.misses) return { found: false };
       return (o.answer || found)(req.lapNo || ++lapNo, req);
     },
+    ...(o.lapAtLine ? { lapAtLine: () => true } : {}),
+    ...(o.verify ? { verify: (req) => o.verify(req, r) } : {}),
     loadEngine: () => r.engine,
     loadVoice: () => r.voice,
     say: (text, meta) => {
@@ -167,7 +169,7 @@ function rig(o = {}) {
       return r.askAi ? r.askAi(req) : { ok: true, ai: { headline: 'tidy session' } };
     },
     log: (line) => r.logs.push(line),
-    options: { retryMs: 5, retryForMs: o.retryForMs ?? 2000, summaryTimeoutMs: o.summaryTimeoutMs ?? 200, gateEveryMs: 0 },
+    options: { retryMs: 5, retryForMs: o.retryForMs ?? 2000, summaryTimeoutMs: o.summaryTimeoutMs ?? 200, gateEveryMs: 0, crossingWaitMs: o.crossingWaitMs ?? 3000 },
   });
   r.lap = (i, extra = {}) =>
     r.coach.onLap({ lapSec: 80 + i / 10, lapCount: i, at: 1000 + i * 80000, startedAt: r.session.startedAt, sessionType: r.session.type, track: 'Road Atlanta', car: 'Porsche', carClass: 'GT3', ghostLapId: '', ...extra });
@@ -419,6 +421,196 @@ const lastPub = (r) => r.published[r.published.length - 1];
     check('aiRequestOf drops empty facts and reads numeric strings', a.facts.length === 1 && a.facts[0].value === 2.5 && a.context.lapSec === null);
   }
 
+
+  console.log('\nAt the line: the server\'s lap, stepped at once, judged again when the log has it');
+  {
+    // The measurer's answer for a lap handed over at the line (req.extra).
+    const atLine = (n, req) => {
+      if (!req.extra) return found(n);
+      const f = found(n, { lapId: req.extra.record.id });
+      f.lap.provisional = true;
+      f.lap.at = req.extra.record.at;
+      return f;
+    };
+    const crossing = (r, i, t, o = {}) => {
+      const lapSec = 80 + i / 10;
+      const lap = { record: { id: `L${i}`, at: new Date(t).toISOString(), lapMs: Math.round(lapSec * 1000), track: 'Road Atlanta', clean: true, dirty: [] }, trace: { d: [0, 1], t: [0, lapSec] }, wallMs: t };
+      if (!o.late) r.coach.onLapAtLine(lap);
+      return lap;
+    };
+    const verdicts = new Map(); // lapId -> what the log says once it lands
+    const verifyAfter = (looks) => (req) => {
+      const v = verdicts.get(req.lapId);
+      const n = (v && (v.looks = (v.looks || 0) + 1)) || 0;
+      return Promise.resolve(v && n >= looks ? { found: true, lapId: req.lapId, ...v.says } : { found: false });
+    };
+
+    // 1. The crossing → stepped within the budget, the snapshot fresh at once.
+    const r = rig({ misses: 0, lapAtLine: true, answer: atLine, verify: verifyAfter(3) });
+    r.coach.update(PRACTICE(), 0);
+    let t = Date.now();
+    crossing(r, 1, t);
+    r.lap(1, { at: t });
+    await r.coach._idle();
+    check('the lap at the line is measured with the server\'s copy (no lap-log wait)', r.measures.length === 1 && r.measures[0].extra && r.measures[0].extra.record.id === 'L1');
+    const tm = r.coach.timings()[0];
+    check('…stepped within the budget (crossing → step < 1 s here)', tm.atLine === true && tm.sinceLineMs < 1000, `${tm.sinceLineMs} ms`);
+    check('…and the snapshot has that lap at once', r.coach.snapshot().last.lapId === 'L1' && r.coach.snapshot().state.validLaps === 1);
+    // 2. Clean verdict → nothing, not stepped twice.
+    verdicts.set('L1', { says: { valid: true, clean: true, dirty: [] } });
+    await wait(60);
+    check('a clean verdict later: not stepped twice', r.engine.seen.length === 1 && r.coach.snapshot().state.validLaps === 1);
+    // 3. Lap 2 stepped (says the focus), then its verdict lands dirty: reverted.
+    t = Date.now();
+    crossing(r, 2, t);
+    r.lap(2, { at: t });
+    await r.coach._idle();
+    check('lap 2 at the line: the focus is said at once', r.said.length === 1 && r.said[0].kind === 'coachFocus' && lastPub(r).focus && lastPub(r).validLaps === 2);
+    const pubs = r.published.length;
+    verdicts.set('L2', { says: { valid: false, clean: false, dirty: ['limits'] } });
+    await wait(60);
+    check('a dirty verdict later: reverted to the state before the lap', r.coach.snapshot().state.validLaps === 1 && r.coach.snapshot().state.focus === null, JSON.stringify(r.coach.snapshot().state.validLaps));
+    check('…the card re-published without it', r.published.length === pubs + 1 && lastPub(r).validLaps === 1 && lastPub(r).focus === null);
+    check('…what was said stands, nothing new is said', r.said.length === 1);
+    check('…the snapshot keeps the lap as the last, now invalid', r.coach.snapshot().last.lapId === 'L2' && r.coach.snapshot().last.valid === false && r.coach.snapshot().lastValid.lapId === 'L1');
+
+    // 4. A late verdict on a lap with another lap stepped on top: re-stepped.
+    verdicts.clear(); // a fresh session: no verdict has landed yet
+    const q = rig({ misses: 0, lapAtLine: true, answer: atLine, verify: verifyAfter(1) });
+    q.coach.update(PRACTICE(), 0);
+    for (const i of [1, 2, 3]) {
+      t = Date.now();
+      crossing(q, i, t);
+      q.lap(i, { at: t });
+      await q.coach._idle();
+    }
+    // Verdicts: lap 1 clean, lap 3 clean, lap 2 dirty, landing in the order 1, 3, 2.
+    verdicts.set('L1', { says: { valid: true } });
+    verdicts.set('L3', { says: { valid: true } });
+    await wait(30);
+    const saidBefore = q.said.length;
+    const seenBefore = q.engine.seen.length;
+    verdicts.set('L2', { says: { valid: false, dirty: ['limits'] } });
+    await wait(60);
+    check('lap 2 taken back under lap 3: lap 3 re-stepped on the state before lap 2', q.coach.snapshot().state.validLaps === 2 && q.engine.seen.length === seenBefore + 1 && q.coach.snapshot().last.lapId === 'L3', `${q.coach.snapshot().state.validLaps} ${q.engine.seen.length - seenBefore}`);
+    check('…silently', q.said.length === saidBefore);
+
+    // 5. The server's copy arrives a moment AFTER the frame's lap.
+    const late = rig({ misses: 0, lapAtLine: true, answer: atLine });
+    late.coach.update(PRACTICE(), 0);
+    t = Date.now();
+    const lap = crossing(late, 1, t, { late: true });
+    late.lap(1, { at: t });
+    await wait(20);
+    late.coach.onLapAtLine(lap);
+    await late.coach._idle();
+    check('a lap at the line that lands after the frame\'s lap is still used', late.measures.length === 1 && !!late.measures[0].extra);
+
+    // 6. The hook is there but no lap comes (another sim, no trace): the lap log.
+    const none = rig({ misses: 1, lapAtLine: true, crossingWaitMs: 30 });
+    none.coach.update(PRACTICE(), 0);
+    none.lap(1, { at: Date.now() });
+    await none.coach._idle();
+    check('no lap at the line: falls back to the lap log after the wait', none.measures.length === 2 && none.measures.every((m) => !m.extra) && none.engine.seen.length === 1);
+    // 7. No hook at all: the lap log at once (every test above the "At the line" block runs so).
+    const old = rig({ misses: 0 });
+    old.coach.update(PRACTICE(), 0);
+    old.coach.onLapAtLine(crossing(old, 1, Date.now(), { late: true })); // ignored: nobody waits for it
+    old.lap(1, { at: Date.now() });
+    await old.coach._idle();
+    check('hook missing: the disk path, no wait', old.measures.length === 1 && !old.measures[0].extra && old.engine.seen.length === 1);
+    // 8. A lap at the line from a race is never kept.
+    const off = rig();
+    off.coach.update(PRACTICE({ type: 'race' }), 0);
+    off.coach.onLapAtLine(crossing(off, 1, Date.now(), { late: true }));
+    check('not coaching: a lap at the line is dropped', !off.coach.active());
+  }
+
+  console.log('\nAt the line, on disk: the provider hook, the coachLoad seam, the self-reference rule');
+  {
+    const { synthTrace } = require('./fixtures/livecoach-synth');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-livecoach-synth-'));
+    const lapDir = path.join(dir, 'laps');
+    const traceDir = path.join(dir, 'traces');
+    fs.mkdirSync(path.join(traceDir, '2026-11-03'), { recursive: true });
+    fs.mkdirSync(lapDir);
+    const base = Date.parse('2026-11-03T10:00:00Z');
+    const mk = (id, i, tr, extra = {}) => ({ v: 7, id, at: new Date(base + i * 90000).toISOString(), sim: 'lmu', track: 'Synth', trackKey: 'synth_4000', trackLengthM: 4000, car: 'P', carClass: 'GT3', lapMs: Math.round(tr.lapSec * 1000), distanceM: 4000, sessionType: 'practice', clean: true, dirty: [], ...extra });
+    const slow = synthTrace({ corners: [{ d: 0.3, minKph: 100 }, { d: 0.7, minKph: 90 }] });
+    const fast = synthTrace();
+    const quicker = synthTrace({ corners: [{ d: 0.3, minKph: 115 }, { d: 0.7, minKph: 92 }] });
+    const recs = [mk('out', 0, fast, { isOutLap: true, clean: false, dirty: ['pit'] }), mk('A', 1, slow), mk('B', 2, fast)];
+    fs.writeFileSync(path.join(lapDir, '2026-11-03.jsonl'), recs.map((x) => JSON.stringify(x)).join('\n') + '\n');
+    for (const [x, tr] of [[recs[1], slow], [recs[2], fast]]) {
+      fs.writeFileSync(path.join(traceDir, '2026-11-03', `${x.id}.json`), JSON.stringify({ v: 2, lapId: x.id, at: x.at, sim: 'lmu', trackKey: x.trackKey, track: x.track, trackLengthM: 4000, car: 'P', carClass: 'GT3', lapMs: x.lapMs, trace: tr }));
+    }
+    const m = M.createMeasurer({ lapDir, traceDir, reviewDir: path.join(dir, 'reviews') });
+    const ra = m.attempt({ lapSec: recs[1].lapMs / 1000, atMs: Date.parse(recs[1].at) });
+    check('disk path: a slower lap is measured against the session best', ra.lap.valid && !!ra.lap.breakdown && ra.lap.refLapId === 'B' && ra.lap.breakdown.totalSec > 0.3, ra.lap.breakdown && ra.lap.breakdown.totalSec.toFixed(3));
+    const rb = m.attempt({ lapSec: recs[2].lapMs / 1000, atMs: Date.parse(recs[2].at) });
+    check('the self-reference rule: the session best against itself has no breakdown', rb.lap.selfRef === true && rb.lap.breakdown === null);
+    // The next lap, at the line: not on disk, its trace in memory.
+    const c = mk('C', 3, quicker);
+    const rc = m.attempt({ lapSec: c.lapMs / 1000, atMs: Date.parse(c.at), extra: { record: c, trace: quicker } });
+    check('at the line: provisional, in the logged session, measured from memory', rc.found && rc.lap.provisional === true && rc.lap.sessionId === `${recs[0].at}~synth_4000` && rc.lap.lapNo === 4 && rc.lap.valid === true);
+    check('…against the logged best (not itself), so a faster lap reads as time gained', rc.lap.breakdown && rc.lap.breakdown.refLapId === 'B' && rc.lap.breakdown.totalSec < 0 && rc.lap.selfRef === false, rc.lap.breakdown && rc.lap.breakdown.totalSec.toFixed(3));
+    check('…its delta against that best', rc.lap.refSec === recs[2].lapMs / 1000 && rc.lap.deltaSec < 0);
+    const dirtyAtLine = m.attempt({ lapSec: c.lapMs / 1000, atMs: Date.parse(c.at), extra: { record: { ...c, clean: false, dirty: ['limits'] }, trace: quicker } });
+    check('a cut already charged at the line: provisional and not coachable', dirtyAtLine.lap.provisional && dirtyAtLine.lap.valid === false);
+    check('verify: not in the log yet', m.verify({ lapId: 'C', atMs: Date.parse(c.at), lapSec: c.lapMs / 1000 }).found === false);
+    fs.appendFileSync(path.join(lapDir, '2026-11-03.jsonl'), JSON.stringify({ ...c, clean: false, dirty: ['limits'] }) + '\n');
+    const v = m.verify({ lapId: 'C', atMs: Date.parse(c.at), lapSec: c.lapMs / 1000 });
+    check('verify: the record lands with its verdict', v.found && v.valid === false && v.dirty.join() === 'limits');
+    const again = m.attempt({ lapSec: c.lapMs / 1000, atMs: Date.parse(c.at), extra: { record: c, trace: quicker } });
+    check('a lap at the line already in the log is the log\'s, not provisional', again.lap.provisional === false);
+    // The coachLoad seam on its own.
+    const coachLoad = require('../dist/telemetry/coachLoad');
+    const deps = { reviewDir: path.join(dir, 'reviews'), lapDir, traceDir, sessionBest: true };
+    const args = { sessionId: `${recs[0].at}~synth_4000`, lapId: 'D', at: c.at, targetLapId: 'sessionBest' };
+    check('coachLoad: an unknown lap without extraLap is null', coachLoad.loadLapCoach(args, deps) === null);
+    const viaSeam = coachLoad.loadLapCoach(args, { ...deps, extraLap: { lapId: 'D', at: c.at, lapMs: c.lapMs, trace: quicker } });
+    check('coachLoad: extraLap measures it against the session\'s target', viaSeam && viaSeam.breakdown && viaSeam.breakdown.lapId === 'D' && viaSeam.breakdown.refLapId === 'B' && viaSeam.report);
+    check('coachLoad: extraLap naming another lap is ignored', coachLoad.loadLapCoach(args, { ...deps, extraLap: { lapId: 'E', at: c.at, lapMs: c.lapMs, trace: quicker } }) === null);
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    // The provider's hook, driven on a bare instance (no sim, no timers).
+    const { LmuRestProvider } = require('../dist/telemetry/lmuRestProvider');
+    const heard = [];
+    const p = Object.create(LmuRestProvider.prototype);
+    let held = null;
+    p.lapRecorder = { pending: () => held };
+    p.pendingTraces = [];
+    p.lapAnnounced = '';
+    p.lapListener = null;
+    p.setLapCompleteListener((lap) => heard.push(lap));
+    const t0 = Date.parse('2026-11-03T12:00:00Z');
+    p.emitLapAtLine(t0);
+    check('provider: nothing held, nothing heard', heard.length === 0);
+    held = { id: 'X', at: new Date(t0).toISOString(), lapMs: 80000, clean: true, dirty: [] };
+    p.emitLapAtLine(t0 + 100);
+    check('provider: a held lap waits for its trace', heard.length === 0);
+    p.pendingTraces.push({ trace: { lapSec: 70, d: [], t: [] }, wallMs: t0 - 200 }); // the wrong lap time
+    p.pendingTraces.push({ trace: { lapSec: 80.02, d: [], t: [] }, wallMs: t0 - 150 });
+    p.emitLapAtLine(t0 + 200);
+    check('provider: announced once its trace is here, paired by clock and lap time', heard.length === 1 && heard[0].record.id === 'X' && heard[0].trace.lapSec === 80.02 && heard[0].wallMs === t0 - 150);
+    p.emitLapAtLine(t0 + 300);
+    check('provider: once per lap', heard.length === 1);
+    held = { id: 'Y', at: new Date(t0 + 90000).toISOString(), lapMs: 80000, clean: true, dirty: [] };
+    p.emitLapAtLine(t0 + 96000);
+    check('provider: a lap whose trace never comes is given up (not announced late)', heard.length === 1 && p.lapAnnounced === 'Y');
+    p.setLapCompleteListener(() => { throw new Error('x'); });
+    held = { id: 'Z', at: new Date(t0 + 180000).toISOString(), lapMs: 80000, clean: true, dirty: [] };
+    p.pendingTraces.push({ trace: { lapSec: 80, d: [], t: [] }, wallMs: t0 + 180000 });
+    let threw = false;
+    try { p.emitLapAtLine(t0 + 180100); } catch { threw = true; }
+    check('provider: a throwing listener never takes the frame down', !threw);
+    const { LapRecorder } = require('../dist/telemetry/lapLog');
+    check('LapRecorder.pending(): null when nothing is held', new LapRecorder().pending() === null);
+    const srv = require('../dist/server/index');
+    check('server: setLapCompleteListener is exported', typeof srv.setLapCompleteListener === 'function');
+    srv.setLapCompleteListener(null);
+  }
+
   console.log('\nThe engineer: sayTiered and dropHeld');
   {
     const { EngineerService, TRIGGER_TIERS } = require('../electron/engineer');
@@ -526,6 +718,51 @@ const lastPub = (r) => r.published[r.published.length - 1];
     check('…and keeps a chased target\'s columns across looks (sent once)', w2 && w2.found === false && !w2.needTarget && w3 && !w3.needTarget, JSON.stringify(w3));
     console.log(`        worker round trips: ${Date.now() - t0} ms for three (start-up included)`);
     client.close();
+  }
+
+  console.log('\nAt the line, in the provider: one hand-over per lap, matched to its trace');
+  {
+    // LmuRestProvider.emitLapAtLine without a sim: only the fields it reads.
+    const { LmuRestProvider } = require('../dist/telemetry/lmuRestProvider.js');
+    const p = Object.create(LmuRestProvider.prototype);
+    const heard = [];
+    p.setLapCompleteListener((lap) => heard.push(lap));
+    const at = '2026-11-03T12:00:00.000Z';
+    const atMs = Date.parse(at);
+    let held = { id: 'L1', at, lapMs: 80123, dirty: [] };
+    p.lapRecorder = { pending: () => (held ? { ...held, dirty: [...held.dirty] } : null) };
+    p.lapAnnounced = '';
+    p.pendingTraces = [
+      { trace: { lapSec: 95.0 }, wallMs: atMs - 95000 }, // the lap before
+      { trace: { lapSec: 80.12 }, wallMs: atMs + 40 },
+    ];
+    p.emitLapAtLine(atMs + 100);
+    check('a held lap with its trace is handed over at once', heard.length === 1 && heard[0].record.id === 'L1' && heard[0].trace.lapSec === 80.12);
+    p.emitLapAtLine(atMs + 200);
+    check('…once: the next frames hand nothing more', heard.length === 1);
+    held = { id: 'L2', at: new Date(atMs + 80000).toISOString(), lapMs: 80000, dirty: [] };
+    p.emitLapAtLine(atMs + 81000);
+    check('a lap whose trace is not here yet waits (no hand-over)', heard.length === 1);
+    p.pendingTraces.push({ trace: { lapSec: 80.0 }, wallMs: atMs + 80030 });
+    p.emitLapAtLine(atMs + 81100);
+    check('…and goes once the trace lands', heard.length === 2 && heard[1].record.id === 'L2');
+    held = { id: 'L3', at: new Date(atMs + 160000).toISOString(), lapMs: 80000, dirty: [] };
+    p.emitLapAtLine(atMs + 166000);
+    check('no trace within 5 s: never handed over (the lap log takes it)', heard.length === 2 && p.lapAnnounced === 'L3');
+    p.setLapCompleteListener(() => {
+      throw new Error('boom');
+    });
+    held = { id: 'L4', at: new Date(atMs + 240000).toISOString(), lapMs: 80000, dirty: [] };
+    p.pendingTraces.push({ trace: { lapSec: 80.0 }, wallMs: atMs + 240010 });
+    let threw = false;
+    try {
+      p.emitLapAtLine(atMs + 240100);
+    } catch {
+      threw = true;
+    }
+    check('a listener that throws never takes the frame down', !threw);
+    const { LapRecorder } = require('../dist/telemetry/lapLog.js');
+    check('LapRecorder.pending: null with nothing held', new LapRecorder().pending() === null);
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
