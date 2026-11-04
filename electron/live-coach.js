@@ -1045,7 +1045,13 @@ function createLiveCoach(deps) {
     snapshot() {
       if (!s) return null;
       const snap = snapshotOf(s);
-      snap.runDebrief = runDebriefOf(s);
+      // `debrief` is the contract's name (LiveCoachSnapshot, read by
+      // liveCoachVoice); `runDebrief` stays as the service's own alias. Asking
+      // for a debrief does not start a new run: the in-lap debrief is the
+      // run boundary, so a mid-run "how am I doing" never cuts it short.
+      const d = runDebriefOf(s);
+      snap.debrief = d;
+      snap.runDebrief = d;
       return snap;
     },
 
