@@ -38,6 +38,8 @@
   const paceReminder = $('#eng-pace-reminder');
   const straights = $('#eng-straights');
   const liveCoachToggle = $('#eng-live-coach'); // beta; control-panel.js shows its field
+  const liveCoachApproach = $('#eng-live-coach-approach'); // beta, as above
+  const liveCoachCorners = $('#eng-live-coach-corners'); // beta, as above
   const toneSelect = $('#eng-tone'); // not `tone`: render() has its own
   const toneHint = $('#eng-tone-hint');
   const volume = $('#eng-volume');
@@ -498,6 +500,15 @@
     renderReadoutsHint();
     if (straights && typeof s.onlyStraights === 'boolean') straights.checked = s.onlyStraights;
     if (liveCoachToggle && typeof s.liveCoach === 'boolean') liveCoachToggle.checked = s.liveCoach;
+    // Coach v2: its two settings, greyed out while the coach itself is off.
+    if (liveCoachApproach && typeof s.liveCoachApproach === 'boolean') liveCoachApproach.checked = s.liveCoachApproach;
+    if (liveCoachCorners && typeof s.liveCoachCorners === 'number' && liveCoachCorners.value !== String(s.liveCoachCorners)) {
+      liveCoachCorners.value = String(s.liveCoachCorners);
+    }
+    if (typeof s.liveCoach === 'boolean') {
+      if (liveCoachApproach) liveCoachApproach.disabled = !s.liveCoach;
+      if (liveCoachCorners) liveCoachCorners.disabled = !s.liveCoach;
+    }
     if (toneSelect && s.radioTone && toneSelect.value !== s.radioTone) toneSelect.value = s.radioTone;
     renderToneHint();
     if (
@@ -748,6 +759,16 @@
   if (liveCoachToggle) {
     liveCoachToggle.addEventListener('change', () => {
       void api.updateSettings({ engineer: { liveCoach: liveCoachToggle.checked } });
+    });
+  }
+  if (liveCoachApproach) {
+    liveCoachApproach.addEventListener('change', () => {
+      void api.updateSettings({ engineer: { liveCoachApproach: liveCoachApproach.checked } });
+    });
+  }
+  if (liveCoachCorners) {
+    liveCoachCorners.addEventListener('change', () => {
+      void api.updateSettings({ engineer: { liveCoachCorners: parseInt(liveCoachCorners.value, 10) } });
     });
   }
   if (toneSelect) {

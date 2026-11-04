@@ -42,7 +42,13 @@ const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const stt = require('./engineerStt');
-const { normalizePracticePaceReminderLaps } = require('./engineer-settings');
+const { normalizePracticePaceReminderLaps, LIVE_COACH_CORNERS } = require('./engineer-settings');
+
+/** The live coach's "Corners to work on" (1–3, default 3), as sanitizeEngineer reads it. */
+function liveCoachCornersOf(eng) {
+  const n = Number(eng && eng.liveCoachCorners);
+  return LIVE_COACH_CORNERS.includes(n) ? n : 3;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  The grammar — one table for recognizer, panel help, and the spike          */
@@ -507,6 +513,10 @@ const TRIGGER_TIERS = {
   coachProgress: 'essential',
   coachConsistency: 'essential',
   coachSummary: 'essential',
+  // Coach v2 (2026-11-04): approach cues, the lap-end line, the run debrief.
+  coachApproach: 'essential',
+  coachLapDebrief: 'essential',
+  coachRunDebrief: 'essential',
 };
 
 /**
@@ -1567,6 +1577,9 @@ class EngineerService {
       onlyStraights: this.onlyStraights(),
       // The live practice coach's switch (beta; the panel hides it off beta).
       liveCoach: !(settings.engineer && settings.engineer.liveCoach === false),
+      // Coach v2: approach cues on/off and how many corners (1–3), for the same panel.
+      liveCoachApproach: !(settings.engineer && settings.engineer.liveCoachApproach === false),
+      liveCoachCorners: liveCoachCornersOf(settings.engineer),
       radioTone: this.radioTone(),
       radioQuiet: this.radioQuiet,
       volume: this.volumePct(),

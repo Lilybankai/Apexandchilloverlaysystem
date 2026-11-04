@@ -145,6 +145,11 @@ const PANEL_CONTRACT = {
   // unwired one would look right and never let a driver turn it off.
   'eng-live-coach': 'input:checkbox',
   'eng-live-coach-field': 'label',
+  // Coach v2 (2026-11-04, beta): cues before corners, corners to work on.
+  'eng-live-coach-approach': 'input:checkbox',
+  'eng-live-coach-approach-field': 'label',
+  'eng-live-coach-corners': 'select',
+  'eng-live-coach-corners-field': 'label',
   // Mature radio (2026-10-08): off by default, so an unwired picker would
   // look fine — and quietly leave a driver who chose Savage on clean.
   'eng-tone': 'select',
