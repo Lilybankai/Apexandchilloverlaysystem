@@ -16,6 +16,17 @@
  *   §8 DOM written only on change;
  *   §9 the hosts and the Race-mode gate (trainingGate.js coachSessionOfFrame).
  *
+ * Coach v2 (2026-11-04), the work list (`coach.work`, `coach.improved`):
+ *   §10 the big line is the work corner the car is heading for — round the
+ *       line, held through the exit, the jitter rule, corners close together,
+ *       all three behind, no position, the pit, the ghost's position;
+ *   §11 the other corners as chips, in the order they come up, with status;
+ *   §12 one corner, an empty list, and the v1 fallback (no `work`);
+ *   §13 the ✓ row from `improved`: biggest first, at most three, junk dropped;
+ *   §14 rev flashes once with a work list; the big line moving does not;
+ *   §15 the map marks every work corner, the big one brightest;
+ *   §16 written only on change, and the CSS budget (compact, no blur).
+ *
  * Run: npm run test:trainingfocus
  */
 
@@ -151,6 +162,28 @@ function coachWith(over = {}, focusOver = {}) {
     refKind: 'sessionBest',
     rev: 1,
   }, over);
+}
+
+/** Work corners on a 4000 m lap (lead at 250 km/h: 208 m = 0.052 of a lap). */
+const W = {
+  C2: { cornerId: 'C2', cornerNo: 2, entryD: 0.1, apexD: 0.115, exitD: 0.13, cueD: 0.095, lossSec: 0.071, short: 'Throttle 15 m sooner', status: 'improving', rank: 3, gainSec: 0.04 },
+  C4: { cornerId: 'C4', cornerNo: 4, entryD: 0.3, apexD: 0.315, exitD: 0.33, cueD: 0.29, lossSec: 0.152, short: 'Brake 10 m later', status: 'new', rank: 1, gainSec: 0 },
+  C5: { cornerId: 'C5', cornerNo: 5, entryD: 0.335, apexD: 0.34, exitD: 0.35, cueD: 0.333, lossSec: 0.09, short: '+4 km/h on exit', status: 'holding', rank: 2, gainSec: 0 },
+  C9: { cornerId: 'C9', cornerNo: 9, entryD: 0.7, apexD: 0.71, exitD: 0.72, cueD: 0.695, lossSec: 0.118, short: '+4 km/h mid-corner', status: 'holding', rank: 2, gainSec: 0.01 },
+  C10: { cornerId: 'C10', cornerNo: 10, entryD: 0.97, apexD: 0.99, exitD: 0.02, cueD: 0.965, lossSec: 0.1, short: 'Brake 5 m later', status: 'new', rank: 2, gainSec: 0 },
+};
+
+/** A v2 LiveCoachOverlay: `work` in the given (costliest-first) order, focus === work[0]. */
+function coachV2(ids = ['C4', 'C9', 'C2'], over = {}) {
+  const work = ids.map((id) => ({ ...W[id] }));
+  const w0 = work[0];
+  const focus = w0 ? { cornerId: w0.cornerId, cornerNo: w0.cornerNo, entryD: w0.entryD, apexD: w0.apexD, exitD: w0.exitD, lossSec: w0.lossSec, short: w0.short, status: w0.status } : null;
+  return Object.assign({ focus, work, validLaps: 6, minLaps: 2, lastLapSec: 209.41, lastDeltaSec: 0.62, refKind: 'sessionBest', rev: 1 }, over);
+}
+
+/** The chips, as "C9 · 0.12|holding". */
+function chipsOf(p) {
+  return p.q('tfoc__chips').children.map((c) => `${c.textContent}|${c.getAttribute('data-st')}`);
 }
 
 /** A frame: the coach, the car at lap fraction `d` (REST track map), 250 km/h. */
@@ -426,6 +459,201 @@ console.log('\n7) The map');
     const gone = evaluate({ ...on, session: coachSessionOfFrame(bare) }, 1000 + HOLD_MS + 1, a.lastEligibleAt);
     check('the coach stops: held for the hold, then closed', held.active && !gone.active);
     check('…and never opens off beta or with the card off', !evaluate({ ...on, beta: false, session: coachSessionOfFrame(coached) }, 1000, 0).active && !evaluate({ ...on, mode: false, session: coachSessionOfFrame(coached) }, 1000, 0).active);
+  }
+
+  console.log('\n10) v2: the big line is the work corner the car is heading for');
+  {
+    const p = page();
+    const big = () => p.text('tfoc__corner');
+    const light = () => p.section.getAttribute('data-approach');
+    const c = coachV2();
+    p.update(frame(c, 0.05));
+    check('before C2 (the cheapest, but the first ahead): C2 is the big line, NEXT', big() === 'C2' && light() === 'next', `${big()} ${light()}`);
+    check('…with its own cue and cost', p.text('tfoc__short') === 'Throttle 15 m sooner' && p.text('tfoc__cost') === '≈0.07 s a lap', `${p.text('tfoc__short')} / ${p.text('tfoc__cost')}`);
+    check('…and its own status chip', p.q('tfoc__chip').textContent === 'BETTER' && p.card.getAttribute('data-status') === 'improving');
+    p.advance(1000);
+    p.update(frame(c, 0.2));
+    check('past C2, 400 m before C4: C4, not lit', big() === 'C4' && light() === 'off', `${big()} ${light()}`);
+    check('…the status chip follows it', p.q('tfoc__chip').textContent === 'NEW');
+    p.update(frame(c, 0.315));
+    check('in C4: NOW', big() === 'C4' && light() === 'now');
+    p.advance(100);
+    p.update(frame(c, 0.335));
+    check('just out of C4: C4 stays the big line, lit, for the hold', big() === 'C4' && light() === 'now', `${big()} ${light()}`);
+    p.advance(500);
+    p.update(frame(c, 0.34));
+    check('after the hold: on to C9, dark', big() === 'C9' && light() === 'off', `${big()} ${light()}`);
+    p.update(frame(c, 0.3295));
+    check('a step back to 2 m before C4\'s exit (jitter): still C9', big() === 'C9' && light() === 'off', `${big()} ${light()}`);
+    p.update(frame(c, 0.5));
+    check('mid-lap: C9', big() === 'C9');
+    p.update(frame(c, 0.75));
+    check('all three behind the car: C2, the first after the line', big() === 'C2' && light() === 'off', `${big()} ${light()}`);
+    p.update(frame(c, 0.06));
+    check('…and round the line it lights for C2', big() === 'C2' && light() === 'next');
+
+    const q = page();
+    const cl = coachV2(['C4', 'C5']);
+    q.update(frame(cl, 0.315));
+    check('two corners close together: in C4, C4', q.text('tfoc__corner') === 'C4' && q.section.getAttribute('data-approach') === 'now');
+    q.update(frame(cl, 0.332));
+    check('…out of C4 with C5 20 m on: straight to C5, NEXT (no hold on C4)', q.text('tfoc__corner') === 'C5' && q.section.getAttribute('data-approach') === 'next', `${q.text('tfoc__corner')} ${q.section.getAttribute('data-approach')}`);
+
+    const r = page();
+    const wrap = coachV2(['C4', 'C10']);
+    r.update(frame(wrap, 0.95));
+    check('a work corner across the line: 80 m before, C10 NEXT', r.text('tfoc__corner') === 'C10' && r.section.getAttribute('data-approach') === 'next');
+    r.update(frame(wrap, 0.005));
+    check('…after the line, still C10, NOW', r.text('tfoc__corner') === 'C10' && r.section.getAttribute('data-approach') === 'now');
+    r.advance(1000);
+    r.update(frame(wrap, 0.1));
+    check('…then on to C4', r.text('tfoc__corner') === 'C4' && r.section.getAttribute('data-approach') === 'off');
+
+    const s = page();
+    s.update(frame(coachV2(['C9', 'C4', 'C2'])));
+    check('no position: the costliest (work[0]), dark, no dot', s.text('tfoc__corner') === 'C9' && s.section.getAttribute('data-approach') === 'off' && s.q('tfoc__dot').getAttribute('data-on') === 'false');
+    s.update(frame(coachV2(['C9', 'C4', 'C2']), 0.29, { inPit: true }));
+    check('in the pit lane by C4: the costliest, dark', s.text('tfoc__corner') === 'C9' && s.section.getAttribute('data-approach') === 'off');
+    s.update(frame(coachV2(['C9', 'C4', 'C2']), 0.1, { ghost: { active: true, atD: 0.69 } }));
+    check("the ghost's filtered position picks the corner too", s.text('tfoc__corner') === 'C9' && s.section.getAttribute('data-approach') === 'next');
+    const noSpan = coachV2(['C9', 'C4']);
+    noSpan.work.forEach((w) => { delete w.entryD; delete w.exitD; });
+    s.advance(1000);
+    s.update(frame(noSpan, 0.69));
+    check('work corners with no place on the lap: the costliest, never lit', s.text('tfoc__corner') === 'C9' && s.section.getAttribute('data-approach') === 'off');
+    s.update(frame(coachV2(['C9', 'C2']), 0.05));
+    check('a cue over 18 characters is set a size down', s.text('tfoc__short') === 'Throttle 15 m sooner' && s.q('tfoc__short').getAttribute('data-long') === 'true');
+    s.update(frame(coachV2(['C4']), 0.05));
+    check('…a short one is not', s.q('tfoc__short').getAttribute('data-long') === 'false');
+  }
+
+  console.log('\n11) v2: the other corners as chips');
+  {
+    const p = page();
+    p.update(frame(coachV2(), 0.2));
+    check('heading for C4: the others in the order they come up, with status', JSON.stringify(chipsOf(p)) === JSON.stringify(['C9 · 0.12|holding', 'C2 · 0.07|improving']), chipsOf(p).join(', '));
+    p.advance(1000);
+    p.update(frame(coachV2(), 0.5));
+    check('heading for C9: C2 then C4 (round the line)', JSON.stringify(chipsOf(p)) === JSON.stringify(['C2 · 0.07|improving', 'C4 · 0.15|new']), chipsOf(p).join(', '));
+    check('three corners: data-work 3', p.card.getAttribute('data-work') === '3');
+    const c = coachV2();
+    c.work[1].status = 'fixed';
+    c.work[2].status = 'mystery';
+    p.update(frame(c, 0.2));
+    check('a sorted corner\'s chip is "C9 ✓", an unknown status reads as holding', JSON.stringify(chipsOf(p)) === JSON.stringify(['C9 ✓|fixed', 'C2 · 0.07|holding']), chipsOf(p).join(', '));
+    const x = coachV2(['C4', 'C9']);
+    x.work[1].cornerId = 'C9<b>';
+    p.update(frame(x, 0.2));
+    check('a corner id is text, never markup', p.q('tfoc__chips').children.length === 1 && /C9&lt;b&gt;/.test(p.q('tfoc__chips').children[0].textContent), p.q('tfoc__chips').children[0].textContent);
+    const css = read('overlay', 'css', 'training-focus.css');
+    check('the CSS: chips hidden when empty and before a focus; a status dot per chip',
+      /\.tfoc__chips:empty,\s*\.tfoc:not\(\[data-mode="focus"\]\) \.tfoc__chips\s*\{\s*display:\s*none/.test(css) && /\.tfoc__wc\[data-st="new"\]::before/.test(css) && /\.tfoc__wc:is\(\[data-st="improving"\], \[data-st="fixed"\]\)::before/.test(css));
+  }
+
+  console.log('\n12) v2: one corner, an empty list, the v1 fallback');
+  {
+    const p = page();
+    p.update(frame(coachV2(['C9']), 0.2));
+    check('one corner: the big line, no chips', p.text('tfoc__corner') === 'C9' && p.q('tfoc__chips').children.length === 0 && p.card.getAttribute('data-work') === '1');
+    p.update(frame(coachV2(['C9']), 0.8));
+    check('…past it: still it (nothing else to head for)', p.text('tfoc__corner') === 'C9' && p.section.getAttribute('data-approach') === 'off');
+    p.update(frame(coachV2([], { focus: null }), 0.5));
+    check('an empty work list: clean laps, no chips', p.card.getAttribute('data-mode') === 'clean' && p.q('tfoc__chips').children.length === 0 && p.card.getAttribute('data-work') === '0');
+    p.update(frame(coachV2([], { focus: null, validLaps: 1 }), 0.5));
+    check('…before minLaps: learning', p.card.getAttribute('data-mode') === 'learning');
+    p.update(frame(coachV2([], { focus: { ...W.C4 } }), 0.5));
+    check('an empty work list with a focus: the focus (a v1 producer)', p.card.getAttribute('data-mode') === 'focus' && p.text('tfoc__corner') === 'C4');
+    const v1 = page();
+    v1.update(frame(coachWith(), 0.6));
+    check('no `work` at all (v1): the focus, wherever the car is, no chips, no ✓ row', v1.text('tfoc__corner') === 'C4' && v1.q('tfoc__chips').children.length === 0 && v1.text('tfoc__better') === '' && v1.card.getAttribute('data-work') === '1');
+    v1.update(frame(coachWith(), 0.26));
+    check('…lit as v1 lit it', v1.section.getAttribute('data-approach') === 'next');
+    v1.update(frame(coachWith({ work: null }), 0.26));
+    check('`work: null` reads as v1 too', v1.text('tfoc__corner') === 'C4' && v1.section.getAttribute('data-approach') === 'next');
+  }
+
+  console.log('\n13) v2: the ✓ row');
+  {
+    const p = page();
+    p.update(frame(coachV2(), 0.2));
+    check('no `improved`: no row', p.text('tfoc__better') === '');
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: [] }), 0.2));
+    check('an empty one: no row', p.text('tfoc__better') === '');
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: [{ cornerId: 'C7', cornerNo: 7, gainSec: 0.21 }] }), 0.2));
+    check('one: "✓ C7 −0.2"', p.text('tfoc__better') === '✓ C7 −0.2', p.text('tfoc__better'));
+    const four = [
+      { cornerId: 'C4', cornerNo: 4, gainSec: 0.21 },
+      { cornerId: 'C9', cornerNo: 9, gainSec: 0.08 },
+      { cornerId: 'C7', cornerNo: 7, gainSec: 0.12 },
+      { cornerId: 'C2', cornerNo: 2, gainSec: 0.05 },
+    ];
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: four }), 0.2));
+    check('four: the biggest three, biggest first, hundredths under a tenth', p.text('tfoc__better') === '✓ C4 −0.2 · C7 −0.1 · C9 −0.08', p.text('tfoc__better'));
+    const junk = [{ cornerId: 'C3', gainSec: -0.1 }, null, { cornerId: 'C5', gainSec: NaN }, { cornerNo: 6, gainSec: 0.3 }, { gainSec: 0.4 }, { cornerId: 'C8', gainSec: 0.001 }];
+    p.update(frame(coachV2(['C4'], { improved: junk }), 0.2));
+    check('junk dropped (lost time, NaN, no id, nothing won); an id from the number', p.text('tfoc__better') === '✓ C6 −0.3', p.text('tfoc__better'));
+    p.update(frame(coachV2([], { focus: null, improved: four.slice(0, 2) }), 0.2));
+    check('everything sorted, clean laps: the row still says what got better', p.card.getAttribute('data-mode') === 'clean' && p.text('tfoc__better') === '✓ C4 −0.2 · C9 −0.08', p.text('tfoc__better'));
+    const css = read('overlay', 'css', 'training-focus.css');
+    check('the CSS: the row hidden when empty and while learning', /\.tfoc__better:empty,\s*\.tfoc\[data-mode="learning"\] \.tfoc__better\s*\{\s*display:\s*none/.test(css));
+  }
+
+  console.log('\n14) v2: rev flashes once');
+  {
+    const p = page();
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { rev: 4 }), 0.05));
+    check('first sight with a work list: no flash', !p.section.hasAttribute('data-flash'));
+    p.advance(1000);
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { rev: 4 }), 0.2));
+    p.update(frame(coachV2(['C4', 'C9', 'C2'], { rev: 4 }), 0.5));
+    check('the big line moving round the lap: no flash', !p.section.hasAttribute('data-flash') && p.text('tfoc__corner') === 'C9');
+    p.update(frame(coachV2(['C9', 'C2'], { rev: 5 }), 0.5));
+    check('the list changes (rev 4 → 5): one flash', p.section.hasAttribute('data-flash'));
+    p.advance(1500);
+    p.update(frame(coachV2(['C9', 'C2'], { rev: 5 }), 0.5));
+    check('…and it ends, not restarted', !p.section.hasAttribute('data-flash'));
+  }
+
+  console.log('\n15) v2: the map marks every work corner');
+  {
+    const m = page({ fetch: () => Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(shape) }) });
+    const tm = { key: shape.key, revision: 3, ready: true };
+    m.update(frame(coachV2(), 0.2, { trackMap: tm }));
+    await new Promise((r) => setImmediate(r));
+    m.update(frame(coachV2(), 0.2, { trackMap: tm }));
+    const span = m.q('tfoc__span').getAttribute('d') || '';
+    const others = m.q('tfoc__others').getAttribute('d') || '';
+    check('the big corner (C4) is the bright span', span.split('L').length >= 15 && span.split('L').length <= 22, span.split('L').length);
+    check('the other two are marked, one stroke each', (others.match(/M/g) || []).length === 2, (others.match(/M/g) || []).length);
+    check('…and the bright one is not among them', !others.includes(span));
+    m.advance(1000);
+    m.update(frame(coachV2(), 0.5, { trackMap: tm }));
+    const span2 = m.q('tfoc__span').getAttribute('d') || '';
+    const others2 = m.q('tfoc__others').getAttribute('d') || '';
+    check('heading for C9: the bright span moves to C9, C4 joins the others', span2 !== span && others2.includes(span) && (others2.match(/M/g) || []).length === 2);
+    m.update(frame(coachV2(['C9']), 0.5, { trackMap: tm }));
+    check('one corner: nothing else marked', (m.q('tfoc__others').getAttribute('d') || '') === '');
+    m.update(frame(coachWith(), 0.5, { trackMap: tm }));
+    check('v1: nothing else marked', (m.q('tfoc__others').getAttribute('d') || '') === '');
+    const css = read('overlay', 'css', 'training-focus.css');
+    check('the CSS: others quieter than the bright span', /\.tfoc__others\s*\{[^}]*stroke:\s*rgba\(34, 211, 238, 0\.\d+\)/.test(css) && /\.tfoc__span\s*\{[^}]*stroke:\s*var\(--ac-cyan\)/.test(css));
+  }
+
+  console.log('\n16) v2: written only on change; compact');
+  {
+    const w = page();
+    w.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: [{ cornerId: 'C7', cornerNo: 7, gainSec: 0.2 }] }), 0.5));
+    const before = writes;
+    for (let i = 0; i < 10; i++) w.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: [{ cornerId: 'C7', cornerNo: 7, gainSec: 0.2 }] }), 0.5));
+    check('ten identical v2 frames: no DOM writes', writes === before, writes - before);
+    w.update(frame(coachV2(['C4', 'C9', 'C2'], { improved: [{ cornerId: 'C7', cornerNo: 7, gainSec: 0.2 }] }), 0.55));
+    check('the car moving on, same big corner, dark: no DOM writes', writes === before, writes - before);
+    const css = read('overlay', 'css', 'training-focus.css');
+    check('no backdrop-filter anywhere', !/backdrop-filter/.test(css));
+    check('the words keep ~225 px beside a 128 px map', /grid-template-columns:\s*minmax\(0, 1fr\) 128px/.test(css) && /\.tfoc__map\s*\{[^}]*width:\s*128px/.test(css));
+    check('ingame.js still places it 400 px wide', /trainingfocus: \{ x: [^}]*w: 400 \}/.test(read('overlay', 'js', 'ingame.js')));
+    // The rendered height (226 px with three corners and the ✓ row, 1920×1080)
+    // is measured by the offscreen harness, not here: the vm has no layout.
   }
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
