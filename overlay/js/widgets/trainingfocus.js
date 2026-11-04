@@ -1,21 +1,37 @@
 /**
- * trainingfocus.js — Focus: the one corner the live coach is working on.
+ * trainingfocus.js — Focus: the corners the live coach is working on.
  * -----------------------------------------------------------------------------
  * The in-game half of the live practice coach. After every timed lap of a
- * practice session the coach (electron/live-coach.js, liveCoach.ts) picks the
- * corner that has cost the most CONSISTENTLY over the last few laps and says
- * one line about it on the radio. This card shows the same thing, quietly, for
- * as long as it stays the focus:
+ * practice session the coach (electron/live-coach.js, liveCoach.ts) keeps a
+ * WORK LIST of up to three corners that have cost the most CONSISTENTLY over
+ * the last few laps, and cues each one on the radio as the car comes to it.
+ * This card shows the same thing, quietly:
  *
  *     FOCUS                                  [NEW]
- *     C4                                ╭──────╮
+ *     C4  NEXT                          ╭──────╮
  *     Brake 10 m later                  │ map  │
  *     ≈0.15 s a lap                     ╰──────╯
+ *     • C7 · 0.11   • C11 · 0.08
+ *     ✓ C2 −0.2 · C9 −0.1
  *     Last 3:29.41 · +0.62 vs best
  *
- * and lights up as the car comes to that corner — the card's edge glows and a
- * "NEXT" pill sits beside the corner id, then "NOW" through it — so the driver
- * who glances at it at 250 km/h reads two things: which corner, what to do.
+ * The big line is the work corner the car is HEADING FOR — the first one whose
+ * exit is still ahead of the car on this lap, round the line — so it changes
+ * as the lap goes: through C4's exit it moves on to C7, and so on. The other
+ * work corners sit under it as small chips in the order they come up, each
+ * with a dot for its status (new / working on it / getting better). The ✓ row
+ * is what got better this run (`coach.improved`, at most three, biggest gain
+ * first), and is not there until something has.
+ *
+ * The card lights up as the car comes to the big corner — the card's edge
+ * glows and a "NEXT" pill sits beside the corner id, then "NOW" through it —
+ * so the driver who glances at it at 250 km/h reads two things: which corner,
+ * what to do.
+ *
+ * ## v1 overlays
+ * Coach v1 published one `focus` and no `work`. Without `work` (or with an
+ * empty one) the card reads `[focus]` as a one-corner list, which renders
+ * exactly as v1 did: no chips, the focus as the big line wherever the car is.
  *
  * Corner ids are the Practice tab's ('C1'..'Cn', from the corner catalogue),
  * never the official turn names; they arrive ready-made as `focus.cornerId`.
@@ -28,15 +44,25 @@
  *   - the player's `trackMap.cars[].lapFraction` (REST, ~7 Hz), so the card
  *     works in a session with nothing chased at all.
  * The light is a TIME lead like the Brake Cue's: ~3 s of the car's own speed
- * before `focus.entryD` (never under {@link LEAD_MIN_M}), held through
- * `focus.exitD`. It needs the lap length, from the track map's shape, the
- * ghost lap or `session.trackLengthM`, whichever is known first.
+ * before the big corner's `entryD` (never under {@link LEAD_MIN_M}), held
+ * through its `exitD` and {@link HOLD_MS} past it — the big line stays on that
+ * corner for the hold too, so "C4 NOW" never sits over the next corner's
+ * words. It needs the lap length, from the track map's shape, the ghost lap or
+ * `session.trackLengthM`, whichever is known first. With no position at all
+ * (pit lane, a frame without the player's car) the big line is the costliest
+ * corner, `work[0]`, and nothing lights.
+ *
+ * A step BACKWARDS in the position just after an exit (REST lap distance
+ * jitters, ~7 Hz) does not take the card back to the corner just left: a
+ * corner passed by less than {@link BACK_TOL_M} is skipped while the car is a
+ * hair before its exit again.
  *
  * ## The map
- * The circuit's outline, faint, with the focus corner's `entryD..exitD` span
- * bright and the car as a dot. The shape is `/trackmap.json` (the learned
- * circuit, one point per bin of lap distance from the line, so a lap fraction
- * IS an index) fetched once per track revision — or, before a map has been
+ * The circuit's outline, faint, with every work corner's `entryD..exitD` span
+ * marked — the big corner brightest — and the car as a dot. The shape is
+ * `/trackmap.json` (the learned circuit, one point per bin of lap distance
+ * from the line, so a lap fraction IS an index) fetched once per track
+ * revision — or, before a map has been
  * learned, the ghost lap's own driven line from the shared `/ghost.json`
  * (training-ghost.js), whose points carry their lap fraction. No shape, no
  * map: the card is whole without it.
@@ -44,9 +70,9 @@
  * ## States
  *   - no `player.coach`      → hidden (edit mode: a dimmed sample, to place it)
  *   - validLaps < minLaps    → "Learning your laps… 1 / 2", small and calm
- *   - no focus               → "Clean laps — nothing big to fix"
- *   - a focus                → the card, its status chip, the light
- * A new `rev` (a new focus) flashes the card once.
+ *   - nothing on the list    → "Clean laps — nothing big to fix"
+ *   - a work list / a focus  → the card, its status chip, the light
+ * A new `rev` (the list changed) flashes the card once.
  *
  * DOM only, written only on change. Nothing is fetched, timed or listened to
  * before init: widget.html loads every training script whichever widget its
@@ -73,10 +99,25 @@
   var MPAD = 6;
   /** Points the faint outline is drawn with; the bright span keeps them all. */
   var OUTLINE_PTS = 240;
+  /**
+   * Metres: a corner the car left by less than this is not taken back when the
+   * position steps backwards to just before its exit (jitter, not reversing).
+   */
+  var BACK_TOL_M = 30;
+  /** The ✓ row names at most this many corners. */
+  var MAX_IMPROVED = 3;
+  /** A cue longer than this many characters is set a size down (training-focus.css `data-long`). */
+  var LONG_SHORT = 18;
 
-  /** The sample shown in edit mode while there is no coach to show. */
+  /** The sample shown in edit mode while there is no coach to show: the full v2 card, to size it. */
   var SAMPLE = {
     focus: { cornerId: "C4", cornerNo: 4, entryD: 0.28, apexD: 0.3, exitD: 0.32, lossSec: 0.15, short: "Brake 10 m later", status: "new" },
+    work: [
+      { cornerId: "C4", cornerNo: 4, entryD: 0.28, apexD: 0.3, exitD: 0.32, lossSec: 0.15, short: "Brake 10 m later", status: "new", rank: 1 },
+      { cornerId: "C7", cornerNo: 7, entryD: 0.55, apexD: 0.57, exitD: 0.59, lossSec: 0.11, short: "Carry 4 km/h more", status: "holding", rank: 2 },
+      { cornerId: "C11", cornerNo: 11, entryD: 0.84, apexD: 0.86, exitD: 0.88, lossSec: 0.08, short: "Throttle 15 m sooner", status: "improving", rank: 3 },
+    ],
+    improved: [{ cornerId: "C2", cornerNo: 2, gainSec: 0.21 }],
     validLaps: 4,
     minLaps: 2,
     lastLapSec: 102.18,
@@ -109,6 +150,8 @@
   var ghostLine = null;
   /** The span drawn bright, so it is only rebuilt when the focus moves. */
   var spanKey = "";
+  /** The other work corners' spans (one path), likewise. */
+  var othersKey = "";
   /** What the map is drawn from right now: `shape`, or the sample's made-up circuit in edit mode. */
   var drawn = null;
   var sampleShape = null;
@@ -117,6 +160,12 @@
   var flashTimer = 0;
   var flashFlip = false;
   var litUntil = 0;
+  /** The corner the light is on (held for HOLD_MS past its exit), by id. */
+  var litId = null;
+  /** The corner the car last left, and that corner's exit, for the jitter rule. */
+  var passed = null;
+  /** The big corner of the last frame, by id. */
+  var bigId = null;
 
   /* -------------------------------- writes ------------------------------- */
 
@@ -163,6 +212,129 @@
   function costWords(sec) {
     if (typeof sec !== "number" || !isFinite(sec) || sec <= 0) return "";
     return "≈" + sec.toFixed(2) + " s a lap";
+  }
+
+  function idOf(f) {
+    return f.cornerId || "C" + f.cornerNo;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /** A gain on the ✓ row: tenths once it is a tenth, hundredths below ("0.2", "0.05"). */
+  function gainShort(sec) {
+    return sec >= 0.095 ? sec.toFixed(1) : sec.toFixed(2);
+  }
+
+  /**
+   * "✓ C4 −0.2 · C9 −0.1": `coach.improved`, biggest gain first, at most
+   * {@link MAX_IMPROVED}; "" when there is nothing (the row is then not there).
+   */
+  function betterWords(list) {
+    if (!Array.isArray(list)) return "";
+    var xs = [];
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (!x || typeof x.gainSec !== "number" || !isFinite(x.gainSec) || x.gainSec < 0.005) continue;
+      if (!x.cornerId && !(x.cornerNo > 0)) continue;
+      xs.push({ x: x, i: i });
+    }
+    if (!xs.length) return "";
+    // Stable: equal gains keep the coach's order.
+    xs.sort(function (a, b) { return b.x.gainSec - a.x.gainSec || a.i - b.i; });
+    var out = [];
+    for (var k = 0; k < xs.length && k < MAX_IMPROVED; k++) out.push(idOf(xs[k].x) + " −" + gainShort(xs[k].x.gainSec));
+    return "✓ " + out.join(" · ");
+  }
+
+  /* ----------------------------- the work list --------------------------- */
+
+  /**
+   * The corners to show: v2's `work` when it has any, else v1's one `focus`
+   * as a list of one (an empty `work` with a focus is read the same way: the
+   * engine keeps focus === work[0], so that only happens to a v1 producer).
+   */
+  function workOf(c) {
+    var out = [];
+    if (Array.isArray(c.work)) {
+      for (var i = 0; i < c.work.length; i++) {
+        var f = c.work[i];
+        if (f && typeof f === "object") out.push(f);
+      }
+    }
+    if (!out.length && c.focus && typeof c.focus === "object") out.push(c.focus);
+    return out;
+  }
+
+  function hasSpan(f) {
+    return !!f && typeof f.entryD === "number" && isFinite(f.entryD) && typeof f.exitD === "number" && isFinite(f.exitD);
+  }
+
+  /** Lap fraction from `a` forward to `b`, round the line: 0 ≤ x < 1. */
+  function fwd(a, b) {
+    var x = b - a;
+    return x - Math.floor(x);
+  }
+
+  function byId(work, id) {
+    for (var i = 0; i < work.length; i++) if (idOf(work[i]) === id) return work[i];
+    return null;
+  }
+
+  /**
+   * The work corner the car is heading for: the one whose EXIT comes first
+   * going forward from `d`, round the line — so the corner the car is in stays
+   * the big one until it leaves it, and three corners all behind the car give
+   * the first after the line. No position: the costliest, work[0].
+   */
+  function nextOf(work, d, L) {
+    if (!work.length) return null;
+    if (!isFinite(d)) return work[0];
+    var tol = L > 0 ? BACK_TOL_M / L : 0.005;
+    if (passed) {
+      var since = fwd(passed.exitD, d);
+      // Clearly beyond the corner left (and not a whole lap round): forget it.
+      if (since > tol && since < 0.5) passed = null;
+    }
+    var best = null, bestDist = Infinity, any = null, anyDist = Infinity;
+    for (var i = 0; i < work.length; i++) {
+      var f = work[i];
+      if (!hasSpan(f)) continue;
+      var dist = fwd(d, f.exitD);
+      if (dist < anyDist) { any = f; anyDist = dist; }
+      // A hair before the exit of the corner just left: jitter, not the car.
+      if (passed && idOf(f) === passed.id && dist < tol) continue;
+      if (dist < bestDist) { best = f; bestDist = dist; }
+    }
+    return best || any || work[0];
+  }
+
+  /** The work corners other than `big`, in the order they come up after it. */
+  function othersOf(work, big) {
+    var out = [];
+    for (var i = 0; i < work.length; i++) if (work[i] !== big) out.push(work[i]);
+    if (!hasSpan(big)) return out;
+    var from = big.exitD;
+    out.sort(function (a, b) {
+      var da = hasSpan(a) ? fwd(from, a.exitD) : 2;
+      var db = hasSpan(b) ? fwd(from, b.exitD) : 2;
+      return da - db;
+    });
+    return out;
+  }
+
+  /** The chips' markup: "C7 · 0.11" with a status dot; a sorted one is "C7 ✓". */
+  function chipsHtml(list) {
+    var s = "";
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      var st = CHIP[f.status] ? f.status : "holding";
+      var val = st === "fixed" ? " ✓" : typeof f.lossSec === "number" && isFinite(f.lossSec) && f.lossSec > 0 ? " · " + f.lossSec.toFixed(2) : "";
+      s += '<span class="tfoc__wc" data-st="' + st + '"><span class="tfoc__wcId">' + esc(idOf(f)) + "</span>" +
+        (val ? '<span class="tfoc__wcVal">' + val + "</span>" : "") + "</span>";
+    }
+    return s;
   }
 
   /* -------------------------------- shape -------------------------------- */
@@ -308,7 +480,9 @@
   function drawOutline() {
     if (!ui.outline) return;
     spanKey = "";
+    othersKey = "";
     ui.span.setAttribute("d", "");
+    ui.others.setAttribute("d", "");
     if (!drawn) {
       setAttr("map", el, "data-map", "none");
       ui.outline.setAttribute("d", "");
@@ -321,11 +495,9 @@
     setAttr("map", el, "data-map", "on");
   }
 
-  function drawSpan(f) {
-    if (!drawn || !f) return;
-    var key = f.entryD + ":" + f.exitD;
-    if (key === spanKey) return;
-    spanKey = key;
+  /** One corner's `entryD..exitD` as a path on the drawn shape ("" off the map). */
+  function spanPath(f) {
+    if (!drawn || !hasSpan(f)) return "";
     var run = [];
     var pts = drawn.pts;
     // Start at the first point after the entry and walk forward round the lap,
@@ -344,7 +516,25 @@
     }
     // A span shorter than the bin spacing still gets a mark.
     if (run.length === 1) run.push([run[0][0] + 0.5, run[0][1] + 0.5]);
-    ui.span.setAttribute("d", pathOf(run, false));
+    return pathOf(run, false);
+  }
+
+  /** The big corner bright, the other work corners dimmer (one path of several strokes). */
+  function drawSpans(big, others) {
+    if (!drawn) return;
+    var key = hasSpan(big) ? big.entryD + ":" + big.exitD : "";
+    if (key !== spanKey) {
+      spanKey = key;
+      ui.span.setAttribute("d", big ? spanPath(big) : "");
+    }
+    var ok = "";
+    for (var i = 0; i < others.length; i++) if (hasSpan(others[i])) ok += others[i].entryD + ":" + others[i].exitD + ";";
+    if (ok !== othersKey) {
+      othersKey = ok;
+      var d = "";
+      for (var j = 0; j < others.length; j++) d += spanPath(others[j]);
+      ui.others.setAttribute("d", d);
+    }
   }
 
   /** The point on the outline at lap fraction `d`, or null. */
@@ -429,14 +619,15 @@
     }, FLASH_MS);
   }
 
-  function render(c, sample) {
-    var f = c.focus || null;
+  /** The card for work list `work`, with `f` (one of them, or null) as the big line. */
+  function render(c, work, f, sample) {
     var mode;
     if (f) mode = "focus";
     else if ((c.validLaps || 0) < (c.minLaps || 0)) mode = "learning";
     else mode = "clean";
     setAttr("mode", el, "data-mode", mode);
     setAttr("sample", el, "data-sample", sample ? "true" : "false");
+    setAttr("count", el, "data-work", String(f ? work.length : 0));
 
     if (mode === "learning") {
       set("note", ui.note, "Learning your laps… " + (c.validLaps || 0) + " / " + c.minLaps);
@@ -449,17 +640,29 @@
     if (f) {
       set("corner", ui.corner, f.cornerId || "C" + f.cornerNo);
       set("short", ui.short, f.short || "");
+      setAttr("shortLong", ui.short, "data-long", (f.short || "").length > LONG_SHORT ? "true" : "false");
       // A sorted corner's cost is history: say what happens next instead.
       set("cost", ui.cost, f.status === "fixed" ? "On to the next corner" : costWords(f.lossSec));
       var chip = CHIP[f.status] || CHIP.holding;
       set("chip", ui.chip, chip.text);
       setAttr("chipTone", ui.chip, "data-tone", chip.tone);
       setAttr("status", el, "data-status", f.status || "holding");
-      drawSpan(f);
+      var others = othersOf(work, f);
+      drawSpans(f, others);
+      chips(chipsHtml(others));
     } else {
       setAttr("status", el, "data-status", "none");
+      drawSpans(null, []);
+      chips("");
     }
+    set("better", ui.better, betterWords(c.improved));
     set("foot", ui.foot, footWords(c));
+  }
+
+  function chips(html) {
+    if (cur.chips === html) return;
+    cur.chips = html;
+    ui.chips.innerHTML = html;
   }
 
   function setApproach(state) {
@@ -479,32 +682,55 @@
       // Hidden on track; edit mode shows the sample (training-focus.css).
       setAttr("coach", root, "data-coach", "none");
       useShape(shape || sampleCircuit());
-      render(SAMPLE, true);
+      render(SAMPLE, SAMPLE.work, SAMPLE.work[0], true);
       setApproach("off");
       placeDot(SAMPLE.focus.entryD - 0.05);
       seenRev = null;
+      litUntil = 0;
+      litId = null;
+      passed = null;
+      bigId = null;
       return;
     }
     setAttr("coach", root, "data-coach", "on");
     useShape(shape);
-    render(coach, false);
+
+    var work = workOf(coach);
+    var d = carD(frame);
+    var L = lapLengthM(frame);
+    var now = Date.now();
+    var target = nextOf(work, d, L);
+    var a = approachOf(target, d, L, player.speedKph);
+    var big = target;
+    if (a !== "off") {
+      litUntil = now + HOLD_MS;
+      litId = idOf(target);
+    } else {
+      // Just out of the lit corner: it stays the big line, lit, for the hold
+      // (position jitter). A corner that left the list goes dark now.
+      var held = litId !== null && now < litUntil ? byId(work, litId) : null;
+      if (held) {
+        big = held;
+        a = null;
+      } else {
+        litUntil = 0;
+        litId = null;
+      }
+    }
+    // The corner the car has just moved on from, for the jitter rule.
+    if (bigId !== null && big && idOf(big) !== bigId) {
+      var left = byId(work, bigId);
+      passed = left && hasSpan(left) && isFinite(d) && fwd(left.exitD, d) < 0.5 ? { id: bigId, exitD: left.exitD } : null;
+    }
+    bigId = big ? idOf(big) : null;
+
+    render(coach, work, big, false);
 
     if (seenRev !== null && coach.rev !== seenRev) flash();
     seenRev = coach.rev;
 
-    var f = coach.focus;
-    var d = carD(frame);
     placeDot(d);
-    var now = Date.now();
-    var a = approachOf(f, d, lapLengthM(frame), player.speedKph);
-    if (a !== "off") {
-      litUntil = now + HOLD_MS;
-      setApproach(a);
-    } else if (!f || now >= litUntil) {
-      // The hold is for position jitter; a focus that went away goes dark now.
-      litUntil = 0;
-      setApproach("off");
-    }
+    if (a !== null) setApproach(a);
   }
 
   function init(section) {
@@ -521,10 +747,12 @@
       '<div class="tfoc__cost tw-num"></div>' +
       "</div>" +
       '<svg class="tfoc__map" viewBox="0 0 ' + MW + " " + MH + '" aria-hidden="true">' +
-      '<path class="tfoc__outline" d=""/><path class="tfoc__span" d=""/>' +
+      '<path class="tfoc__outline" d=""/><path class="tfoc__others" d=""/><path class="tfoc__span" d=""/>' +
       '<circle class="tfoc__dot" r="3.4" cx="0" cy="0" data-on="false"/></svg>' +
       "</div>" +
+      '<div class="tfoc__chips"></div>' +
       '<p class="tfoc__note"></p>' +
+      '<div class="tfoc__better tw-num"></div>' +
       '<div class="tfoc__foot tw-num"></div>' +
       "</div>";
     el = mount.firstChild;
@@ -536,8 +764,11 @@
       cost: el.querySelector(".tfoc__cost"),
       outline: el.querySelector(".tfoc__outline"),
       span: el.querySelector(".tfoc__span"),
+      others: el.querySelector(".tfoc__others"),
       dot: el.querySelector(".tfoc__dot"),
+      chips: el.querySelector(".tfoc__chips"),
       note: el.querySelector(".tfoc__note"),
+      better: el.querySelector(".tfoc__better"),
       foot: el.querySelector(".tfoc__foot"),
     };
     section.setAttribute("data-coach", "none");
@@ -553,7 +784,7 @@
         if (shape && shape.src === "ghost") shape = null;
       });
     }
-    render(SAMPLE, true);
+    render(SAMPLE, SAMPLE.work, SAMPLE.work[0], true);
   }
 
   window.ApexOverlay.registerWidget("trainingfocus", {

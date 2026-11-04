@@ -126,11 +126,19 @@ console.log('\n1) Urgency: every existing kind has a tier, and unknown kinds are
   if (newKinds.length) console.log('  INFO  kinds added since (tier = ' + newKinds.map((k) => `${k}:${urgencyOf(k)}`).join(', ') + ')');
   // The live practice coach (2026-11-03): coaching waits for a straight and
   // goes quiet on "keep quiet"; the readouts dial silences it only at Quiet.
-  const coachKinds = ['coachFocus', 'coachProgress', 'coachConsistency', 'coachSummary'];
+  // Coach v2 (2026-11-04) adds the approach cue, the lap-end line and the run
+  // debrief: the contract's LIVE_COACH_KINDS, every one of them.
+  const coachKinds = require('../dist/telemetry/liveCoachContract').LIVE_COACH_KINDS.slice();
+  check('the contract lists the seven coach kinds', coachKinds.length === 7 && ['coachApproach', 'coachLapDebrief', 'coachRunDebrief'].every((k) => coachKinds.includes(k)), coachKinds.join());
   check('the live coach kinds are listed, all normal',
     coachKinds.every((k) => Object.prototype.hasOwnProperty.call(gateMod.KIND_URGENCY, k) && urgencyOf(k) === 'normal'));
   check('…never safety kinds', coachKinds.every((k) => !gateMod.SAFETY_KINDS.has(k) && !gateMod.breaksQuiet(k)));
   check('…and essential on the readouts dial', coachKinds.every((k) => TRIGGER_TIERS[k] === 'essential'));
+  // An approach cue said after the braking point is worse than none.
+  check('coachApproach holds APPROACH_HOLD_MS (1.5 s), not the 15 s normal budget',
+    gateMod.HOLD_BUDGET_BY_KIND.coachApproach === require('../dist/telemetry/liveCoachContract').APPROACH_HOLD_MS && gateMod.HOLD_BUDGET_BY_KIND.coachApproach === 1500);
+  check('…the other coach kinds keep their urgency budget',
+    coachKinds.filter((k) => k !== 'coachApproach').every((k) => gateMod.HOLD_BUDGET_BY_KIND[k] === undefined));
 }
 
 /* -------------------------------------------------------------------------- */

@@ -122,7 +122,7 @@ const PRACTICE = (o = {}) => ({ connected: true, session: { type: o.type || 'pra
  * answer `answer(lapNo)`), and everything the service said and published.
  */
 function rig(o = {}) {
-  const settings = { updateChannel: o.channel || 'beta', engineer: { liveCoach: o.liveCoach !== false } };
+  const settings = { updateChannel: o.channel || 'beta', engineer: { liveCoach: o.liveCoach !== false, ...(o.engineer || {}) } };
   const r = {
     settings,
     session: { startedAt: 1000, type: 'practice', track: 'Road Atlanta', car: 'Porsche', carClass: 'GT3' },
@@ -132,8 +132,8 @@ function rig(o = {}) {
     measures: [],
     ai: [],
     logs: [],
-    engine: o.engine === null ? null : fakeEngine(),
-    voice: fakeVoice(),
+    engine: o.engine === null ? null : o.engine || fakeEngine(),
+    voice: o.voice || fakeVoice(),
     misses: o.misses ?? 2,
     sayOk: o.sayOk !== false,
     askAi: o.askAi,
@@ -169,7 +169,7 @@ function rig(o = {}) {
       return r.askAi ? r.askAi(req) : { ok: true, ai: { headline: 'tidy session' } };
     },
     log: (line) => r.logs.push(line),
-    options: { retryMs: 5, retryForMs: o.retryForMs ?? 2000, summaryTimeoutMs: o.summaryTimeoutMs ?? 200, gateEveryMs: 0, crossingWaitMs: o.crossingWaitMs ?? 3000 },
+    options: { retryMs: 5, retryForMs: o.retryForMs ?? 2000, summaryTimeoutMs: o.summaryTimeoutMs ?? 200, gateEveryMs: 0, crossingWaitMs: o.crossingWaitMs ?? 3000, debriefTimeoutMs: o.debriefTimeoutMs ?? 200, debriefLapWaitMs: 100 },
   });
   r.lap = (i, extra = {}) =>
     r.coach.onLap({ lapSec: 80 + i / 10, lapCount: i, at: 1000 + i * 80000, startedAt: r.session.startedAt, sessionType: r.session.type, track: 'Road Atlanta', car: 'Porsche', carClass: 'GT3', ghostLapId: '', ...extra });
@@ -763,6 +763,408 @@ const lastPub = (r) => r.published[r.published.length - 1];
     check('a listener that throws never takes the frame down', !threw);
     const { LapRecorder } = require('../dist/telemetry/lapLog.js');
     check('LapRecorder.pending: null with nothing held', new LapRecorder().pending() === null);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /*  Coach v2 (2026-11-04): approach cues, the run debrief, the work list    */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * A v2 engine on top of the v1 fake: a work list (C4 at cueD 0.10, C7 at
+   * 0.50), corners improved this run, and the three optional entry points
+   * written to the contract. `approachCueAt` fires when the ETA to cueD is
+   * between the words' own time (+ lead, radioGate GATE) and 3 s more. The
+   * real engine is built on another branch; this follows liveCoachContract.ts.
+   */
+  const { GATE: GATE_V2 } = require('../dist/telemetry/radioGate');
+  function fakeEngineV2(o = {}) {
+    const base = fakeEngine();
+    const e = {
+      seen: base.seen,
+      opts: [],
+      cueCalls: 0,
+      starts: 0,
+      initLiveCoach: (k) => ({ ...base.initLiveCoach(k), work: [], runImproved: [], runStartLap: 0 }),
+      stepLiveCoach(state, lap, opts) {
+        e.opts.push(opts);
+        const step = base.stepLiveCoach(state, lap, opts);
+        const st = step.state;
+        if (st.focus) {
+          const c7 = { ...st.focus, cornerId: 'C7', cornerNo: 7, entryD: 0.5, apexD: 0.52, exitD: 0.55, lossSec: 0.1, short: 'Exit 3 km/h up', status: 'new', cueD: 0.5, approach: 'Corner seven, pick up earlier.', rank: 2, gainSec: 0 };
+          const c4 = { ...st.focus, cueD: 0.1, approach: 'Corner four, brake ten metres later.', rank: 1, gainSec: 0.05, baselineSec: 0.25 };
+          st.work = [c4, c7].slice(0, (opts && opts.maxWork) || 3);
+          st.focus = st.work[0];
+          st.runImproved = st.runStartLap ? [] : [{ cornerId: 'C2', gainSec: 0.12 }];
+        }
+        return { ...step, work: st.work };
+      },
+      approachCueAt(state, pos, cued) {
+        e.cueCalls++;
+        if (o.cueThrows) throw new Error('boom');
+        for (const f of state.work || []) {
+          if (!f.approach || cued.includes(f.cornerId)) continue;
+          const distM = ((((f.cueD - pos.lapD) % 1) + 1) % 1) * pos.trackLengthM;
+          const eta = distM / (pos.speedKph / 3.6);
+          const need = GATE_V2.speechLeadSec + f.approach.split(/\s+/).length / GATE_V2.wordsPerSec;
+          if (eta >= need && eta <= need + 3) return { cornerId: f.cornerId, text: f.approach, etaSec: eta };
+        }
+        return null;
+      },
+      runDebrief(state) {
+        const laps = state.validLaps - (state.runStartLap || 0);
+        if (laps < 2) return null;
+        return {
+          improved: [{ cornerId: 'C2', gainSec: 0.12 }],
+          still: [{ cornerId: 'C4', lossSec: 0.2, what: 'braking ten metres early' }],
+          text: "You've improved corner two, a tenth. Still to work on: four, braking ten metres too early.",
+          laps,
+        };
+      },
+      startRun(state) {
+        e.starts++;
+        return { ...state, runStartLap: state.validLaps, runImproved: [] };
+      },
+    };
+    return e;
+  }
+
+  function fakeVoiceV2(o = {}) {
+    const v = fakeVoice();
+    v.debriefAsks = [];
+    v.debriefRequest = (debrief, snap, ctx) => {
+      v.debriefAsks.push({ debrief, snap, ctx });
+      return { kind: 'session', context: { track: ctx.track }, facts: [{ id: 'run.c2', text: 'C2 0.12 s better', kind: 'live', value: 0.12, unit: 's' }] };
+    };
+    v.speakableDebrief = (reply, debrief) => {
+      const ai = reply && 'ai' in reply ? reply.ai : reply;
+      if (o.unspeakable) return null;
+      return ai && ai.headline ? `AI: ${ai.headline} (${debrief.laps} laps)` : null;
+    };
+    return v;
+  }
+
+  /** One frame on the lap: lap fraction `d`, speed, lap number (lapsCompleted + 1), pit lane. */
+  function lapFrame(d, o = {}) {
+    return {
+      connected: true,
+      session: { type: 'practice', track: 'Road Atlanta', trackLengthM: 4000 },
+      player: { lap: { last: -1 }, speedKph: o.kph ?? 200, ...(o.ghostD !== undefined ? { ghost: { active: true, atD: o.ghostD } } : {}) },
+      trackMap: { cars: [{ slotId: 9, isPlayer: false, lapFraction: 0.9, inPit: false }, { slotId: 1, isPlayer: true, lapFraction: d, inPit: !!o.inPit }] },
+      standings: [{ isPlayer: true, lapsCompleted: (o.lap ?? 5) - 1, inPit: !!o.inPit }],
+    };
+  }
+
+  /** A v2 rig with two valid laps in: the work list is up, the cues can fire. */
+  async function v2rig(o = {}) {
+    const r = rig({ misses: 0, engine: fakeEngineV2(o), voice: o.voice || fakeVoiceV2(o), ...o });
+    r.t = 0;
+    r.coach.update(PRACTICE(), r.t);
+    r.lap(1);
+    r.lap(2);
+    await r.coach._idle();
+    r.said.length = 0;
+    /** Drive the lap from `from` to `to` in `step` fractions, one frame every `dt` ms. */
+    r.drive = (from, to, step, fo = {}, dt = 100) => {
+      for (let d = from; d <= to + 1e-9; d += step) {
+        r.t += dt;
+        r.coach.update(lapFrame(Math.round(d * 1e6) / 1e6, fo), r.t);
+      }
+    };
+    return r;
+  }
+  const cues = (r) => r.said.filter((c) => c.kind === 'coachApproach');
+  const debriefs = (r) => r.said.filter((c) => c.kind === 'coachRunDebrief');
+
+  console.log('\nv2 approach cues: said on the straight before the corner, timed to end before it');
+  {
+    const r = await v2rig();
+    // 200 km/h on a 4 km lap: 6 words take 2.74 s = 152 m = 0.038 of a lap, so
+    // C4's cue (cueD 0.10) is due from d ≈ 0.020 (5.7 s out) to 0.062 (2.7 s).
+    r.drive(0.0, 0.015, 0.005);
+    check('not yet: more than 3 s beyond the words\' time out', cues(r).length === 0, JSON.stringify(r.said));
+    r.drive(0.02, 0.09, 0.005);
+    const c = cues(r);
+    check('one cue for corner four, as coachApproach', c.length === 1 && /Corner four/.test(c[0].text), JSON.stringify(c));
+    check('…with the default approach priority (0: never pushes a held lap line off)', c[0] && c[0].priority === 0);
+    r.drive(0.1, 0.12, 0.005);
+    check('cued once a lap: nothing more through the corner', cues(r).length === 1);
+    r.drive(0.4, 0.49, 0.005);
+    check('the next work corner (seven) gets its own cue on the same lap', cues(r).length === 2 && /Corner seven/.test(cues(r)[1].text), JSON.stringify(cues(r)));
+    r.drive(0.4, 0.48, 0.005);
+    check('…and only once, even driving the same stretch again', cues(r).length === 2);
+    r.drive(0.95, 0.99, 0.01);
+    r.drive(0.0, 0.07, 0.005, { lap: 6 });
+    check('a new lap: corner four is cued again', cues(r).length === 3 && /Corner four/.test(cues(r)[2].text), JSON.stringify(cues(r)));
+  }
+
+  {
+    const r = await v2rig();
+    // No standings row: the lap number comes from counting the line.
+    const noRow = (d) => {
+      const f = lapFrame(d);
+      delete f.standings;
+      return f;
+    };
+    for (const d of [0.02, 0.03, 0.04]) r.coach.update(noRow(d), (r.t += 100));
+    for (const d of [0.95, 0.98, 0.005, 0.02, 0.03]) r.coach.update(noRow(d), (r.t += 100));
+    check('no standings row: the wrapping lap fraction is the line (cued again next lap)', cues(r).length === 2, JSON.stringify(cues(r)));
+  }
+
+  {
+    const r = await v2rig();
+    // The ghost's filtered atD wins over the 7 Hz track-map fraction.
+    r.drive(0.3, 0.3, 0.005, { ghostD: 0.03 });
+    check('the ghost\'s atD is the position while a ghost runs', cues(r).length === 1, JSON.stringify(r.said));
+  }
+
+  console.log('\nv2 approach cues: never in the pit lane, an out-lap, a crawl, or before minLaps');
+  {
+    const r = await v2rig();
+    r.drive(0.02, 0.06, 0.005, { inPit: true, kph: 60 });
+    check('in the pit lane: no cue', cues(r).length === 0);
+    await r.coach._debrief();
+    r.drive(0.02, 0.09, 0.005);
+    r.drive(0.4, 0.49, 0.005);
+    check('the out-lap (pit exit to the line): no cue', cues(r).length === 0, JSON.stringify(cues(r)));
+    r.drive(0.95, 0.99, 0.01);
+    r.drive(0.0, 0.06, 0.005, { lap: 6 });
+    check('the first flying lap: cued', cues(r).length === 1);
+  }
+  {
+    const r = await v2rig();
+    r.drive(0.035, 0.06, 0.002, { kph: 50 });
+    check('under 60 km/h: no cue', cues(r).length === 0);
+  }
+  {
+    const r = rig({ misses: 0, engine: fakeEngineV2(), voice: fakeVoiceV2() });
+    r.coach.update(PRACTICE(), 0);
+    r.lap(1);
+    await r.coach._idle();
+    let t = 0;
+    for (let d = 0.02; d < 0.07; d += 0.005) r.coach.update(lapFrame(d), (t += 100));
+    check('before minLaps: approachCueAt is not even asked', r.engine.cueCalls === 0 && cues(r).length === 0);
+  }
+  {
+    const r = await v2rig({ engineer: { liveCoachApproach: false } });
+    r.drive(0.02, 0.07, 0.005);
+    check('cues switched off in the Engineer tab: none, and the engine is not asked', cues(r).length === 0 && r.engine.cueCalls === 0);
+  }
+  {
+    const r = await v2rig({ cueThrows: true });
+    r.drive(0.02, 0.07, 0.005);
+    check('an engine that throws: no cue, logged once, the frame loop unharmed', cues(r).length === 0 && r.logs.filter((l) => /approachCueAt failed/.test(l)).length === 1);
+  }
+  {
+    const r = rig({ misses: 0 }); // the v1 engine: no approachCueAt, no runDebrief
+    r.coach.update(PRACTICE(), 0);
+    r.lap(1);
+    r.lap(2);
+    await r.coach._idle();
+    const n = r.said.length;
+    let t = 0;
+    for (let d = 0.02; d < 0.07; d += 0.005) r.coach.update(lapFrame(d), (t += 100));
+    r.coach.update(lapFrame(0.5, { inPit: true }), (t += 100));
+    await r.coach._debrief();
+    check('a v1 engine: no cue, no debrief, no throw', r.said.length === n && r.coach.active());
+    check('…and the card has no work list (the widget falls back to focus)', !('work' in lastPub(r)) && lastPub(r).focus && lastPub(r).focus.cornerId === 'C4');
+  }
+
+  console.log('\nv2 approach cues: cheap — about ten reads a second at 120 Hz');
+  {
+    const r = await v2rig();
+    const before = r.engine.cueCalls;
+    // 1 s of 120 Hz frames, on a stretch with no cue due.
+    for (let i = 0; i < 120; i++) r.coach.update(lapFrame(0.3), (r.t += 1000 / 120));
+    const calls = r.engine.cueCalls - before;
+    check('120 frames in a second → ~10 engine asks', calls >= 9 && calls <= 11, calls);
+    const pos = require('../electron/live-coach').readPosition(lapFrame(0.25, { lap: 7 }), { lapD: NaN, speedKph: 0, lapNo: NaN, inPit: false, trackLengthM: 0 });
+    check('readPosition: the player\'s car, its lap, its speed, the lap length', pos.lapD === 0.25 && pos.lapNo === 7 && pos.speedKph === 200 && pos.inPit === false && pos.trackLengthM === 4000, JSON.stringify(pos));
+  }
+
+  console.log('\nv2 the run debrief on pit entry: the AI\'s words, else the template, then a new run');
+  {
+    const r = await v2rig();
+    r.drive(0.9, 0.95, 0.01);
+    r.coach.update(lapFrame(0.96, { inPit: true, kph: 80 }), (r.t += 100));
+    await r.coach._debrief();
+    const d = debriefs(r);
+    check('AI ok: one coachRunDebrief in the AI\'s words', d.length === 1 && d[0].text === 'AI: tidy session (2 laps)', JSON.stringify(d));
+    check('…the voice was asked with the template and the session context', r.voice.debriefAsks.length === 1 && r.voice.debriefAsks[0].debrief.laps === 2 && r.voice.debriefAsks[0].ctx.track === 'Road Atlanta');
+    check('…sent to the coach function as the voice built it', r.ai.length === 1 && r.ai[0].kind === 'session' && r.ai[0].facts[0].id === 'run.c2');
+    check('…outranks the lap chatter in the one-slot hold', d[0] && d[0].priority === 3);
+    check('then startRun: a new run from here', r.engine.starts === 1 && r.coach.snapshot().state.runStartLap === 2);
+    check('…and the card re-published without this run\'s improved corners', Array.isArray(lastPub(r).improved) && lastPub(r).improved.length === 0);
+    r.drive(0.97, 0.99, 0.01, { inPit: true, kph: 60 });
+    r.coach.update(lapFrame(0.99, { inPit: false }), (r.t += 100));
+    r.coach.update(lapFrame(0.995, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    check('back in the pit lane with no laps since: nothing said, a new run all the same', debriefs(r).length === 1 && r.engine.starts === 2);
+  }
+  {
+    const r = await v2rig({ askAi: () => ({ ok: false, code: 'not_member' }) });
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    const d = debriefs(r);
+    check('AI failing: the template is said', d.length === 1 && /^You've improved corner two/.test(d[0].text), JSON.stringify(d));
+    check('…then startRun', r.engine.starts === 1);
+  }
+  {
+    const r = await v2rig({
+      askAi: () => {
+        throw new Error('offline');
+      },
+    });
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    check('AI throwing: the template', debriefs(r).length === 1 && r.engine.starts === 1);
+  }
+  {
+    const r = await v2rig({ unspeakable: true });
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    const d = debriefs(r);
+    check('an AI reply the voice will not speak: the template', d.length === 1 && /^You've improved/.test(d[0].text));
+  }
+  {
+    const r = await v2rig({
+      debriefTimeoutMs: 60,
+      askAi: async () => {
+        await wait(250);
+        return { ok: true, ai: { headline: 'too late' } };
+      },
+    });
+    const t0 = Date.now();
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    const took = Date.now() - t0;
+    const d = debriefs(r);
+    check('AI slow: the template at the timeout, not the late answer', d.length === 1 && /^You've improved/.test(d[0].text) && took < 240, `${took} ms ${JSON.stringify(d)}`);
+    await wait(260);
+    check('…and the late answer is never said', debriefs(r).length === 1 && r.engine.starts === 1);
+  }
+  {
+    const r = await v2rig({ voice: { ...fakeVoice(), debriefRequest: undefined } });
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    await r.coach._debrief();
+    check('a voice without debriefRequest: the template, the AI not asked', debriefs(r).length === 1 && r.ai.length === 0);
+  }
+  {
+    const r = await v2rig({
+      debriefTimeoutMs: 500,
+      askAi: async () => {
+        await wait(80);
+        return { ok: true, ai: { headline: 'x' } };
+      },
+    });
+    r.coach.update(lapFrame(0.9, { inPit: true }), (r.t += 100));
+    r.coach.update({ connected: true, session: { type: 'race', track: 'Road Atlanta' }, player: {} }, (r.t += 100));
+    await wait(150);
+    check('the session ends while the AI is asked: nothing said, no new run', debriefs(r).length === 0 && r.engine.starts === 0);
+  }
+  {
+    // A session that starts in the garage is not a pit entry.
+    const r = rig({ misses: 0, engine: fakeEngineV2(), voice: fakeVoiceV2() });
+    r.coach.update(lapFrame(0.5, { inPit: true }), 0);
+    await r.coach._debrief();
+    check('starting in the garage: no debrief, no new run', r.said.length === 0 && r.engine.starts === 0);
+  }
+  {
+    // A one-lap run then the pits: too short to debrief.
+    const r = rig({ misses: 0, engine: fakeEngineV2(), voice: fakeVoiceV2() });
+    r.coach.update(lapFrame(0.5), 0);
+    r.lap(1);
+    await r.coach._idle();
+    r.coach.update(lapFrame(0.9, { inPit: true }), 200);
+    await r.coach._debrief();
+    check('a run under minLaps: nothing said, a new run started', debriefs(r).length === 0 && r.engine.starts === 1);
+  }
+
+  console.log('\nv2 the debrief on demand: snapshot().runDebrief, debriefNow(), endRun()');
+  {
+    const r = await v2rig();
+    const snap = r.coach.snapshot();
+    check('snapshot() carries the run debrief template', snap.runDebrief && snap.runDebrief.laps === 2 && /^You've improved/.test(snap.runDebrief.text));
+    const out = await r.coach.debriefNow();
+    check('debriefNow(): the AI\'s words, nothing said by the service', out && out.source === 'ai' && out.text === 'AI: tidy session (2 laps)' && r.said.length === 0, JSON.stringify(out));
+    check('…then a new run', r.engine.starts === 1 && r.coach.snapshot().runDebrief === null);
+    check('…and with nothing since: null', (await r.coach.debriefNow()) === null);
+    r.lap(3);
+    r.lap(4);
+    await r.coach._idle();
+    const tpl = await r.coach.debriefNow({ ai: false, startRun: false });
+    check('debriefNow({ ai: false, startRun: false }): the template, the run kept', tpl && tpl.source === 'template' && r.engine.starts === 1 && r.voice.debriefAsks.length === 1, JSON.stringify({ tpl, starts: r.engine.starts, ai: r.ai.length }));
+    check('endRun(): a new run on request', r.coach.endRun('answered') === true && r.engine.starts === 2);
+    r.coach.stop('test');
+    check('off: snapshot null, debriefNow null, endRun false', r.coach.snapshot() === null && (await r.coach.debriefNow()) === null && r.coach.endRun() === false);
+  }
+
+  console.log('\nv2 the card: the work list and the improved corners on player.coach');
+  {
+    const r = await v2rig();
+    const ov = lastPub(r);
+    check('work: costliest first, with rank, gain and cueD', Array.isArray(ov.work) && ov.work.length === 2 && ov.work[0].cornerId === 'C4' && ov.work[0].rank === 1 && ov.work[0].gainSec === 0.05 && ov.work[0].cueD === 0.1 && ov.work[1].cornerId === 'C7', JSON.stringify(ov.work));
+    check('…only the contract\'s fields (no spoken text, no approach line)', ov.work.every((w) => !('spoken' in w) && !('approach' in w) && !('cue' in w)));
+    check('focus stays for v1 readers, = work[0]', ov.focus && ov.focus.cornerId === 'C4' && !('rank' in ov.focus));
+    check('improved: corner number from the id', Array.isArray(ov.improved) && ov.improved.length === 1 && ov.improved[0].cornerId === 'C2' && ov.improved[0].cornerNo === 2 && ov.improved[0].gainSec === 0.12, JSON.stringify(ov.improved));
+  }
+
+  console.log('\nv2 settings: the Engineer tab\'s two controls reach the engine');
+  {
+    const r = await v2rig({ engineer: { liveCoachCorners: 2 } });
+    const last = r.engine.opts[r.engine.opts.length - 1];
+    check('defaults read: approach cues on, corners as set (2)', last.approachCues === true && last.maxWork === 2, JSON.stringify(last));
+    r.settings.engineer = { ...r.settings.engineer, liveCoachCorners: 1, liveCoachApproach: false };
+    r.coach.update(PRACTICE(), (r.t += 100));
+    r.lap(3);
+    await r.coach._idle();
+    const next = r.engine.opts[r.engine.opts.length - 1];
+    check('a change applies from the next lap: one corner, no cues', next.approachCues === false && next.maxWork === 1, JSON.stringify(next));
+    check('…the work list follows', lastPub(r).work.length === 1);
+    r.coach.update(PRACTICE(), (r.t += 100));
+    r.lap(4);
+    await r.coach._idle();
+    check('the same settings: the same options object (nothing rebuilt per gate)', r.engine.opts[r.engine.opts.length - 1] === next);
+    const { coachSettingsOf } = require('../electron/live-coach');
+    check('junk reads as the defaults', JSON.stringify(coachSettingsOf({ engineer: { liveCoachCorners: 9, liveCoachApproach: 'no' } })) === JSON.stringify({ approach: true, maxWork: 3 }));
+    const { sanitizeEngineer, DEFAULT_ENGINEER_SETTINGS } = require('../electron/engineer-settings');
+    check('settings: defaults on and 3', DEFAULT_ENGINEER_SETTINGS.liveCoachApproach === true && DEFAULT_ENGINEER_SETTINGS.liveCoachCorners === 3);
+    check('settings: false and 1–3 survive sanitize ("2" as a number)', sanitizeEngineer({ liveCoachApproach: false }).liveCoachApproach === false && sanitizeEngineer({ liveCoachCorners: '2' }).liveCoachCorners === 2 && sanitizeEngineer({ liveCoachCorners: 1 }).liveCoachCorners === 1);
+    check('settings: junk keeps the stored value', sanitizeEngineer({ liveCoachCorners: 5 }, { liveCoachCorners: 1 }).liveCoachCorners === 1 && sanitizeEngineer({ liveCoachApproach: 'x' }, { liveCoachApproach: false }).liveCoachApproach === false);
+    const { EngineerService } = require('../electron/engineer');
+    let settings = { engineerEnabled: true, engineer: { liveCoachCorners: 2, liveCoachApproach: false } };
+    const svc = new EngineerService({ dir: path.join(os.tmpdir(), 'apex-livecoach-test'), loadSettings: () => settings, onStatus: () => {} });
+    check('status() carries both for the panel', svc.status().liveCoachCorners === 2 && svc.status().liveCoachApproach === false);
+    settings = { engineerEnabled: true, engineer: {} };
+    check('…defaults when older settings lack them', svc.status().liveCoachCorners === 3 && svc.status().liveCoachApproach === true);
+  }
+
+  console.log('\nv2 the radio: approach cues expire in 1.5 s, the new kinds are routine and essential');
+  {
+    const gate = require('../dist/telemetry/radioGate');
+    const { APPROACH_HOLD_MS } = require('../dist/telemetry/liveCoachContract');
+    const { EngineerService, TRIGGER_TIERS } = require('../electron/engineer');
+    const v2 = ['coachApproach', 'coachLapDebrief', 'coachRunDebrief'];
+    check('the three v2 kinds are in KINDS (dropped with the rest when the coach stops)', v2.every((k) => KINDS.includes(k)));
+    check('…normal urgency, never safety, essential on the dial', v2.every((k) => gate.KIND_URGENCY[k] === 'normal' && !gate.breaksQuiet(k) && TRIGGER_TIERS[k] === 'essential'));
+    check('HOLD_BUDGET_BY_KIND.coachApproach = APPROACH_HOLD_MS (1.5 s)', gate.HOLD_BUDGET_BY_KIND.coachApproach === APPROACH_HOLD_MS && APPROACH_HOLD_MS === 1500);
+    const settings = { engineerEnabled: true, engineerVoice: 'en_GB-alan-medium', engineer: { readouts: 'essential' } };
+    const svc = new EngineerService({ dir: path.join(os.tmpdir(), 'apex-livecoach-test'), loadSettings: () => settings, onStatus: () => {} });
+    const spoken = [];
+    svc.speak = (text) => spoken.push(text);
+    svc.running = true;
+    let clock = 1000;
+    svc.clock = () => clock;
+    svc.asking = true;
+    svc.sayTiered('Corner five, brake ten metres later.', { kind: 'coachApproach', priority: 0 });
+    const h = svc.heldReadout;
+    check('a busy channel holds the cue for 1.5 s, not 15', h && h.kind === 'coachApproach' && h.expiresAt - h.heldAtMs === 1500, h && h.expiresAt - h.heldAtMs);
+    svc.asking = false;
+    clock += 1600;
+    svc.pumpHeldReadout();
+    check('…and drops it after, never said late', svc.heldReadout === null && spoken.length === 0);
+    svc.asking = true;
+    svc.sayTiered('Better through four and nine.', { kind: 'coachLapDebrief', priority: 1 });
+    check('the lap-end line keeps the normal 15 s budget', svc.heldReadout && svc.heldReadout.expiresAt - svc.heldReadout.heldAtMs === gate.HOLD_BUDGET_MS.normal);
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

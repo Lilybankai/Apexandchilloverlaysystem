@@ -49,6 +49,7 @@ import type { TelemetryFrame } from './types';
 import { UNKNOWN_VALUE } from './types';
 import { sessionKeyOf } from './triggers';
 import { spokenWordCount } from './engineerPhrases';
+import { APPROACH_HOLD_MS } from './liveCoachContract';
 
 /* -------------------------------------------------------------------------- */
 /*  Urgency                                                                    */
@@ -127,6 +128,12 @@ export const KIND_URGENCY: Readonly<Record<string, RadioUrgency>> = {
   coachProgress: 'normal',
   coachConsistency: 'normal',
   coachSummary: 'normal',
+  // Coach v2 (2026-11-04): the cue on the straight before a work-list corner
+  // (held at most APPROACH_HOLD_MS — HOLD_BUDGET_BY_KIND below), the lap-end
+  // line, and the run debrief on the in-lap or when asked. Same stance.
+  coachApproach: 'normal',
+  coachLapDebrief: 'normal',
+  coachRunDebrief: 'normal',
 };
 
 /** The tier for a trigger kind; unknown and missing kinds are `normal`. */
@@ -582,8 +589,16 @@ export class RadioGate {
  * ("with you in about 6 seconds") is frozen into its words when phrased, so
  * every millisecond it waits for the channel is a millisecond wrong: it gets
  * 750 ms or it is dropped (trafficCalls.ts re-times the next one).
+ *
+ * The live coach's approach cue ("corner five, brake ten metres later") is
+ * timed to END before that corner's braking point: the engine fires it with
+ * the words' own length plus a lead to spare and not much more, so a cue that
+ * waited the 15 s normal budget would be said in the corner, or on the next
+ * straight about the wrong one. 1.5 s (liveCoachContract.ts APPROACH_HOLD_MS) or it is
+ * dropped; the next lap brings it again.
  */
 export const HOLD_BUDGET_BY_KIND: Readonly<Record<string, number>> = {
   trafficBehind: 750,
   trafficAhead: 750,
+  coachApproach: APPROACH_HOLD_MS,
 };

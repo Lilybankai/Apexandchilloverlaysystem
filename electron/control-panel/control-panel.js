@@ -6679,8 +6679,13 @@
     const tab = tabButtons.find((t) => t.dataset.tab === 'practice');
     if (tab) tab.hidden = !followingBeta;
     // The Engineer tab's "Live practice coach" switch rides with the Practice tab.
-    const liveCoachField = document.getElementById('eng-live-coach-field');
-    if (liveCoachField) liveCoachField.hidden = !followingBeta;
+    // So do its v2 settings (cues before corners, corners to work on).
+    const coachFields = [
+      document.getElementById('eng-live-coach-field'),
+      document.getElementById('eng-live-coach-approach-field'),
+      document.getElementById('eng-live-coach-corners-field'),
+    ];
+    for (const field of coachFields) if (field) field.hidden = !followingBeta;
     if (!followingBeta) {
       const view = views.find((v) => v.dataset.view === 'practice');
       if (view && view.getAttribute('data-active') === 'true') showView('dashboard');

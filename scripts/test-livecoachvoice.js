@@ -14,6 +14,13 @@
  *   6. speakableSummary from a canned valid reply and from junk;
  *   7. engineer.js ask(): coach first for coach words, the fallback, the
  *      SAPI fast path, the precedence against "last lap".
+ *   9. v2: the work-list answers, the run debrief asked for, the corner
+ *      detail with cue2 — with a work list, without one (v1), off a coached
+ *      session (null → the engineer as before), and through ask();
+ *  10. v2: the run debrief's AI request against the deployed function's
+ *      schema and REAL validator, speakableDebrief, and debriefGuard's
+ *      accept/reject cases (invented corner, wrong number, four sentences,
+ *      "C5" in the text).
  *
  * No network: the cloud, whisper and the recognizer are stubbed.
  * Run: npm run build && node scripts/test-livecoachvoice.js
@@ -122,6 +129,48 @@ function snapshot(o = {}) {
 }
 
 const noDigitsBut = (s, allowed) => !/\d/.test(s.replace(allowed || /$^/, ''));
+
+/*
+ * Coach v2 (2026-11-04): a work list of two corners and three put right this
+ * run. C5: braking 10 m early (cue) and 4 km/h slow at the apex (cue2), 0.21 s
+ * a lap; C11: 3 km/h down on the exit, 0.14 s, fine on the last lap. C3, C7,
+ * C9 improved by 0.20 + 0.12 + 0.10 = 0.42 s.
+ */
+const workFocus = (id, no, loss, cue, o = {}) => ({
+  cornerId: id, cornerNo: no, entryD: no / 20, apexD: no / 20 + 0.01, exitD: no / 20 + 0.02, lossSec: loss, cue,
+  short: 'x', spoken: `Corner ${no}.`, status: 'holding', sinceLapNo: 3, ...o,
+});
+function workSnapshot(o = {}) {
+  const work = [
+    workFocus('C5', 5, 0.21, { phase: 'braking', brakeShiftM: 10 }, {
+      rank: 1, cue2: { phase: 'midCorner', minKphGain: 4 }, lastLossSec: 0.25, baselineSec: 0.22, gainSec: 0.01,
+    }),
+    workFocus('C11', 11, 0.14, { phase: 'exit', exitKphGain: 3 }, { rank: 2, lastLossSec: 0.01, baselineSec: 0.15, gainSec: 0.01 }),
+  ];
+  const s = snapshot({ state: {
+    recent: [
+      { lapNo: 5, lapSec: 103.5, byCorner: { C3: 0.02, C5: 0.2, C7: 0.0, C9: 0.01, C11: 0.15 } },
+      { lapNo: 6, lapSec: 103.6, byCorner: { C3: 0.01, C5: 0.22, C7: 0.01, C9: 0.0, C11: 0.13 } },
+    ],
+    focus: work[0],
+    work,
+    runImproved: [{ cornerId: 'C3', gainSec: 0.2 }, { cornerId: 'C7', gainSec: 0.12 }, { cornerId: 'C9', gainSec: 0.1 }],
+    runStartLap: 0,
+    validLaps: 6,
+    ...(o.state || {}),
+  } });
+  if ('debrief' in o) s.debrief = o.debrief;
+  return s;
+}
+const DEBRIEF = {
+  improved: [{ cornerId: 'C3', gainSec: 0.2 }, { cornerId: 'C7', gainSec: 0.12 }, { cornerId: 'C9', gainSec: 0.1 }],
+  still: [
+    { cornerId: 'C5', lossSec: 0.21, what: 'braking ten metres too early' },
+    { cornerId: 'C11', lossSec: 0.14, what: 'exit speed, three k down' },
+  ],
+  text: "You've improved corners three, seven and nine, about four tenths in all. Still to work on: five, braking ten metres too early, and eleven, exit speed, three k down.",
+  laps: 6,
+};
 
 async function main() {
   /* ======================================================================== */
@@ -503,6 +552,239 @@ async function main() {
     check('setLiveCoachSnapshot keeps a function', typeof svc.liveCoachSnapshot === 'function');
     svc.setLiveCoachSnapshot('nope');
     check('…and clears on anything else', svc.liveCoachSnapshot === null);
+  }
+
+  /* ======================================================================== */
+  console.log('\n9) v2: the work list, the run debrief and the corner detail, asked for');
+  /* ======================================================================== */
+  {
+    const intent = (t) => (V.coachQuestionOf(t) || {}).intent || null;
+    const debriefQs = ['how am I doing', 'How are we doing?', 'debrief me', 'give me a debrief', "how's my run", 'how is the run going',
+      "how's this stint", 'how am I getting on', 'run debrief please'];
+    const badD = debriefQs.filter((q) => intent(q) !== 'coachDebrief');
+    check(`coachDebrief: ${debriefQs.length} wordings`, badD.length === 0, badD.map((q) => `${q}=${intent(q)}`).join(' | ') || 'all');
+    const listQs = ['what are my corners', 'which corners', 'what corners should I work on', "what's on my list", 'read me the work list'];
+    const badL = listQs.filter((q) => intent(q) !== 'coachWorkOn');
+    check(`coachWorkOn (the list): ${listQs.length} wordings`, badL.length === 0, badL.map((q) => `${q}=${intent(q)}`).join(' | ') || 'all');
+    const notD = ['how am I doing on fuel', 'how are we doing for time', 'how am I doing against P5', 'how are we doing on tyres',
+      "how's the car ahead doing", 'how am I doing in the race', 'which corners have yellows', 'which corners should I change the setup for'];
+    const stolenD = notD.filter((q) => V.coachQuestionOf(q));
+    check('race-engineer questions near the new wordings stay out', stolenD.length === 0, stolenD.map((q) => `${q}=${intent(q)}`).join(' | ') || 'none');
+    check('"how am I doing in corner three" is still the corner', intent('how am I doing in corner three') === 'coachCorner');
+
+    // -- answers WITH a work list -------------------------------------------------
+    const ws = workSnapshot();
+    const a = (t, s = ws) => V.answerCoachQuestion(t, s);
+    let s = a('what should I work on');
+    check('work list: every corner, what to change and its worth',
+      s === 'Two to work on. Corner five: brake ten metres later, worth two tenths. ' +
+        'Corner eleven: three kilometres an hour more out of the exit, worth a tenth.', s);
+    check('…"what are my corners" / "which corners" say the same', a('what are my corners') === s && a('which corners') === s);
+    const imp = workSnapshot();
+    imp.state.work = imp.state.work.map((f, i) => (i === 1 ? { ...f, status: 'improving' } : f));
+    check('work list: an improving corner says it is coming', /worth a tenth, and it's coming\.$/.test(a('what should I work on', imp)), a('what should I work on', imp));
+    const fixedOne = workSnapshot();
+    fixedOne.state.work = fixedOne.state.work.map((f, i) => (i === 1 ? { ...f, status: 'fixed' } : f));
+    s = a('what should I work on', fixedOne);
+    check('work list: a fixed corner is not on it (one left → the v1 answer)',
+      s === 'Corner five: brake ten metres later. Worth about two tenths a lap.', s);
+
+    s = a('what about corner five');
+    check('corner on the list: loss, phase, cue AND cue2, rank, last lap',
+      s === 'Corner five: two tenths a lap over your last two laps, mostly under braking. ' +
+        'Brake ten metres later and carry four kilometres an hour more to the apex. Top of the list; last lap it cost three tenths.', s);
+    s = a('what about corner eleven');
+    check('corner on the list, fine last lap: says so',
+      s === 'Corner eleven: a tenth a lap over your last two laps, mostly on the exit. ' +
+        'Three kilometres an hour more out of the exit. Number two on the list, but it was fine last lap. Do that again.', s);
+    const won = workSnapshot();
+    won.state.work = won.state.work.map((f, i) => (i === 0 ? { ...f, gainSec: 0.1 } : f));
+    check('corner on the list with a gain: what it has won back', /Top of the list, and you've won back a tenth on it already\.$/.test(a('what about corner five', won)),
+      a('what about corner five', won));
+    s = a('what about corner three');
+    check('corner put right this run: what it won back', s === "Corner three's better: two tenths back this run. Keep doing what you did there.", s);
+    s = a('what about corner four');
+    check('a corner off the list: the v1 detail', /^Corner four: /.test(s) && !/list/.test(s), s);
+    check('cueDetailWords: never the same measure twice',
+      V.cueDetailWords({ phase: 'braking', brakeShiftM: 10 }, { phase: 'braking', brakeShiftM: 6, throttleShiftM: -12 }) ===
+        'brake ten metres later and back on the throttle twelve metres sooner');
+
+    // -- the debrief, asked for --------------------------------------------------
+    s = a('how am I doing', workSnapshot({ debrief: DEBRIEF }));
+    check("debrief: the snapshot's debrief (the engine's template) is said as it is", s === DEBRIEF.text, s);
+    s = a('debrief me', workSnapshot({ debrief: null }));
+    check('debrief: null in the snapshot → not enough laps on this run', s === 'Not enough clean laps on this run yet. Give me a couple more.', s);
+    s = a("how's my run");
+    const engineHasDebrief = typeof require('../dist/telemetry/liveCoach').runDebrief === 'function';
+    if (!engineHasDebrief) {
+      check('debrief: no engine runDebrief → worded from the state',
+        s === "You've improved corners three, seven and nine, about four tenths in all. Still to work on: corner five, " +
+          'brake ten metres later, worth two tenths, and corner eleven, three kilometres an hour more out of the exit, worth a tenth.', s);
+    } else {
+      check('debrief: the engine\'s runDebrief answers when the snapshot has none', typeof s === 'string' && s.length > 0 && !/\bC\d/.test(s), s);
+    }
+    if (!engineHasDebrief) {
+      s = a('how am I doing', snapshot()); // the v1 snapshot: no work list, no run
+      check('debrief, v1 state: the focus as "still to work on"', s === 'Still to work on: corner four, brake ten metres later, worth two tenths.', s);
+    }
+    for (const q of ['how am I doing', 'debrief me', 'what are my corners']) {
+      check(`null snapshot: "${q}" → null (the engineer takes it as before)`, V.answerCoachQuestion(q, null) === null);
+    }
+    const all = ['what should I work on', 'what about corner five', 'what about corner eleven', 'what about corner three', 'how am I doing'].map((q) => a(q));
+    check('no v2 answer says a raw corner id, a unit symbol or a digit',
+      all.every((x) => !/\bC\d/.test(x) && !/km\/h|Δ| m\b| s\b/.test(x) && !/\d/.test(x)), all.join(' | '));
+
+    // -- engineer.js: the new phrases, on and off a coached session --------------
+    check('matchGrammarText: "how am i doing" → coachDebrief, "what are my corners" → coachWorkOn',
+      matchGrammarText('how am i doing') === 'coachDebrief' && matchGrammarText('what are my corners') === 'coachWorkOn');
+    check('COACH_INTENTS holds coachDebrief, with no command fallback', COACH_INTENTS.has('coachDebrief') && !COACH_FALLBACK.coachDebrief);
+    const rig2 = ({ line, whisper, snap }) => {
+      const sent = [];
+      const svc = new EngineerService({
+        dir: path.join(os.tmpdir(), 'apex-livecoach-test'),
+        loadSettings: () => ({ engineerEnabled: true, engineer: { readouts: 'standard' } }),
+        onStatus: () => {}, noteUsage: () => {},
+        cloudAsk: async (body) => { sent.push(body); return { ok: true, body: { ok: true, answer: 'cloud says' } }; },
+      });
+      const spoken = [];
+      Object.assign(svc, { running: true, recognizerReady: true, freeFormLive: true, speak: (t) => spoken.push(t), pushStatus: () => {}, playChirp: () => {} });
+      svc.recognizer = { stdin: { write: () => setImmediate(() => svc.onRecognizerLine(line)) } };
+      svc.transcribeClip = async () => ({ question: whisper || '', sttMs: whisper ? 900 : null });
+      svc.commands = { answer: (i) => ({ text: `answer:${i}` }), answerPosition: (q) => ({ text: `position:${q.intent}` }), averageOf: () => null, summaryExtras: () => undefined };
+      svc.summaryMod = { engineerSummary: () => ({ connected: true }) };
+      svc.lastFrame = {};
+      if (snap !== undefined) svc.setLiveCoachSnapshot(() => snap);
+      return { svc, spoken, sent };
+    };
+    const FREE = 'FREE\tC:\\w\\free.wav\t0.4\twhatever';
+    let r = rig2({ line: FREE, whisper: 'How am I doing?', snap: workSnapshot({ debrief: DEBRIEF }) });
+    let res = await r.svc.ask();
+    check('whisper "how am I doing", coached → the run debrief, locally', r.spoken[0] === DEBRIEF.text && res.outcome === 'tier1' && r.sent.length === 0, r.spoken.join('|'));
+    r = rig2({ line: FREE, whisper: 'How am I doing?', snap: null });
+    await r.svc.ask();
+    check('not live: "how am I doing" → the cloud, as before the coach', r.sent.length === 1 && r.spoken[0] === 'cloud says', r.spoken.join('|'));
+    r = rig2({ line: FREE, whisper: 'what are my corners', snap: workSnapshot() });
+    await r.svc.ask();
+    check('whisper "what are my corners", coached → the work list', /^Two to work on\./.test(r.spoken[0] || ''), r.spoken.join('|'));
+    r = rig2({ line: 'HEARD\tcoachDebrief\t0.95\tC:\\w\\h.wav\thow am i doing', snap: workSnapshot({ debrief: DEBRIEF }) });
+    res = await r.svc.ask();
+    check('SAPI exact "how am i doing", coached → the debrief, no whisper', r.spoken[0] === DEBRIEF.text && res.outcome === 'tier1', r.spoken.join('|'));
+    r = rig2({ line: 'HEARD\tcoachDebrief\t0.95\tC:\\w\\h.wav\thow am i doing', whisper: 'how am i doing', snap: null });
+    await r.svc.ask();
+    check('SAPI exact "how am i doing", not live → on to the cloud, never commands.answer(coachDebrief)',
+      r.sent.length === 1 && !r.spoken.some((x) => /^answer:coachDebrief/.test(x)), r.spoken.join('|'));
+    r = rig2({ line: FREE, whisper: 'how am I doing on fuel', snap: workSnapshot() });
+    await r.svc.ask();
+    check('practice: "how am I doing on fuel" is not the coach\'s', !/to work on|improved/.test(r.spoken[0] || ''), r.spoken.join('|'));
+  }
+
+  /* ======================================================================== */
+  console.log('\n10) v2: the run debrief\'s AI request, against the deployed function');
+  /* ======================================================================== */
+  {
+    const ws = workSnapshot();
+    const ctx = { track: 'Road Atlanta', car: 'Porsche 911 GT3 R', carClass: 'GT3', targetLabel: 'Session best · 1:43.020' };
+    const req = V.debriefRequest(DEBRIEF, ws, ctx);
+    const sreq = V.summaryRequest(ws, ctx);
+    check('a request', !!req);
+    check('the summary\'s shape: kind session, inputHash, context, facts', req.kind === 'session' &&
+      JSON.stringify(Object.keys(req).sort()) === JSON.stringify(Object.keys(sreq).sort()) &&
+      JSON.stringify(Object.keys(req.context).sort()) === JSON.stringify(Object.keys(sreq.context).sort()), Object.keys(req).join(','));
+    check('inputHash passes the function\'s shape', /^[0-9a-f]{16,128}$/i.test(req.inputHash), req.inputHash);
+    check('…same input → same hash; not the summary\'s hash', V.debriefRequest(DEBRIEF, workSnapshot(), ctx).inputHash === req.inputHash && req.inputHash !== sreq.inputHash);
+    const ids = req.facts.map((f) => f.id);
+    check('fact ids unique', new Set(ids).size === ids.length, ids.join(','));
+    check('every fact survives cleanFacts (id ≤ 64, text ≤ 240, finite value, ≤ 60)',
+      req.facts.length <= 60 && req.facts.every((f) => f.id && f.id.length <= 64 && f.text && f.text.length <= 240 && Number.isFinite(f.value)),
+      req.facts.map((f) => f.text.length).join(','));
+    check('every unit is a CoachFact unit', req.facts.every((f) => ['s', 'm', 'kph', '%', 'C', 'L', 'pts', 'laps'].includes(f.unit)));
+    check('body under the 24000-char cap', JSON.stringify(req).length < 24000);
+    check('the shape asked for rides first (run.brief), with no number', ids[0] === 'run.brief' && !/\d/.test(req.facts[0].text) && req.facts[0].value === 0);
+    for (const id of ['C3.gain', 'C7.gain', 'C9.gain', 'run.gain', 'C5.loss', 'C5.brakeDeltaM', 'C5.minKphDelta', 'C5.what',
+      'C11.loss', 'C11.exitKphDelta', 'C11.what', 'run.laps', 'lap.time']) {
+      check(`holds ${id}`, ids.includes(id));
+    }
+    const f = (id) => req.facts.find((x) => x.id === id);
+    check('improved with numbers: C3 0.20 s won back, run.gain 0.42 s',
+      f('C3.gain').value === 0.2 && /0\.20 s/.test(f('C3.gain').text) && f('run.gain').value === 0.42 && /C3, C7 and C9/.test(f('run.gain').text), f('run.gain').text);
+    check('still with numbers: C5 0.21 s a lap', f('C5.loss').value === 0.21 && /0\.21 s a lap/.test(f('C5.loss').text));
+    check('the cue: +10 m brake shift → brakeDeltaM −10 ("brake 10 m earlier")', f('C5.brakeDeltaM').value === -10 && /10 m earlier/.test(f('C5.brakeDeltaM').text));
+    check('cue2: +4 km/h at the apex → minKphDelta −4', f('C5.minKphDelta').value === -4 && /4 km\/h slower/.test(f('C5.minKphDelta').text));
+    check('the engine\'s what-to-change words ride along', /braking ten metres too early/.test(f('C5.what').text));
+    check('no corner in the facts that the debrief does not name',
+      req.facts.every((x) => !x.cornerId || ['C3', 'C7', 'C9', 'C5', 'C11'].includes(x.cornerId)));
+    check('the user turn holds every fact', req.facts.every((x) => VAL.userContent(req).includes(`${x.id} | ${x.text}`)));
+    const wired = IPC._test.requestFromRaw(req, COACH_REPORT_VERSION);
+    check('coach-ipc requestFromRaw (askAi) keeps every fact', wired && wired.kind === 'session' && wired.facts.length === req.facts.length);
+    check('an empty debrief → null', V.debriefRequest({ improved: [], still: [], text: '', laps: 3 }, ws) === null && V.debriefRequest(null, ws) === null);
+    check('no snapshot still builds (the debrief carries the corners)', !!V.debriefRequest(DEBRIEF, null, ctx));
+
+    /* ---- the reply ---------------------------------------------------------- */
+    const good = {
+      headline: 'A good run: C3, C7 and C9 are sorted.',
+      takeaways: [
+        { title: 'Brake later into C5', body: 'Brake later into C5 and carry more speed to the apex.', factIds: ['C5.loss', 'C5.brakeDeltaM', 'C5.minKphDelta'], cornerIds: ['C5'] },
+        { title: 'Better in C3, C7 and C9', body: 'You have tidied up C3, C7 and C9 this run.', factIds: ['C3.gain', 'C7.gain', 'C9.gain', 'run.gain'], cornerIds: ['C3', 'C7', 'C9'] },
+        { title: 'More exit speed from C11', body: 'Get more speed out of C11 onto the straight.', factIds: ['C11.loss', 'C11.exitKphDelta'], cornerIds: ['C11'] },
+      ],
+      sequences: [],
+    };
+    const v = VAL.validateCoachReply(good, req.facts);
+    check('a reply citing the debrief facts passes the REAL validator', v.ok, v.ok ? '' : v.reasons.join(' | '));
+    const wrongWay = VAL.validateCoachReply({ ...good, takeaways: [{ title: 'Brake earlier into C5', body: 'Brake earlier into C5.', factIds: ['C5.brakeDeltaM'], cornerIds: ['C5'] }] }, req.facts);
+    check('…and "brake earlier into C5" is rejected there (signs reach it right)', !wrongWay.ok);
+
+    let s = V.speakableDebrief(v.result, DEBRIEF, ws, req);
+    const WANT = 'You have tidied up corners three, seven and nine this run, about four tenths in all. ' +
+      'Brake later into corner five and carry more speed to the apex, worth about two tenths a lap. ' +
+      'Get more speed out of corner eleven onto the straight, worth about a tenth a lap.';
+    check('speakable: improved first, then still to work on, figures from the facts', s === WANT, s);
+    check('…three sentences, no "C5", no digits', s && s.split(/(?<=\.)\s+/).length === 3 && !/\bC\d/.test(s) && !/\d/.test(s));
+    check('…the { ok, ai } answer works too', V.speakableDebrief({ ok: true, ai: v.result }, DEBRIEF, ws, req) === s);
+    check('…without the request, rebuilt from the debrief', V.speakableDebrief(v.result, DEBRIEF, ws) === s);
+    check('…and through the contract object', V.liveCoachVoice.speakableDebrief(v.result, DEBRIEF, ws) === s &&
+      V.liveCoachVoice.debriefRequest(DEBRIEF, ws, ctx).inputHash === req.inputHash);
+    check('the template passes its own guard', V.debriefGuard(WANT, DEBRIEF, req.facts).length === 0, V.debriefGuard(WANT, DEBRIEF, req.facts).join(' | '));
+
+    // Rejects: the template is said instead.
+    const tk = (o) => ({ ...good, takeaways: [good.takeaways[1], { ...good.takeaways[0], ...o }] });
+    check('null / junk / { ok:false } → null', V.speakableDebrief(null, DEBRIEF, ws, req) === null &&
+      V.speakableDebrief('Brake later', DEBRIEF, ws, req) === null && V.speakableDebrief({}, DEBRIEF, ws, req) === null &&
+      V.speakableDebrief({ ok: false, ai: null, code: 'rejected' }, DEBRIEF, ws, req) === null);
+    check('no debrief → null', V.speakableDebrief(v.result, null, ws, req) === null);
+    check('an invented corner (C6) in the words → null, not trimmed',
+      V.speakableDebrief(tk({ body: 'Brake later into C6 as well.' }), DEBRIEF, ws, req) === null);
+    check('an invented corner in cornerIds → null', V.speakableDebrief(tk({ cornerIds: ['C5', 'C4'] }), DEBRIEF, ws, req) === null);
+    check('a fact the request did not hold → null', V.speakableDebrief(tk({ factIds: ['C5.loss', 'C99.loss'] }), DEBRIEF, ws, req) === null);
+    check('the wrong number ("12 m" where the fact says 10) → null',
+      V.speakableDebrief(tk({ body: 'Brake 12 m later into C5.' }), DEBRIEF, ws, req) === null);
+    s = V.speakableDebrief(tk({ body: 'Brake 10 m later into C5.' }), DEBRIEF, ws, req);
+    check('the right number ("10 m") → said in words, no figure tail added',
+      s === 'You have tidied up corners three, seven and nine this run, about four tenths in all. Brake ten metres later into corner five.', s);
+    s = V.speakableDebrief({ ...good, takeaways: [{ title: 'Better in C3 and C7', body: 'C3 and C7 are tidier now.', factIds: ['C3.gain', 'C7.gain'], cornerIds: ['C3', 'C7'] }] },
+      DEBRIEF, ws, req);
+    check('two of the three improved: their own gains (0.32 s), not the run total of 0.42', s === 'Corners three and seven are tidier now, about three tenths in all.', s);
+    check('a number with no unit → null', V.speakableDebrief(tk({ body: 'Brake later into C5, 2 times.' }), DEBRIEF, ws, req) === null);
+    const four = { ...good, takeaways: [...good.takeaways, { title: 'Again C5', body: 'Keep at C5.', factIds: ['C5.loss'], cornerIds: ['C5'] }] };
+    check('four takeaways (four sentences) → null', V.speakableDebrief(four, DEBRIEF, ws, req) === null);
+
+    // The guard alone.
+    const g = (t) => V.debriefGuard(t, DEBRIEF, req.facts);
+    check('guard: "C5" in the text is refused', g('Brake later into C5.').some((x) => /raw corner id/.test(x)), g('Brake later into C5.').join(' | '));
+    check('guard: "turn five" is refused', g('Brake later into turn five.').length > 0);
+    check('guard: four sentences are refused', g('Corner five. Corner eleven. Corner three. Corner nine.').some((x) => /4 sentences/.test(x)));
+    check('guard: an invented corner, also in a list', g('You improved corners three, six and nine.').some((x) => /corner 6/.test(x)) &&
+      g('Corner six, brake later.').some((x) => /corner 6/.test(x)));
+    check('guard: "corner five, ten metres" reads ten as metres, not a corner', g('Corner five, ten metres later on the brakes.').length === 0,
+      g('Corner five, ten metres later on the brakes.').join(' | '));
+    check('guard: numbers within rounding pass (0.42 s → four tenths, 0.21 s → two tenths, 4 km/h, 6 laps)',
+      g('About four tenths in all. Corner five, worth two tenths, carry four kilometres an hour more. Six clean laps.').length === 0);
+    check('guard: a wrong figure fails (three tenths for C5\'s 0.21, twelve metres)',
+      g('Corner five, worth five tenths.').some((x) => /0\.5 s/.test(x)) && g('Brake twelve metres later.').some((x) => /12 m/.test(x)));
+    check('guard: "a tenth and a half" is 0.15 s (C11 0.14 passes)', g('Corner eleven, a tenth and a half.').length === 0);
+    check('guard: a bare number fails, "the one" does not', g('Corner five, two times.').some((x) => /bare number/.test(x)) &&
+      g('Corner five is the one to fix.').length === 0);
+    check('guard: km/h symbol refused', g('Corner five, 4 km/h more.').some((x) => /symbol/.test(x)));
   }
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

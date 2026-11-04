@@ -140,6 +140,21 @@ async function run(engineerSettings) {
     check(`${label}: status says ${want}, the switch shows it`, status.liveCoach === want && !!box && box.checked === want, box && String(box.checked));
   }
 
+  console.log('\nCoach v2: "Coach cues before corners" and "Corners to work on" render the saved values');
+  for (const [label, eng, cues, corners, off] of [
+    ['older settings (no fields)', {}, true, '3', false],
+    ['cues off, one corner', { liveCoachApproach: false, liveCoachCorners: 1 }, false, '1', false],
+    ['two corners, coach switched off', { liveCoachCorners: 2, liveCoach: false }, true, '2', true],
+  ]) {
+    const { errors, elements, status } = await run(eng);
+    check(`${label}: render() runs without throwing`, errors.length === 0, errors.map((e) => String(e && e.message || e)).join(' | ') || 'clean');
+    const box = elements.get('#eng-live-coach-approach');
+    const pick = elements.get('#eng-live-coach-corners');
+    check(`${label}: the cues switch shows ${cues}`, status.liveCoachApproach === cues && !!box && box.checked === cues, box && String(box.checked));
+    check(`${label}: the corners picker shows ${corners}`, !!pick && pick.value === corners, pick && String(pick.value));
+    check(`${label}: both ${off ? 'greyed out' : 'live'} with the coach ${off ? 'off' : 'on'}`, box.disabled === off && pick.disabled === off);
+  }
+
   for (const tone of ['clean', 'banter', 'savage']) {
     console.log(`\n${tone}: the Engineer tab renders end to end`);
     const { errors, elements, status } = await run({ radioTone: tone });

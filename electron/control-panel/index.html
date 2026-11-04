@@ -1941,11 +1941,39 @@
                     <span class="switch__track"><span class="switch__thumb"></span></span>
                   </span>
                   <span class="field__hint">
-                    In practice and test days, after a lap the engineer may name the
-                    one corner costing you the most, lap after lap, and what to change
-                    there — "corner four, brake about ten metres later" — then tells you
-                    when it's better. The same corner shows on the in-game Focus card.
-                    Never in qualifying or a race.
+                    In practice and test days, the engineer works on the corners costing
+                    you the most, lap after lap, and what to change there — "corner four,
+                    brake about ten metres later" — tells you what got better, and sums
+                    up the run when you pit. The same corners show on the in-game Focus
+                    card. Never in qualifying or a race.
+                  </span>
+                </label>
+
+                <!-- Coach v2 (2026-11-04): beta only, shown with the switch above
+                     (control-panel.js applyPracticeTabVisibility). -->
+                <label class="field field--toggle" id="eng-live-coach-approach-field" hidden>
+                  <span class="field__label">Coach cues before corners</span>
+                  <span class="switch">
+                    <input type="checkbox" id="eng-live-coach-approach" />
+                    <span class="switch__track"><span class="switch__thumb"></span></span>
+                  </span>
+                  <span class="field__hint">
+                    A few words on the straight before each corner you're working on —
+                    "corner five, brake ten metres later" — finished before you get
+                    there, or not said at all.
+                  </span>
+                </label>
+
+                <label class="field" id="eng-live-coach-corners-field" hidden>
+                  <span class="field__label">Corners to work on</span>
+                  <select class="field__input" id="eng-live-coach-corners">
+                    <option value="1">One · the costliest corner</option>
+                    <option value="2">Two corners</option>
+                    <option value="3">Three corners</option>
+                  </select>
+                  <span class="field__hint">
+                    How many corners the coach works on at once. When one is fixed,
+                    the next costliest takes its place.
                   </span>
                 </label>
 
