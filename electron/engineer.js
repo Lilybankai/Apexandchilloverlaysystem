@@ -356,10 +356,15 @@ const GRAMMAR = [
   {
     intent: 'coachWorkOn',
     group: 'Practice coach',
-    phrases: ['what should i work on', "what's the focus", 'what should i focus on', "what's my focus"],
+    // v2 (2026-11-04): the work list — up to three corners, each with what to change.
+    phrases: ['what should i work on', "what's the focus", 'what should i focus on', "what's my focus", 'what are my corners', 'which corners'],
   },
   { intent: 'coachCorner', group: 'Practice coach', phrases: ['what about corner seven', "how's corner seven", 'corner seven'] },
   { intent: 'coachSpread', group: 'Practice coach', phrases: ['am i consistent', 'how consistent am i', 'consistency'] },
+  // v2: the run debrief on request — improved this, this and this; still to
+  // work on that and that. Not live (a race, the coach off) these were never
+  // phrases before: no fallback, so they go on to the cloud exactly as then.
+  { intent: 'coachDebrief', group: 'Practice coach', phrases: ['how am i doing', 'debrief me', "how's my run", 'give me a debrief'] },
   // -- Radio -------------------------------------------------------------------
   // The driver's controls over the radio itself (2026-10-02, radio etiquette).
   // Not questions: ask() handles them before engineerCommands (radioControl),
@@ -406,7 +411,7 @@ const RADIO_CONTROL_INTENTS = new Set(['radioQuiet', 'radioTalk', 'radioRepeat']
  * command instead ("how was my last lap" → the lap time); the rest go on to
  * the cloud exactly as an unmatched question would.
  */
-const COACH_INTENTS = new Set(['coachLap', 'coachLoss', 'coachWorkOn', 'coachCorner', 'coachSpread']);
+const COACH_INTENTS = new Set(['coachLap', 'coachLoss', 'coachWorkOn', 'coachCorner', 'coachSpread', 'coachDebrief']);
 const COACH_FALLBACK = { coachLap: 'lastLap' };
 
 /** The engineer's two-word acknowledgements — never what "repeat that" repeats. */

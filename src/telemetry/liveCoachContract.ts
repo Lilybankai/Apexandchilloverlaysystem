@@ -317,6 +317,14 @@ export interface LiveCoachSnapshot {
   lastValid: LiveCoachLap | null;
   last: LiveCoachLap | null;
   trackLengthM: number;
+  /**
+   * v2, optional: the engine's run debrief so far (`runDebrief(state)`), filled
+   * in by the service when it builds the snapshot. Present = the voice answers
+   * "how am I doing" / "debrief me" with exactly this (null = not enough laps
+   * in this run yet). Absent = the voice asks the engine itself, else words a
+   * debrief from `state` (a v1 engine).
+   */
+  debrief?: LiveRunDebrief | null;
 }
 
 /** liveCoachVoice.ts implements these; the service and engineer.js call them. */

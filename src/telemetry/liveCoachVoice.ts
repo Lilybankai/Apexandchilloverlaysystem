@@ -17,6 +17,26 @@
  *   summaryFacts(snap)             the contract's thinner view of the same
  *   speakableSummary(reply, snap, request?) → at most two sentences, or null
  *
+ * Coach v2 (2026-11-04: a work list of up to three corners, approach cues, a
+ * run debrief):
+ *
+ *   debriefRequest(debrief, snap, ctx) → the run debrief's CoachAiRequest, in
+ *                                  summaryRequest's shape (kind 'session')
+ *   speakableDebrief(reply, debrief, snap, request?) → at most three
+ *                                  sentences, or null (say the template)
+ *   debriefGuard(text, debrief, facts) → why a spoken debrief may not be said
+ *   debriefOf(snap)                the run debrief behind "how am I doing"
+ *
+ * and the questions use the work list when the engine keeps one: "what should
+ * I work on" / "what are my corners" → every corner on it with what to change
+ * and its worth; "how am I doing" / "debrief me" / "how's my run" → the run
+ * debrief (the snapshot's `debrief`, else the engine's `runDebrief`, else
+ * worded here from the state); "what about corner seven" on a work-list
+ * corner → the cue AND cue2 with their numbers, its rank and how it went last
+ * lap. With no work list (a v1 state) every answer is v1's. Off a coached
+ * session (null snapshot) every one of them is null, as in v1: the engineer
+ * takes the words exactly as before.
+ *
  * ## The questions, and who owns them
  * engineerCommands.ts already answers "last lap" / "lap time" (the time and
  * the sectors), and the phrase table in electron/engineer.js routes dozens
@@ -64,7 +84,20 @@
 
 import { COACH_PHASES } from './coachContract';
 import type { CoachAiRequest, CoachFact, CoachPhase, CornerPhaseLoss, LapLossBreakdown } from './coachContract';
-import type { LiveCoachLap, LiveCoachSnapshot, LiveCoachVoice, LiveFocusCue } from './liveCoachContract';
+import type {
+  LiveCoachEngine,
+  LiveCoachLap,
+  LiveCoachSnapshot,
+  LiveCoachVoice,
+  LiveFocus,
+  LiveFocusCue,
+  LiveRunDebrief,
+} from './liveCoachContract';
+// The engine, for its run debrief when the snapshot does not carry one. A
+// namespace import read at call time: `runDebrief` is optional (a v1 engine
+// has none), and liveCoach.ts may import this module back without a cycle
+// biting — nothing here is read while the modules load.
+import * as liveCoachEngineModule from './liveCoach';
 import { driverLoss, fmtLap, fmtSec, LEVEL_SEC } from './coachReport';
 import { speakableLapTime } from './engineerCommands';
 import { MAX_SPOKEN_WORDS } from './engineerPhrases';
@@ -140,9 +173,16 @@ const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).l
 /*  Reading the question                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type CoachQuestionIntent = 'coachLap' | 'coachLoss' | 'coachWorkOn' | 'coachCorner' | 'coachSpread';
+export type CoachQuestionIntent = 'coachLap' | 'coachLoss' | 'coachWorkOn' | 'coachCorner' | 'coachSpread' | 'coachDebrief';
 
-export const COACH_QUESTION_INTENTS: readonly CoachQuestionIntent[] = ['coachLap', 'coachLoss', 'coachWorkOn', 'coachCorner', 'coachSpread'];
+export const COACH_QUESTION_INTENTS: readonly CoachQuestionIntent[] = [
+  'coachLap',
+  'coachLoss',
+  'coachWorkOn',
+  'coachCorner',
+  'coachSpread',
+  'coachDebrief',
+];
 
 export interface CoachQuestion {
   intent: CoachQuestionIntent;
@@ -210,6 +250,13 @@ const LOSS_NOT_COACH = /\b(fuel|energy|battery|tyre|tyres|tire|tires|position|po
 const WORKON_NOT_COACH = /\b(setup|set up|bias|pressure|pressures|wing|traction|tc|abs|fuel|energy|tyre|tyres|strategy|map|engine)\b/;
 /** "Is he consistent" is about someone else. */
 const SPREAD_NOT_COACH = /\b(he|him|his|they|their|car|ahead|behind|leader|p\d+)\b/;
+/**
+ * "How am I doing on fuel", "how are we doing for time", "how am I doing
+ * against P5" are the race engineer's, not a run debrief — they go on to the
+ * phrase list, the position parser or the cloud exactly as before.
+ */
+const DEBRIEF_NOT_COACH =
+  /\b(fuel|energy|battery|tyre|tyres|tire|tires|time|times|position|positions|place|places|gap|gaps|p\d+|ahead|behind|leader|car|cars|he|him|his|they|their|stop|pit|pits|brakes|temps|temperature|temperatures|weather|rain|damage|pace|race|points|championship|standings)\b/;
 
 /**
  * Which coach question the words ask, or null when they are not one. See the
@@ -232,6 +279,16 @@ export function coachQuestionOf(text: string): CoachQuestion | null {
     return { intent: 'coachLap' };
   }
 
+  // -- the run so far (v2): "how am I doing", "debrief me", "how's my run" ----
+  if (
+    !DEBRIEF_NOT_COACH.test(t) &&
+    (/\bhow (?:am i|are we|im) (?:doing|getting on|going)\b/.test(t) ||
+      /\bdebrief\b/.test(t) ||
+      /\bhow(?:s| is| was| did| does) (?:my|the|this|our) (?:run|stint)\b/.test(t))
+  ) {
+    return { intent: 'coachDebrief' };
+  }
+
   // -- where the time goes -------------------------------------------------------
   if (
     !LOSS_NOT_COACH.test(t) &&
@@ -252,7 +309,13 @@ export function coachQuestionOf(text: string): CoachQuestion | null {
     /\bwhat to (?:work|focus) on\b/.test(t) ||
     /\bwhat(?:s| is) (?:the|my|our) (?:focus|priority|main thing)\b/.test(t) ||
     /\bfocus corner\b/.test(t) ||
-    (/\bwhat (?:should|can|do|could) (?:i|we) (?:need to )?(?:improve|change|fix|do better)\b/.test(t) && !WORKON_NOT_COACH.test(t))
+    (/\bwhat (?:should|can|do|could) (?:i|we) (?:need to )?(?:improve|change|fix|do better)\b/.test(t) && !WORKON_NOT_COACH.test(t)) ||
+    // v2, the work list: "what are my corners", "which corners", "what's on the list".
+    ((/\b(?:what|which) (?:are )?(?:my |the |our )?corners\b/.test(t) ||
+      /\bwork(?:ing)? list\b/.test(t) ||
+      /\bwhats on (?:the|my|our) list\b/.test(t)) &&
+      !WORKON_NOT_COACH.test(t) &&
+      !CORNER_NOT_COACH.test(t))
   ) {
     return { intent: 'coachWorkOn' };
   }
@@ -389,6 +452,38 @@ const PHASE_ADVICE: Record<CoachPhase, string> = {
  */
 export function cueWords(cue: LiveFocusCue | null | undefined): string {
   if (!cue) return '';
+  const parts = cueParts(cue);
+  if (!parts.length) return PHASE_ADVICE[cue.phase] || '';
+  return parts.slice(0, 2).join(' and ');
+}
+
+/** "a, b and c". */
+function listWords(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] || '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * v2: a corner's change in full detail — the cue's measurable parts, then
+ * `cue2`'s (the second change the window agrees on), each said once, at most
+ * three: "brake ten metres later, carry four kilometres an hour more to the
+ * apex and back on the throttle twelve metres sooner". The phase's advice
+ * when neither carries a number.
+ */
+export function cueDetailWords(cue: LiveFocusCue | null | undefined, cue2?: LiveFocusCue | null): string {
+  // One part per measure (brake, apex, throttle, exit): cue2 never repeats
+  // what the cue already says.
+  const measure = (p: string): string => (p.startsWith('brake') ? 'brake' : p.startsWith('carry') ? 'apex' : p.includes('throttle') ? 'throttle' : 'exit');
+  const parts: string[] = [];
+  for (const p of [...(cue ? cueParts(cue) : []), ...(cue2 ? cueParts(cue2) : [])]) {
+    if (!parts.some((q) => measure(q) === measure(p))) parts.push(p);
+  }
+  if (!parts.length) return cue ? PHASE_ADVICE[cue.phase] || '' : cue2 ? PHASE_ADVICE[cue2.phase] || '' : '';
+  return listWords(parts.slice(0, 3));
+}
+
+/** A cue's measurable parts in words, in the order the radio says them. */
+function cueParts(cue: LiveFocusCue): string[] {
   const parts: string[] = [];
   const b = cue.brakeShiftM;
   if (finite(b) && Math.abs(b) >= BRAKE_M) parts.push(`brake ${metres(b)} ${b > 0 ? 'later' : 'earlier'}`);
@@ -400,8 +495,7 @@ export function cueWords(cue: LiveFocusCue | null | undefined): string {
   }
   const e = cue.exitKphGain;
   if (finite(e) && e >= APEX_KPH) parts.push(`${kph(e)} more out of the exit`);
-  if (!parts.length) return PHASE_ADVICE[cue.phase] || '';
-  return parts.slice(0, 2).join(' and ');
+  return parts;
 }
 
 /**
@@ -478,7 +572,52 @@ function answerLoss(snap: LiveCoachSnapshot): string {
   return line;
 }
 
+/* ---- v2: the work list ----------------------------------------------------- */
+
+/**
+ * The corners being worked on, costliest first: `state.work` (v2), else the
+ * v1 focus alone. A corner already fixed is not on it.
+ */
+function workOf(snap: LiveCoachSnapshot | null): LiveFocus[] {
+  const st = snap && snap.state;
+  if (!st) return [];
+  const list = Array.isArray(st.work) ? st.work : st.focus ? [st.focus] : [];
+  return list.filter((f): f is LiveFocus => !!f && typeof f.cornerId === 'string' && f.status !== 'fixed');
+}
+
+/** True when the engine keeps a real work list (v2) with more than one corner on it. */
+const hasWorkList = (snap: LiveCoachSnapshot): boolean => Array.isArray(snap.state.work) && workOf(snap).length > 1;
+
+const focusNo = (f: LiveFocus): number | string => (finite(f.cornerNo) && f.cornerNo > 0 ? f.cornerNo : f.cornerId);
+const stripEnd = (s: unknown): string => String(s || '').replace(/[.!?]+$/, '').trim();
+
+/** "corner four" / "corners three, seven and nine". */
+export function spokenCorners(ids: readonly (string | number)[]): string {
+  const nums = ids.map((id) => (typeof id === 'number' ? id : cornerNoOf(id)));
+  if (ids.length === 1) return spokenCorner(ids[0]!);
+  if (nums.every((n) => n !== null)) return `corners ${listWords(nums.map((n) => numberWords(n!)))}`;
+  return listWords(ids.map((id) => spokenCorner(id)));
+}
+
+/**
+ * "What should I work on" with a work list: every corner on it, costliest
+ * first, with what to change there and what it is worth. "Three to work on.
+ * Corner five: brake ten metres later, worth two tenths. Corner nine: …"
+ */
+function answerWorkList(snap: LiveCoachSnapshot): string {
+  const work = workOf(snap);
+  const lines = work.map((f) => {
+    const where = cap(spokenCorner(focusNo(f)));
+    const cue = cueWords(f.cue) || stripEnd(f.spoken);
+    const worth = finite(f.lossSec) && f.lossSec >= SAY_LOSS_SEC ? `, worth ${speakableTenths(f.lossSec)}` : '';
+    const coming = f.status === 'improving' ? ", and it's coming" : '';
+    return cue ? `${where}: ${cue}${worth}${coming}.` : `${where}${worth}${coming}.`;
+  });
+  return `${cap(numberWords(work.length))} to work on. ${lines.join(' ')}`;
+}
+
 function answerWorkOn(snap: LiveCoachSnapshot): string {
+  if (hasWorkList(snap)) return answerWorkList(snap);
   const st = snap.state;
   const focus = st && st.focus;
   if (!focus) {
@@ -494,12 +633,58 @@ function answerWorkOn(snap: LiveCoachSnapshot): string {
     : head;
 }
 
+/**
+ * v2: a work-list corner in full: its window loss and phase, the cue and
+ * `cue2` with their numbers, and how it is going against the baseline it
+ * joined the list with. "Corner nine: a tenth a lap over your last three
+ * laps, mostly in the middle of the corner. Brake six metres later and carry
+ * four kilometres an hour more to the apex. Number two on the list; last lap
+ * it cost a tenth."
+ */
+function answerWorkCorner(snap: LiveCoachSnapshot, f: LiveFocus, stat: WindowStat | undefined): string {
+  const Name = cap(spokenCorner(focusNo(f)));
+  const loss = finite(f.lossSec) ? f.lossSec : stat ? stat.mean : 0;
+  const span = stat && stat.laps >= 2 ? `over your last ${numberWords(stat.laps)} laps` : 'on your last lap';
+  const phase = f.cue ? f.cue.phase : null;
+  let line = `${Name}: ${speakableTenths(loss)} a lap ${span}`;
+  line += phase ? `, mostly ${PHASE_SPOKEN[phase]}.` : '.';
+  const cue = cueDetailWords(f.cue, f.cue2) || stripEnd(f.spoken);
+  if (cue) line += ` ${cap(cue)}.`;
+  const rank = finite(f.rank) && f.rank > 0 ? f.rank : workOf(snap).indexOf(f) + 1;
+  const where = rank === 1 ? 'Top of the list' : `Number ${numberWords(rank)} on the list`;
+  if (finite(f.gainSec) && f.gainSec >= SAY_LOSS_SEC) {
+    line += ` ${where}, and you've won back ${speakableTenths(f.gainSec)} on it already.`;
+  } else if (finite(f.lastLossSec) && f.lastLossSec <= LEVEL_SEC) {
+    line += ` ${where}, but it was fine last lap. Do that again.`;
+  } else if (finite(f.lastLossSec) && f.lastLossSec >= SAY_LOSS_SEC) {
+    line += ` ${where}; last lap it cost ${speakableTenths(f.lastLossSec)}.`;
+  } else {
+    line += ` ${where}.`;
+  }
+  return line;
+}
+
 function answerCorner(snap: LiveCoachSnapshot, n: number): string {
   const id = `C${n}`;
   const name = spokenCorner(n);
   const stats = windowStats(snap);
   const lastB = snap.lastValid && snap.lastValid.breakdown;
   const focus = snap.state && snap.state.focus;
+  // v2: a corner on the work list gets everything the coach knows about it;
+  // one put right this run says what it won back.
+  if (Array.isArray(snap.state.work)) {
+    const w = workOf(snap).find((f) => f.cornerId === id);
+    if (w) return answerWorkCorner(snap, w, stats.get(id));
+    const better = (Array.isArray(snap.state.runImproved) ? snap.state.runImproved : []).find((x) => x && x.cornerId === id);
+    if (better && finite(better.gainSec) && better.gainSec >= SAY_LOSS_SEC) {
+      const s = stats.get(id);
+      const now =
+        s && Math.abs(s.mean) > LEVEL_SEC && s.mean > 0
+          ? ` Still ${speakableTenths(s.mean)} a lap in it.`
+          : ' Keep doing what you did there.';
+      return `${cap(name)}'s better: ${speakableTenths(better.gainSec)} back this run.${now}`;
+    }
+  }
   const known = new Set<string>([...stats.keys()]);
   if (lastB && Array.isArray(lastB.corners)) for (const c of lastB.corners) if (c) known.add(c.id);
   if (focus) known.add(focus.cornerId);
@@ -556,6 +741,65 @@ function answerSpread(snap: LiveCoachSnapshot): string {
   return line;
 }
 
+/* ---- v2: the run debrief, asked for ----------------------------------------- */
+
+const RUN_LEARNING_LINE = 'Not enough clean laps on this run yet. Give me a couple more.';
+
+/**
+ * The run debrief behind "how am I doing": the snapshot's own when the
+ * service put one there (null = not enough laps yet), else the engine's
+ * `runDebrief` when it has one, else undefined (a v1 engine: the voice words
+ * one from the state itself, {@link templateDebrief}).
+ */
+export function debriefOf(snap: LiveCoachSnapshot | null): LiveRunDebrief | null | undefined {
+  if (!snap || !snap.state) return undefined;
+  if (Object.prototype.hasOwnProperty.call(snap, 'debrief') && snap.debrief !== undefined) return snap.debrief || null;
+  const fn = (liveCoachEngineModule as unknown as Partial<LiveCoachEngine>).runDebrief;
+  if (typeof fn !== 'function') return undefined;
+  try {
+    return fn(snap.state) || null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A debrief worded from the state alone, for an engine with no `runDebrief`
+ * (and the v1 state: no work list, no run): what got better this run, then
+ * the corners still to work on with what to change. "You've improved corner
+ * three, about two tenths. Still to work on: corner five, brake ten metres
+ * later, worth two tenths."
+ */
+function templateDebrief(snap: LiveCoachSnapshot): string {
+  const st = snap.state;
+  const improved = (Array.isArray(st.runImproved) ? st.runImproved : []).filter(
+    (x) => x && typeof x.cornerId === 'string' && finite(x.gainSec) && x.gainSec >= SAY_LOSS_SEC,
+  );
+  const still = workOf(snap).slice(0, 2);
+  const out: string[] = [];
+  if (improved.length) {
+    const sum = improved.reduce((a, x) => a + x.gainSec, 0);
+    out.push(`You've improved ${spokenCorners(improved.map((x) => x.cornerId))}, about ${speakableTenths(sum)}${improved.length > 1 ? ' in all' : ''}.`);
+  }
+  if (still.length) {
+    const parts = still.map((f) => {
+      const cue = cueWords(f.cue) || stripEnd(f.spoken);
+      const worth = finite(f.lossSec) && f.lossSec >= SAY_LOSS_SEC ? `, worth ${speakableTenths(f.lossSec)}` : '';
+      return `${spokenCorner(focusNo(f))}${cue ? `, ${cue}` : ''}${worth}`;
+    });
+    out.push(`Still to work on: ${parts.join(', and ')}.`);
+  }
+  if (out.length) return out.join(' ');
+  return windowStats(snap).size ? 'Nothing stands out. Keep putting the laps in.' : LEARNING_LINE;
+}
+
+function answerDebrief(snap: LiveCoachSnapshot): string {
+  const d = debriefOf(snap);
+  if (d && typeof d.text === 'string' && d.text.trim()) return d.text.trim();
+  if (d === null) return snap.state.validLaps > 0 ? RUN_LEARNING_LINE : LEARNING_LINE;
+  return templateDebrief(snap);
+}
+
 /**
  * The driver's words → one spoken answer, or null when they are not a coach
  * question. Null snapshot = the coach is not live: the plain line for the
@@ -577,6 +821,8 @@ export function answerCoachQuestion(text: string, snap: LiveCoachSnapshot | null
       return answerCorner(snap, q.cornerNo!);
     case 'coachSpread':
       return answerSpread(snap);
+    case 'coachDebrief':
+      return answerDebrief(snap);
     default:
       return null;
   }
@@ -889,9 +1135,388 @@ export function speakableSummary(reply: unknown, snap: LiveCoachSnapshot | null,
   return sentences.join(' ');
 }
 
+/* -------------------------------------------------------------------------- */
+/*  v2: the run debrief through the AI                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the model is asked for. The deployed function writes its own system
+ * prompt and shows the model only the context line and the facts, so the
+ * shape of a debrief rides in as the first fact (no figure in its text, value
+ * 0 in 'pts', which no spoken figure is checked against: cited or not, it
+ * changes nothing the validator or {@link debriefGuard} checks).
+ */
+const DEBRIEF_BRIEF =
+  'Radio debrief of this run, at most three short sentences: first what improved, naming every improved corner; ' +
+  'then each corner still to work on and what to change there. Say what to do.';
+
+/** Words a debrief sentence of the model's may take before its title stands in. */
+const DEBRIEF_SENTENCE_WORDS = MAX_SPOKEN_WORDS;
+/** The whole spoken debrief, the figures we add included. */
+const DEBRIEF_TOTAL_WORDS = 50;
+const DEBRIEF_SENTENCES = 3;
+
+/**
+ * The run debrief as a CoachAiRequest the deployed `coach` function accepts,
+ * in exactly {@link summaryRequest}'s shape (kind 'session', facts cited by
+ * id, every value finite) and sent the same way (coach-ipc `askAi`):
+ *
+ *   run.brief            the shape asked for (see DEBRIEF_BRIEF)
+ *   C3.gain …            each improved corner: the time won back this run
+ *   run.gain             the improved corners together (two or more)
+ *   C5.loss              each corner still to work on: what it costs a lap
+ *   C5.brakeDeltaM …     its cue and cue2 as coachReport's measured facts
+ *                        (signs as the validator checks them), else the last
+ *                        clean lap's own deltas
+ *   C5.what              the engine's words for what to change there
+ *   run.laps, lap.time   the run's clean laps, the last clean lap
+ *
+ * `ctx` is the summary's (track, car, class, the reference's label). Null
+ * when the debrief names no corner.
+ */
+export function debriefRequest(
+  debrief: LiveRunDebrief | null,
+  snap: LiveCoachSnapshot | null,
+  ctx: LiveCoachSummaryContext & { lapSec?: number | null; refSec?: number | null } = {},
+): CoachAiRequest | null {
+  if (!debrief) return null;
+  const improved = (Array.isArray(debrief.improved) ? debrief.improved : []).filter(
+    (x) => x && typeof x.cornerId === 'string' && finite(x.gainSec),
+  );
+  const still = (Array.isArray(debrief.still) ? debrief.still : []).filter((x) => x && typeof x.cornerId === 'string' && finite(x.lossSec));
+  if (!improved.length && !still.length) return null;
+  const context = ctx && typeof ctx === 'object' ? ctx : {};
+  const L = snap && finite(snap.trackLengthM) ? snap.trackLengthM : 0;
+  const lastValid = snap ? snap.lastValid : null;
+  const lastB = lastValid && lastValid.breakdown;
+  const work = workOf(snap);
+  const F = new FactList();
+
+  F.add({ id: 'run.brief', kind: 'brief', value: 0, unit: 'pts', text: DEBRIEF_BRIEF });
+  for (const x of improved) {
+    F.add({
+      id: `${x.cornerId}.gain`, cornerId: x.cornerId, kind: 'gain', value: x.gainSec, unit: 's',
+      text: `${x.cornerId}: ${fmtSec(x.gainSec)} a lap ${x.gainSec >= 0 ? 'won back' : 'given away'} this run.`,
+    });
+  }
+  if (improved.length >= 2) {
+    const sum = improved.reduce((a, x) => a + x.gainSec, 0);
+    F.add({
+      id: 'run.gain', kind: 'gain', value: sum, unit: 's',
+      text: `${fmtSec(sum)} a lap won back this run in ${listWords(improved.map((x) => x.cornerId))}.`,
+    });
+  }
+  for (const x of still) {
+    const id = x.cornerId;
+    F.add({ id: `${id}.loss`, cornerId: id, kind: 'cornerLoss', value: x.lossSec, unit: 's', text: `${id} still costs ${fmtSec(x.lossSec)} a lap.` });
+    const w = work.find((f) => f.cornerId === id) || null;
+    cornerDetailFacts(F, id, cornerIn(lastB, id), w && w.cue ? w.cue : null, L);
+    if (w && w.cue2) cornerDetailFacts(F, id, null, w.cue2, L);
+    const what = stripEnd(x.what).slice(0, 200);
+    if (what) F.add({ id: `${id}.what`, cornerId: id, kind: 'advice', value: 0, unit: 'pts', text: `${id}, what to change: ${what}.` });
+  }
+  if (finite(debrief.laps) && debrief.laps > 0) {
+    F.add({ id: 'run.laps', kind: 'laps', value: debrief.laps, unit: 'laps', text: `${debrief.laps} clean laps in this run.` });
+  }
+  let lapSec: number | null = finite(context.lapSec) ? context.lapSec : null;
+  let refSec: number | null = finite(context.refSec) ? context.refSec : null;
+  if (lastValid && finite(lastValid.lapSec) && lastValid.lapSec > 0) {
+    lapSec = lastValid.lapSec;
+    F.add({ id: 'lap.time', kind: 'lapTime', value: lapSec, unit: 's', text: `Last clean lap ${fmtLap(lapSec)}.` });
+    const gap = lapDelta(lastValid);
+    if (gap !== null) refSec = r3(lapSec - gap);
+  }
+
+  const c = {
+    track: String(context.track || ''),
+    car: String(context.car || ''),
+    carClass: String(context.carClass || ''),
+    targetLabel: String(context.targetLabel || refWords(lastValid ? lastValid.refKind : undefined)),
+    lapSec,
+    refSec,
+  };
+  const facts = F.list;
+  const inputHash = hashHex(
+    JSON.stringify(['live-debrief', c.track, c.car, c.carClass, c.targetLabel, lapSec, refSec, facts.map((f) => [f.id, f.value, f.unit, f.text])]),
+  );
+  return { kind: 'session', inputHash, context: c, facts };
+}
+
+/* ---- the guard ------------------------------------------------------------ */
+
+const TENS_OF: Record<string, number> = Object.fromEntries(
+  TENS.map((w, i): [string, number] => [w, i * 10]).filter(([w]) => !!w),
+);
+
+/** The number at `tok[i]` (digits, "seven", "twenty one"), and how many tokens it took. */
+function quantityAt(tok: readonly string[], i: number): { n: number; len: number } | null {
+  const w = tok[i];
+  if (!w) return null;
+  if (/^\d+(?:\.\d+)?$/.test(w)) return { n: Number(w), len: 1 };
+  const o = ONES.indexOf(w);
+  if (o >= 0) return { n: o, len: 1 };
+  if (w in TENS_OF) {
+    const next = ONES.indexOf(tok[i + 1] || '');
+    return next >= 1 && next <= 9 ? { n: TENS_OF[w]! + next, len: 2 } : { n: TENS_OF[w]!, len: 1 };
+  }
+  return null;
+}
+
+type SaidUnit = 's' | 'm' | 'kph' | 'laps';
+
+/** The unit after a number: "tenths", "metres", "kilometres an hour", "k" … (and how many tokens it took). */
+function unitAt(tok: readonly string[], i: number): { unit: SaidUnit; scale: number; len: number } | null {
+  // "six clean laps": one word of the coach's own between the number and its unit.
+  if (/^(?:clean|valid|timed|good|more)$/.test(tok[i] || '') && tok[i + 1]) {
+    const u = unitAt(tok, i + 1);
+    return u ? { ...u, len: u.len + 1 } : null;
+  }
+  const w = tok[i] || '';
+  if (w === 'tenth' || w === 'tenths') return { unit: 's', scale: 0.1, len: 1 };
+  if (w === 'hundredth' || w === 'hundredths') return { unit: 's', scale: 0.01, len: 1 };
+  if (w === 'second' || w === 'seconds' || w === 's' || w === 'sec' || w === 'secs') return { unit: 's', scale: 1, len: 1 };
+  if (w === 'metre' || w === 'metres' || w === 'meter' || w === 'meters' || w === 'm') return { unit: 'm', scale: 1, len: 1 };
+  if (w === 'kilometres' || w === 'kilometers' || w === 'kilometre' || w === 'kilometer') {
+    return { unit: 'kph', scale: 1, len: tok[i + 1] === 'an' && tok[i + 2] === 'hour' ? 3 : tok[i + 1] === 'per' && tok[i + 2] === 'hour' ? 3 : 1 };
+  }
+  if (w === 'k' || w === 'kph' || w === 'kmh' || w === 'km') return { unit: 'kph', scale: 1, len: tok[i + 1] === 'h' ? 2 : 1 };
+  if (w === 'lap' || w === 'laps') return { unit: 'laps', scale: 1, len: 1 };
+  return null;
+}
+
+/** How far a said figure may sit from the measured one and still be the same number, as the radio rounds it. */
+const SAID_TOLERANCE: Record<SaidUnit, number> = { s: 0.05 + 1e-6, m: 0.5 + 1e-6, kph: 0.5 + 1e-6, laps: 1e-6 };
+
+/**
+ * v2: the strict check on a spoken run debrief. Empty = it may be said; else
+ * every reason it may not:
+ *
+ *   - more than three sentences, or none;
+ *   - a raw corner id ("C5"), "turn five", or a symbol Piper reads badly
+ *     (km/h, %, Δ, /);
+ *   - a corner (also in a list: "corners three, seven and nine") that the
+ *     debrief does not name;
+ *   - a figure ("two tenths", "ten metres", "4 kilometres an hour") that no
+ *     fact holds within the radio's rounding (a tenth for time, a metre or a
+ *     km/h for the rest), or a bare number that is neither.
+ *
+ * `facts` are the request's (the numbers the reply may use); the debrief's
+ * own gains and losses count as facts too.
+ */
+export function debriefGuard(text: string, debrief: LiveRunDebrief | null, facts: readonly CoachFact[] = []): string[] {
+  const reasons: string[] = [];
+  const s = String(text || '').trim();
+  if (!s || !debrief) return ['empty'];
+  const sentences = s.split(/(?<=[.!?])\s+/).filter((x) => /[a-z0-9]/i.test(x));
+  if (!sentences.length || sentences.length > DEBRIEF_SENTENCES) reasons.push(`${sentences.length} sentences`);
+  if (/\b[ct]\d{1,3}\b/i.test(s)) reasons.push('a raw corner id');
+  if (/km\/h|[%Δ/\\]/.test(s)) reasons.push('a symbol');
+
+  const allowed = new Set<number>();
+  for (const x of [...(debrief.improved || []), ...(debrief.still || [])]) {
+    const n = x && cornerNoOf(x.cornerId);
+    if (n !== null && n !== undefined) allowed.add(n);
+  }
+  const pool: Record<SaidUnit, number[]> = { s: [], m: [], kph: [], laps: [] };
+  const put = (unit: string | undefined, v: number): void => {
+    if (!finite(v)) return;
+    const u: SaidUnit | null = unit === 's' ? 's' : unit === 'm' ? 'm' : unit === 'kph' ? 'kph' : unit === 'laps' ? 'laps' : null;
+    if (u) pool[u].push(Math.abs(v));
+  };
+  for (const f of facts) if (f) put(f.unit, f.value);
+  for (const x of debrief.improved || []) if (x) put('s', x.gainSec);
+  for (const x of debrief.still || []) if (x) put('s', x.lossSec);
+  if ((debrief.improved || []).length >= 2) put('s', debrief.improved.reduce((a, x) => a + (finite(x.gainSec) ? x.gainSec : 0), 0));
+  if (finite(debrief.laps)) put('laps', debrief.laps);
+  const holds = (unit: SaidUnit, v: number): boolean => pool[unit].some((x) => Math.abs(x - v) <= SAID_TOLERANCE[unit]);
+
+  const tok = s.toLowerCase().replace(/['’]/g, '').match(/\d+(?:\.\d+)?|[a-z]+|,/g) || [];
+  for (let i = 0; i < tok.length; ) {
+    const w = tok[i]!;
+    // -- corners, also listed: "corners three, seven and nine" -----------------
+    if (w === 'corner' || w === 'corners' || w === 'turn' || w === 'turns') {
+      let j = i + 1;
+      if (tok[j] === 'number') j += 1;
+      // Only "corners" lists: "corner five, two times" is one corner and a figure.
+      const plural = w === 'corners' || w === 'turns';
+      let first = true;
+      for (;;) {
+        let k = j;
+        if (!first && plural && (tok[k] === ',' || tok[k] === 'and')) {
+          k += 1;
+          if (tok[k] === 'and') k += 1;
+        } else if (!first) break;
+        const q = quantityAt(tok, k);
+        // A number with a unit after it is a figure ("corner five, ten metres"), not a corner.
+        if (!q || unitAt(tok, k + q.len)) break;
+        if (w === 'turn' || w === 'turns') reasons.push(`says "turn ${q.n}"`);
+        else if (!allowed.has(q.n)) reasons.push(`names corner ${q.n}, which the debrief does not`);
+        j = k + q.len;
+        first = false;
+      }
+      i = Math.max(j, i + 1);
+      continue;
+    }
+    // -- "a tenth", "half a second", "less than a tenth" -----------------------
+    if (w === 'less' && tok[i + 1] === 'than' && tok[i + 2] === 'a' && tok[i + 3] === 'tenth') {
+      if (!pool.s.some((x) => x < 0.05 + 1e-6)) reasons.push('says "less than a tenth", which no fact is');
+      i += 4;
+      continue;
+    }
+    if (w === 'a' && (tok[i + 1] === 'tenth' || tok[i + 1] === 'hundredth')) {
+      let v = tok[i + 1] === 'tenth' ? 0.1 : 0.01;
+      let len = 2;
+      if (tok[i + 2] === 'and' && tok[i + 3] === 'a' && tok[i + 4] === 'half') {
+        v *= 1.5;
+        len = 5;
+      }
+      if (!holds('s', v)) reasons.push(`says ${v} s, which no fact holds`);
+      i += len;
+      continue;
+    }
+    if (w === 'half' && tok[i + 1] === 'a' && tok[i + 2] === 'second') {
+      if (!holds('s', 0.5)) reasons.push('says half a second, which no fact holds');
+      i += 3;
+      continue;
+    }
+    // -- a figure -------------------------------------------------------------
+    const q = quantityAt(tok, i);
+    if (q) {
+      const u = unitAt(tok, i + q.len);
+      if (u) {
+        let v = q.n * u.scale;
+        let len = q.len + u.len;
+        if (u.unit === 's' && u.scale === 0.1 && tok[i + len] === 'and' && tok[i + len + 1] === 'a' && tok[i + len + 2] === 'half') {
+          v += 0.05;
+          len += 3;
+        }
+        if (!holds(u.unit, v)) reasons.push(`says ${Math.round(v * 100) / 100} ${u.unit}, which no fact holds`);
+        i += len;
+        continue;
+      }
+      // "the one that matters" is a pronoun, as the function's own check has it.
+      if (!(q.n === 1 && /^[a-z]/.test(w))) reasons.push(`a bare number (${w})`);
+      i += q.len;
+      continue;
+    }
+    i += 1;
+  }
+  return [...new Set(reasons)];
+}
+
+/* ---- the reply → words ------------------------------------------------------ */
+
+/**
+ * The model's words made speakable for the debrief: corner lists said
+ * ("C3, C7 and C9" → "corners three, seven and nine"), figures in words
+ * ("10 m" → "ten metres", "0.2 s" → "two tenths"), symbols out. Null when a
+ * digit is left that is no figure we can say. Whether a figure is TRUE is
+ * {@link debriefGuard}'s to judge, on the whole text.
+ */
+function speakDebriefWords(s: string): string | null {
+  let out = String(s)
+    .replace(/\bC(\d{1,3})((?:\s*,\s*C\d{1,3})*)(?:,?\s+and\s+C(\d{1,3}))?\b/g, (_m, a: string, mid: string, z: string | undefined) => {
+      const nums = [a, ...((mid || '').match(/\d+/g) || []), ...(z ? [z] : [])].map(Number);
+      return spokenCorners(nums);
+    })
+    .replace(/(\d+(?:\.\d+)?)\s*(?:s|secs?|seconds?)\b/g, (_m, v: string) => speakableTenths(Number(v)))
+    .replace(/(\d+)\s*(?:km\/h|kph)/g, (_m, v: string) => kph(Number(v)))
+    .replace(/(\d+)\s*(?:m|metres?|meters?)\b/g, (_m, v: string) => metres(Number(v)))
+    .replace(/[“”"()[\]{}*_#]/g, '')
+    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/\s*;\s*/g, ', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/\d/.test(out)) return null;
+  out = out.replace(/,\s*,/g, ',').replace(/,\s*$/, '');
+  return out || null;
+}
+
+/**
+ * The AI's debrief → at most three speakable sentences, or null (the service
+ * then says the engine's template). `reply` is the CoachAiResult or the whole
+ * `{ ok, ai }` answer; `request` the one sent (rebuilt from the debrief and
+ * snapshot when absent — the same facts).
+ *
+ * Strict, where the summary is lenient: one takeaway that cites a fact the
+ * request did not hold, or names a corner the debrief does not, and the whole
+ * reply is refused rather than trimmed — a debrief that leaves out the corner
+ * it got wrong reads as a complete one. What improved is said first, then
+ * what is still to work on. The words for WHAT are the model's; the figures
+ * are the facts' ("about four tenths in all", "worth about two tenths a
+ * lap"); then the finished text must pass {@link debriefGuard}.
+ */
+export function speakableDebrief(
+  reply: unknown,
+  debrief: LiveRunDebrief | null,
+  snap: LiveCoachSnapshot | null,
+  request?: CoachAiRequest | null,
+): string | null {
+  if (!debrief) return null;
+  let ai: unknown = reply;
+  if (isObj(ai) && 'ai' in ai) {
+    if (ai.ok === false) return null;
+    ai = ai.ai;
+  }
+  if (!isObj(ai) || !Array.isArray(ai.takeaways) || !ai.takeaways.length) return null;
+  const req = request && Array.isArray(request.facts) ? request : debriefRequest(debrief, snap);
+  const facts = req ? req.facts : [];
+  if (!facts.length) return null;
+  const byId = new Map(facts.map((f) => [f.id, f]));
+  const improvedIds = new Set((debrief.improved || []).map((x) => String(x.cornerId).toUpperCase()));
+  const stillIds = new Set((debrief.still || []).map((x) => String(x.cornerId).toUpperCase()));
+  const factOf = (id: string): CoachFact | undefined => byId.get(id);
+
+  const improvedLines: string[] = [];
+  const stillLines: string[] = [];
+  for (const t of ai.takeaways) {
+    if (!isObj(t) || typeof t.title !== 'string' || typeof t.body !== 'string') return null;
+    const ids = Array.isArray(t.factIds) ? t.factIds.filter((x): x is string => typeof x === 'string') : [];
+    if (!ids.length || ids.some((id) => !byId.has(id))) return null;
+    const cited = ids.map((id) => byId.get(id)!);
+    const named = new Set<string>([
+      ...(`${t.title} ${t.body}`.match(/\bC\d{1,3}\b/gi) || []).map((c) => c.toUpperCase()),
+      ...(Array.isArray(t.cornerIds) ? t.cornerIds.filter((x): x is string => typeof x === 'string').map((c) => c.trim().toUpperCase()) : []),
+      ...cited.map((f) => String(f.cornerId || '').toUpperCase()).filter(Boolean),
+    ]);
+    if ([...named].some((c) => !improvedIds.has(c) && !stillIds.has(c))) return null;
+    const corners = [...named];
+    const isImproved = cited.some((f) => f.kind === 'gain') || (corners.length > 0 && corners.every((c) => improvedIds.has(c)));
+
+    let words = firstSentence(t.body);
+    if (!words || wordCount(words) > DEBRIEF_SENTENCE_WORDS) words = firstSentence(t.title);
+    const said = speakDebriefWords(words);
+    if (!said) return null;
+    // The figure, from the facts — unless the words already carry one (then the guard checks it).
+    let tail = '';
+    const hasFigure = /\b(tenths?|seconds?|metres?|kilometres)\b/i.test(said);
+    if (!hasFigure && isImproved) {
+      const mine = corners.filter((c) => improvedIds.has(c));
+      // run.gain only for all of them (or when cited); else the named corners' own.
+      const all = mine.length === improvedIds.size;
+      const total = factOf('run.gain') && (ids.includes('run.gain') || (all && mine.length >= 2))
+        ? factOf('run.gain')!.value
+        : mine.reduce((a, c) => a + (factOf(`${c}.gain`)?.value || 0), 0);
+      if (total >= SAY_LOSS_SEC) tail = `, about ${speakableTenths(total)}${mine.length >= 2 || ids.includes('run.gain') ? ' in all' : ' back'}`;
+    } else if (!hasFigure) {
+      const mine = corners.filter((c) => stillIds.has(c));
+      const total = mine.reduce((a, c) => a + (factOf(`${c}.loss`)?.value || 0), 0);
+      if (total >= SAY_LOSS_SEC) tail = `, worth about ${speakableTenths(total)} a lap${mine.length >= 2 ? ' between them' : ''}`;
+    }
+    (isImproved ? improvedLines : stillLines).push(`${cap(said)}${tail}.`);
+  }
+  // The function allows three takeaways at most, so this is three sentences
+  // at most; the guard holds the line whatever produced the reply.
+  const text = [...improvedLines, ...stillLines].join(' ');
+  if (!text || wordCount(text) > DEBRIEF_TOTAL_WORDS) return null;
+  return debriefGuard(text, debrief, facts).length ? null : text;
+}
+
 /** The contract's object, for callers that take a {@link LiveCoachVoice}. */
 export const liveCoachVoice: LiveCoachVoice = {
   answerCoachQuestion,
   summaryFacts,
   speakableSummary: (reply, snap) => speakableSummary(reply, snap),
+  debriefRequest: (debrief, snap, ctx) => debriefRequest(debrief, snap, (ctx || {}) as LiveCoachSummaryContext),
+  speakableDebrief: (reply, debrief, snap) => speakableDebrief(reply, debrief, snap),
 };
