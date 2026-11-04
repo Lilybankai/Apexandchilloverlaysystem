@@ -1608,15 +1608,21 @@ function runDebriefText(improved: readonly { cornerId: string; gainSec: number }
   if (!still.length) return firstFit(s1, RUN_DEBRIEF_MAX_WORDS);
 
   const top = still.slice(0, 3);
+  // A corner can be clearly better AND still costing. Named in both lists
+  // under "Still to work on" it reads as a contradiction ("you've improved
+  // five … still to work on: five"), so when any is, the second sentence
+  // says there is MORE to find instead (integration review, 2026-11-04).
+  const better = new Set(improved.map((x) => x.cornerId));
+  const lead = top.some((x) => better.has(x.cornerId)) ? 'Still more to find in' : 'Still to work on:';
   const s2: string[] = [];
   if (top.length === 1) {
-    s2.push(`Still to work on: ${speakableCorner(top[0]!.cornerId)}, ${top[0]!.what}.`);
+    s2.push(`${lead} ${speakableCorner(top[0]!.cornerId)}, ${top[0]!.what}.`);
   } else {
     for (let k = top.length; k >= 2; k -= 1) {
       const xs = top.slice(0, k).map((x) => `${bareCorner(x.cornerId)}, ${x.what}`);
-      s2.push(`Still to work on: ${xs.slice(0, -1).join(', ')}, and ${xs[xs.length - 1]}.`);
+      s2.push(`${lead} ${xs.slice(0, -1).join(', ')}, and ${xs[xs.length - 1]}.`);
     }
-    s2.push(`Still to work on: ${cornersWords(top.map((x) => x.cornerId))}.`);
+    s2.push(`${lead} ${cornersWords(top.map((x) => x.cornerId))}.`);
   }
   const s3: string[] = [];
   const t0 = top[0]!;

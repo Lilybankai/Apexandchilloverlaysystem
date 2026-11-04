@@ -5,6 +5,41 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.2 — 2026-11-04
+
+The live coach works on several corners at once, tells you about each one
+as you drive up to it, and debriefs you properly when you come in.
+
+### Changed
+
+- **Up to three corners at a time.** The live coach now keeps a list of
+  the corners costing you most and works on them together. When one is
+  sorted, the next joins the list.
+
+- **A cue before each corner.** On the straight before each corner on the
+  list, the engineer gives one short cue, such as "Corner five, brake ten
+  metres later." The cue is timed to finish before the braking point, and
+  is skipped rather than said late. A corner you got right last lap gets
+  a rest.
+
+- **After each lap, what changed.** "Better through seven, three tenths
+  back. Three still: carry ten kph more mid-corner."
+
+- **A debrief when you come in.** On your in-lap the engineer sums up the
+  run: what you improved and by how much, and what is still to work on,
+  with what to change in each. Ask "how am I doing?" or "debrief me" at
+  any time to hear it. Ask "what should I work on?" for the whole list.
+
+- **More detail.** Lines now carry the numbers (metres, kph, tenths), the
+  part of the corner, and a second change when your laps agree on one.
+
+- **The Focus card** shows the next corner on the list that you are
+  heading for, the others as small chips, and a row of the corners you
+  have already improved. It is also a little more compact.
+
+- **New settings** under **Engineer → Live practice coach**: corner cues
+  on or off, and how many corners to work on (1 to 3).
+
 ## 1.3.16-beta.1 — 2026-11-03
 
 One set of overlays at a time, and Reference Pace on the training layer.

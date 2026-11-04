@@ -833,7 +833,8 @@ console.log('\n17) v2: runDebrief and startRun');
   check('laps = counted laps this run', d && d.laps === 6);
   const sentences = d ? d.text.split(/(?<=\.)\s+/).filter(Boolean) : [];
   check(`text: ≤ 3 sentences, ≤ ${C.RUN_DEBRIEF_MAX_WORDS} words`, d && sentences.length <= 3 && spokenWordCount(d.text) <= C.RUN_DEBRIEF_MAX_WORDS, d && `${sentences.length} / ${spokenWordCount(d.text)}: ${d.text}`);
-  check('text: "You\'ve improved corners two and five, about … in all. Still to work on: seven, …"', d && /^You've improved corners two and five, about [a-z ]+ in all\. Still to work on: seven, /.test(d.text), d && d.text);
+  // Five is in both lists (better, still costing): "more to find", not a contradiction.
+  check('text: "You\'ve improved corners two and five, about … in all. Still more to find in seven, …"', d && /^You've improved corners two and five, about [a-z ]+ in all\. Still more to find in seven, /.test(d.text), d && d.text);
   check('text is speakable (no "C7", no digits)', d && !/\bC\d|\d/.test(d.text), d && d.text);
   check('runDebrief never mutates the state', JSON.stringify(st6) === frozen);
   const fresh = C.startRun(st6);
