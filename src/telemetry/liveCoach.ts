@@ -130,6 +130,9 @@ export const LIVE_COACH_DEFAULTS: Readonly<Required<LiveCoachOptions>> = {
   minFocusLossSec: 0.08,
   consistencyEvery: 5,
   summaryEvery: 5,
+  maxWork: 3,
+  approachCues: true,
+  lapDebrief: true,
 };
 
 /** A corner "lost" on a lap when it cost more than this (coachReport.ts LEVEL_SEC). */
@@ -175,6 +178,10 @@ const PRIORITY: Record<LiveCoachKind, number> = {
   coachFocus: 17,
   coachConsistency: 16,
   coachSummary: 15,
+  // v2 placeholders (coach2-base): the engine builder sets the real order.
+  coachApproach: 19,
+  coachLapDebrief: 16,
+  coachRunDebrief: 18,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -267,6 +274,9 @@ function opt(o: LiveCoachOptions | undefined): Required<LiveCoachOptions> {
     minFocusLossSec: n(o?.minFocusLossSec, d.minFocusLossSec, 0),
     consistencyEvery: Math.round(n(o?.consistencyEvery, d.consistencyEvery, 0)),
     summaryEvery: Math.round(n(o?.summaryEvery, d.summaryEvery, 0)),
+    maxWork: Math.max(1, Math.min(5, Math.round(n(o?.maxWork, d.maxWork, 1)))),
+    approachCues: typeof o?.approachCues === 'boolean' ? o.approachCues : d.approachCues,
+    lapDebrief: typeof o?.lapDebrief === 'boolean' ? o.lapDebrief : d.lapDebrief,
   };
 }
 

@@ -64,6 +64,15 @@ export interface LiveCoachOptions {
   consistencyEvery?: number;
   /** AI summary every this many valid laps; 0 = never. Default 5. */
   summaryEvery?: number;
+  /**
+   * Coach v2 (2026-11-04): how many corners the coach works on at once — the
+   * work list. 1 = the v1 behaviour (one focus). Default 3.
+   */
+  maxWork?: number;
+  /** Approach cues on the radio before each work-list corner. Default true. */
+  approachCues?: boolean;
+  /** A lap-end line ("better at four and nine, five still costing…") after each valid lap. Default true. */
+  lapDebrief?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -103,6 +112,30 @@ export interface LiveFocus {
   status: LiveFocusStatus;
   /** The valid lap this focus was first picked on. */
   sinceLapNo: number;
+
+  /* ---- Coach v2 (2026-11-04), all optional so v1 producers stay valid ---- */
+  /**
+   * Where the approach cue is timed against (fraction): the reference's brake
+   * point when the corner has one, else entryD. The service speaks the cue so
+   * it ENDS before the car gets here.
+   */
+  cueD?: number;
+  /**
+   * The approach cue, at most 8 words, speakable, said on the straight BEFORE
+   * the corner: "Corner five, brake ten metres later." Absent = no cue this
+   * lap (e.g. the corner was fine last lap).
+   */
+  approach?: string;
+  /** This corner's driver loss on the last valid lap (s), for "still costing". */
+  lastLossSec?: number;
+  /** The window loss when the corner joined the work list (s), the baseline gains are told against. */
+  baselineSec?: number;
+  /** Time won back against that baseline (s, + = better), window mean. */
+  gainSec?: number;
+  /** A second measurable change in the same corner, when one agrees across the window. */
+  cue2?: LiveFocusCue;
+  /** Position in the work list, 1 = costs most. */
+  rank?: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -114,9 +147,34 @@ export interface LiveFocus {
  * radioGate.ts KIND_URGENCY (all 'normal' — never through a braking zone,
  * never through "keep quiet") and engineer.js TRIGGER_TIERS.
  */
-export type LiveCoachKind = 'coachFocus' | 'coachProgress' | 'coachConsistency' | 'coachSummary';
+export type LiveCoachKind =
+  | 'coachFocus'
+  | 'coachProgress'
+  | 'coachConsistency'
+  | 'coachSummary'
+  /** v2: said on the straight before a work-list corner. Never late: dropped if it cannot finish before {@link LiveFocus.cueD}. */
+  | 'coachApproach'
+  /** v2: the lap-end line: what got better this lap, what is still costing. */
+  | 'coachLapDebrief'
+  /** v2: the run debrief: improved this, this and this; still to work on that and that. In-lap, pit entry, or asked for. */
+  | 'coachRunDebrief';
 
-export const LIVE_COACH_KINDS: readonly LiveCoachKind[] = ['coachFocus', 'coachProgress', 'coachConsistency', 'coachSummary'];
+export const LIVE_COACH_KINDS: readonly LiveCoachKind[] = [
+  'coachFocus',
+  'coachProgress',
+  'coachConsistency',
+  'coachSummary',
+  'coachApproach',
+  'coachLapDebrief',
+  'coachRunDebrief',
+];
+
+/**
+ * v2: how long a held coachApproach may wait for the channel before it is
+ * dropped, ms. Short on purpose: an approach cue said after the braking point
+ * is worse than none. radioGate.ts uses this as a per-kind hold override.
+ */
+export const APPROACH_HOLD_MS = 1500;
 
 export interface LiveCoachCall {
   kind: LiveCoachKind;
@@ -136,6 +194,19 @@ export interface LiveCoachState {
   /** The last `windowLaps` valid laps' per-corner driver loss (s), newest last. */
   recent: { lapNo: number; lapSec: number; byCorner: Record<string, number> }[];
   focus: LiveFocus | null;
+  /**
+   * v2: the work list, costliest first, at most maxWork. `focus` stays equal
+   * to work[0] (or null) so v1 readers keep working. Optional: a v1 state
+   * reads as [focus].
+   */
+  work?: LiveFocus[];
+  /**
+   * v2: corners fixed or clearly improved THIS RUN (since the last pit stop /
+   * run debrief), with the time won back: what the run debrief says first.
+   */
+  runImproved?: { cornerId: string; gainSec: number }[];
+  /** v2: valid-lap count when the current run started (after the last pit / debrief). */
+  runStartLap?: number;
   /** Corners already fixed this session, so the coach moves on and does not nag. */
   fixed: string[];
   /** Valid-lap count at the last consistency call / last summary request. */
@@ -150,12 +221,58 @@ export interface LiveCoachStep {
   focus: LiveFocus | null;
   /** True when the service should ask the AI for a summary now ({@link LiveCoachOptions.summaryEvery}). */
   wantSummary: boolean;
+  /** v2: the work list after this lap (same as state.work). */
+  work?: LiveFocus[];
+}
+
+/**
+ * v2: where the car is, for the approach cue. From the frame: lap fraction
+ * (trackMap.cars[player].lapFraction, ~7 Hz, or player.ghost.atD when live),
+ * speed, the lap number, and whether it is in the pit lane.
+ */
+export interface LiveCoachPosition {
+  lapD: number;
+  speedKph: number;
+  lapNo: number;
+  inPit: boolean;
+  trackLengthM: number;
+}
+
+/** v2: one approach cue to say now. */
+export interface LiveApproachCue {
+  cornerId: string;
+  text: string;
+  /** Seconds until the car reaches cueD at its current speed. */
+  etaSec: number;
+}
+
+/**
+ * v2: the run debrief as templates (always available; the AI may rewrite it).
+ * `improved` and `still` name corners; `text` is at most 3 speakable sentences.
+ */
+export interface LiveRunDebrief {
+  improved: { cornerId: string; gainSec: number }[];
+  still: { cornerId: string; lossSec: number; what: string }[];
+  text: string;
+  laps: number;
 }
 
 /** The engine's entry points (liveCoach.ts implements these). */
 export interface LiveCoachEngine {
   initLiveCoach(sessionKey: string): LiveCoachState;
   stepLiveCoach(state: LiveCoachState, lap: LiveCoachLap, opts?: LiveCoachOptions): LiveCoachStep;
+  /**
+   * v2, pure: the approach cue to say NOW, or null. `cued` = corner ids
+   * already cued on this lap (the service keeps it, cleared at the line). Fires
+   * when the car is heading for a work-list corner with an `approach` line,
+   * ETA to cueD between the time the words take (+ lead) and a few seconds
+   * more, not in the pit, above a crawl.
+   */
+  approachCueAt?(state: LiveCoachState, pos: LiveCoachPosition, cued: readonly string[], opts?: LiveCoachOptions): LiveApproachCue | null;
+  /** v2, pure: the run debrief so far (since runStartLap). Null before minLaps. */
+  runDebrief?(state: LiveCoachState): LiveRunDebrief | null;
+  /** v2, pure: start a new run (after a pit stop / a debrief was said). */
+  startRun?(state: LiveCoachState): LiveCoachState;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -169,6 +286,15 @@ export interface LiveCoachEngine {
  */
 export interface LiveCoachOverlay {
   focus: Pick<LiveFocus, 'cornerId' | 'cornerNo' | 'entryD' | 'apexD' | 'exitD' | 'lossSec' | 'short' | 'status'> | null;
+  /**
+   * v2: the work list for the card (same subset + gain/rank), costliest first.
+   * The card shows the NEXT one the car is heading for as the big line and the
+   * others as small chips. Optional: absent = v1 (focus only).
+   */
+  work?: (Pick<LiveFocus, 'cornerId' | 'cornerNo' | 'entryD' | 'apexD' | 'exitD' | 'lossSec' | 'short' | 'status'> &
+    Pick<LiveFocus, 'gainSec' | 'rank' | 'cueD'>)[];
+  /** v2: corners improved this run, for a small "C4 better by 0.2" row. */
+  improved?: { cornerId: string; cornerNo: number; gainSec: number }[];
   /** Valid laps counted; the card says "Learning your laps…" until minLaps. */
   validLaps: number;
   minLaps: number;
@@ -206,4 +332,12 @@ export interface LiveCoachVoice {
   summaryFacts(snap: LiveCoachSnapshot): { facts: { id: string; text: string }[]; prompt: string };
   /** The AI's reply → a speakable summary (≤ 2 sentences), or null to fall back to silence. */
   speakableSummary(reply: unknown, snap: LiveCoachSnapshot): string | null;
+  /**
+   * v2: the run debrief's AI request (facts from {@link LiveRunDebrief} plus
+   * the snapshot), in the same shape the service already sends for the
+   * summary. Optional.
+   */
+  debriefRequest?(debrief: LiveRunDebrief, snap: LiveCoachSnapshot, ctx: unknown): unknown;
+  /** v2: the AI's reply → at most 3 speakable sentences naming only corners in the debrief, or null (say the template). */
+  speakableDebrief?(reply: unknown, debrief: LiveRunDebrief, snap: LiveCoachSnapshot): string | null;
 }
