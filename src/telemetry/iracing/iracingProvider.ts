@@ -59,6 +59,7 @@ import {
   type MotionState,
   type PitState,
   type RadarBlip,
+  type TrackLimitsState,
   type TrackMapCar,
   type TrackMapState,
   type PitPhase,
@@ -92,8 +93,22 @@ const G = 9.80665;
 const CLOSING_WINDOW_MS = 800;
 /** How long a lap-time update may lag the lap counter before we give up on it. */
 const LAP_TIME_SETTLE_MS = 3000;
-/** A replay this many 60 Hz frames behind live is a REPLAY, not live spectating. */
-const REPLAY_BEHIND_FRAMES = 60;
+/**
+ * How far behind live (60 Hz frames) the replay system must be before it is a
+ * REPLAY the driver is watching rather than iRacing's own out-of-car view.
+ *
+ * iRacing shows everything off the replay buffer once you leave the car —
+ * the garage screen, spectating, the session after you exit — with
+ * `IsReplayPlaying` true and `ReplayFrameNumEnd` parked at exactly 1201 (a
+ * 20-second tail) at speed 1. That was in every out-of-car stretch of all five
+ * 2026-11-10 captures. Reading it as "a replay is on screen" kept the in-game
+ * layer up through auto-hide (replays deliberately show the overlays), so
+ * auto show/hide never hid anything. 25 s clears the tail with margin; a real
+ * replay review is scrubbed far further back, or not at speed 1.
+ */
+const REPLAY_BEHIND_FRAMES = 1500;
+/** `ReplayFrameNumEnd` of iRacing's out-of-car live tail (20 s at 60 Hz). */
+const LIVE_TAIL_FRAMES = 1201;
 
 /** `irsdk_SessionState`. */
 const SS = { Invalid: 0, GetInCar: 1, Warmup: 2, ParadeLaps: 3, Racing: 4, Checkered: 5, CoolDown: 6 } as const;
@@ -113,7 +128,14 @@ const FLAG = {
   startReady: 0x20000000,
   startSet: 0x40000000,
   startGo: 0x80000000,
+  /** irsdk_black — a penalty (drive-through / stop-and-go) is waiting to be served. */
+  black: 0x10000,
+  /** irsdk_disqualify. */
+  disqualify: 0x20000,
 } as const;
+
+/** How many recent incidents the Track Limits widget is given (newest first). */
+const INCIDENT_HISTORY = 6;
 
 /** `irsdk_TrkLoc`. */
 const TRK = { NotInWorld: -1, OffTrack: 0, InPitStall: 1, ApproachingPits: 2, OnTrack: 3 } as const;
@@ -351,6 +373,20 @@ export class IRacingProvider implements TelemetryProvider {
   private integratorEpoch = -1;
   private prevSessionTime = NaN;
   private lastRadar: RadarBlip[] | null = null;
+  /** Incident points this session, as the Track Limits block reports them. */
+  private incCount = -1;
+  private incCharges: number[] = [];
+  private incLaps: number[] = [];
+  private incEvents = 0;
+  private incAt = 0;
+  private incLapNow = -1;
+  private incOnLap = false;
+  private blackSince = 0;
+  private blackServedAt = 0;
+  private wasBlack = false;
+  /** Last tyre temp/wear signature and when it changed (see readingAgeSec). */
+  private tyreSig = '';
+  private tyreSigAt = 0;
 
   /* --- per-session state; cleared by resetSession() ------------------------ */
   private sessionKey = '';
@@ -567,12 +603,93 @@ export class IRacingProvider implements TelemetryProvider {
     return { ...(trackMap ? { trackMap } : {}), ...(radar ? { radar } : {}) };
   }
 
+  /**
+   * iRacing's incident points, in the shape the Track Limits widget already
+   * draws for LMU's stewarding points.
+   *
+   * `PlayerCarMyIncidentCount` moves the instant an incident is charged, by
+   * iRacing's own amounts: 1x off-track, 2x loss of control, 4x contact (0x
+   * light contact never moves it). Measured on 2026-11-10: every +1 landed with
+   * the car on surface 0 (off track), and the 17x DQ in an official race came
+   * exactly at `WeekendOptions.IncidentLimit` = 17. In a team race the limit is
+   * the TEAM's, so the team count is the one that is judged.
+   *
+   * Only OUR count is published — official sessions zero everyone else's — so
+   * this is a driver's own widget, never a field-wide column.
+   */
+  private buildIncidents(
+    f: IrsdkFrame,
+    info: IrSessionInfo,
+    flags: number,
+    nowMs: number,
+  ): TrackLimitsState | undefined {
+    const team = info.teamRacing ? f.num('PlayerCarTeamIncidentCount') : NaN;
+    const mine = f.num('PlayerCarMyIncidentCount');
+    const count = fin(team) && team >= 0 ? team : mine;
+    if (!fin(count) || count < 0) return undefined;
+    const lap = or(f.num('Lap'), -1);
+    if (lap !== this.incLapNow) {
+      this.incLapNow = lap;
+      this.incOnLap = false;
+    }
+    if (this.incCount >= 0 && count > this.incCount) {
+      this.incCharges.unshift(count - this.incCount);
+      this.incLaps.unshift(lap);
+      this.incCharges.length = Math.min(this.incCharges.length, INCIDENT_HISTORY);
+      this.incLaps.length = Math.min(this.incLaps.length, INCIDENT_HISTORY);
+      this.incEvents++;
+      this.incAt = nowMs;
+      this.incOnLap = true;
+    } else if (count < this.incCount) {
+      // The count went DOWN: a new session the session key did not catch.
+      this.incCharges = [];
+      this.incLaps = [];
+      this.incEvents = 0;
+      this.incAt = 0;
+    }
+    this.incCount = count;
+
+    const black = (flags & FLAG.black) !== 0;
+    if (black && !this.wasBlack) this.blackSince = nowMs;
+    if (!black && this.wasBlack) this.blackServedAt = nowMs;
+    this.wasBlack = black;
+
+    const limit = info.incidentLimit;
+    const block: TrackLimitsState = {
+      points: count,
+      pointsLimit: limit > 0 ? limit : 0,
+      pointsLimitEnforced: limit > 0,
+      charges: this.incCharges.slice(),
+      charged: this.incEvents,
+      chargedLaps: this.incLaps.slice(),
+      msSinceCharge: this.incAt > 0 ? nowMs - this.incAt : UNKNOWN_VALUE,
+      penalties: black ? 1 : 0,
+      msSincePenalty: this.blackSince > 0 ? nowMs - this.blackSince : UNKNOWN_VALUE,
+      msSinceServed: this.blackServedAt > 0 ? nowMs - this.blackServedAt : UNKNOWN_VALUE,
+      ...((flags & FLAG.disqualify) !== 0 ? { disqualified: true } : {}),
+      // A lap with an incident on it is not a clean lap — our rule, the same
+      // one the lap log uses; iRacing publishes no per-lap validity live.
+      lapValid: !this.incOnLap,
+    };
+    return block;
+  }
+
   private resetSession(key: string): void {
     this.sessionKey = key;
     this.integrator.reset();
     this.integratorRev = -1;
     this.prevSessionTime = NaN;
     this.lastRadar = null;
+    this.incCount = -1;
+    this.incCharges = [];
+    this.incLaps = [];
+    this.incEvents = 0;
+    this.incAt = 0;
+    this.incLapNow = -1;
+    this.incOnLap = false;
+    this.blackSince = 0;
+    this.blackServedAt = 0;
+    this.wasBlack = false;
     this.gates.clear();
     this.playerGate = new LapGate();
     this.seenInWorld.clear();
@@ -806,7 +923,15 @@ export class IRacingProvider implements TelemetryProvider {
             : classEst,
     });
     const replayEnd = f.num('ReplayFrameNumEnd');
-    const replay = f.bool('IsReplayPlaying') && fin(replayEnd) && replayEnd > REPLAY_BEHIND_FRAMES;
+    const replaySpeed = f.num('ReplayPlaySpeed');
+    const replay =
+      f.bool('IsReplayPlaying') &&
+      fin(replayEnd) &&
+      (replayEnd > REPLAY_BEHIND_FRAMES ||
+        // Paused, slow-motion or fast-forward is a person driving the replay,
+        // even close to live — but never iRacing's own parked tail.
+        (replayEnd > 60 && replayEnd !== LIVE_TAIL_FRAMES && fin(replaySpeed) && replaySpeed !== 1) ||
+        f.bool('ReplayPlaySlowMotion'));
     const startLights =
       flags & (FLAG.startReady | FLAG.startSet | FLAG.startGo)
         ? { frame: flags & FLAG.startGo ? 2 : flags & FLAG.startSet ? 1 : 0, total: 1 }
@@ -873,6 +998,20 @@ export class IRacingProvider implements TelemetryProvider {
     }
 
     const tyres = ownIsFocus ? readTyres(f, info) : unknownTyres();
+    if (ownIsFocus) {
+      // iRacing refreshes tyre temps/wear only in the pit stall: track when the
+      // figures last changed so the widget can label them a pit reading.
+      const sig = [tyres.frontLeft, tyres.frontRight, tyres.rearLeft, tyres.rearRight]
+        .map((t) => `${t.tempC}/${t.wear}`)
+        .join('|');
+      if (sig !== this.tyreSig) {
+        this.tyreSig = sig;
+        this.tyreSigAt = nowMs;
+      }
+      if (this.tyreSigAt > 0 && fin(tyres.frontLeft.tempC) && tyres.frontLeft.tempC !== UNKNOWN_VALUE) {
+        tyres.readingAgeSec = Math.max(0, Math.round((nowMs - this.tyreSigAt) / 1000));
+      }
+    }
     const pedals = ownIsFocus ? this.readPedals(f, nowMs) : { throttle: 0, brake: 0, clutch: 0, steer: 0 };
     const motion = ownIsFocus && isOnTrack ? readMotion(f) : undefined;
     const pit = ownIsFocus && isOnTrack ? this.readPit(f, onPitRoad, inStall, nowMs) : undefined;
@@ -914,6 +1053,9 @@ export class IRacingProvider implements TelemetryProvider {
       carIdxTrackSurface: Array.from({ length: 64 }, (_, i) => or(f.num('CarIdxTrackSurface', i), -1)),
       entrants: entrants.map((d) => d.carIdx),
     };
+
+    /* --- incidents → the Track Limits block --------------------------------- */
+    const trackLimits = ownIsFocus && !replay ? this.buildIncidents(f, info, flags, nowMs) : undefined;
 
     /* --- track map + radar ----------------------------------------------- */
     const { trackMap, radar } = this.buildMapAndRadar(
@@ -979,6 +1121,7 @@ export class IRacingProvider implements TelemetryProvider {
         ...(finish && finish.cls !== undefined ? { finishClassPosition: finish.cls } : {}),
         ...(motion ? { motion } : {}),
         ...(pit ? { pit } : {}),
+        ...(trackLimits ? { trackLimits } : {}),
       },
       standings,
       relative,

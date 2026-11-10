@@ -284,6 +284,15 @@ function replay(dir, laps, isFixture) {
       }
     }
     if (fr.radar && !fr.session.onTrack) bad('radar while not on track');
+    // iRacing's out-of-car view runs off the replay buffer parked 1201 frames
+    // (20 s) behind live at speed 1. It is NOT a replay: reading it as one kept
+    // the in-game layer up through auto-hide (1.3.16-beta.4).
+    {
+      const r = src.raw();
+      if (r && r.IsReplayPlaying && r.ReplayFrameNumEnd === 1201 && r.ReplayPlaySpeed === 1 && fr.session.replay) {
+        bad('out-of-car live tail flagged as a replay');
+      }
+    }
     // Rookies are never iRating-rated (real official race, 2026-11-10).
     for (const e of fr.standings) {
       if (e.iRatingDelta !== undefined && e.license && /^R/.test(e.license.text)) bad('iRatingDelta on a Rookie licence', e.driverName);
