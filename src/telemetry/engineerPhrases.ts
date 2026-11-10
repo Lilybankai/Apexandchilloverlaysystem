@@ -54,6 +54,16 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) && v !== UNKNOWN_VALUE ? v : undefined;
 }
 
+/**
+ * A blue-flag gap worth saying. Under a quarter of a second the car is already
+ * alongside, and "0.0 seconds behind" (heard on the 2026-11-10 iRacing replay)
+ * is noise — the line falls back to its no-gap wording.
+ */
+function yieldGap(v: unknown): number | undefined {
+  const g = num(v);
+  return g !== undefined && g >= 0.25 ? g : undefined;
+}
+
 /** Signed derived deltas may legitimately equal -1, the telemetry sentinel. */
 function signedNum(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
@@ -537,7 +547,7 @@ function leadSentence(
       ]);
 
     case 'yieldTo': {
-      const gap = num(f.gapSec);
+      const gap = yieldGap(f.gapSec);
       const who = typeof f.name === 'string' && f.name ? surname(f.name) : null;
       // A car a lap up in the player's OWN class (or a slower one) is lapping
       // them, not "faster class behind" — the blanket wording was wrong for it.
@@ -894,7 +904,7 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
     // name and gap stay in every line; the sector suffix still rides after
     // (phraseForCue), so these keep to nine words with a name and gap.
     case 'yieldTo': {
-      const gap = num(f.gapSec);
+      const gap = yieldGap(f.gapSec);
       const who = typeof f.name === 'string' && f.name ? surname(f.name) : null;
       const g = gap !== undefined ? speakableGap(gap) : null;
       if (f.lapping === true) {

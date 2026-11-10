@@ -2350,9 +2350,10 @@ async function syncEngineer(settings) {
   const s = settings || loadSettings();
   const eng = getEngineer();
   const installed = eng.engineInstalled() && eng.voiceInstalled(s.engineerVoice);
-  // LMU only for now: its calls read LMU frame fields and its pit commands go
-  // to LMU's REST API, and the Engineer tab is hidden in iRacing mode.
-  const wanted = !!s.engineerEnabled && simOf(s) === 'lmu' && status.running && installed;
+  // LMU and iRacing (2026-11-10): the calls read generic frame fields, and the
+  // iRacing ones (incidents, flags, cautions, lap-limited qualifying) come from
+  // the provider's `iracing` block — telemetry/irEngineerCalls.ts.
+  const wanted = !!s.engineerEnabled && (simOf(s) === 'lmu' || simOf(s) === 'iracing') && status.running && installed;
   if (eng.running) eng.stop();
   if (wanted) {
     try {

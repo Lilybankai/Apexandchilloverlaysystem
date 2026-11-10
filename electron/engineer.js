@@ -430,7 +430,8 @@ const NOT_REPEATABLE = new Set(['Say again?', NOTHING_TO_REPEAT, ...Object.value
  */
 const ENGINEER_CALLOUTS = [
   { intent: 'lastLap', label: 'Call last lap time' },
-  { intent: 'sectors', label: 'Call sector times' },
+  // iRacing publishes no per-car sector splits live: LMU only.
+  { intent: 'sectors', label: 'Call sector times', sims: ['lmu'] },
   { intent: 'bestLap', label: 'Call best lap' },
   { intent: 'gapAhead', label: 'Call gap ahead' },
   { intent: 'gapBehind', label: 'Call gap behind' },

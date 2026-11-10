@@ -93,11 +93,12 @@ function createActions(deps = {}) {
   /**
    * `sims` (optional) names the sims an action exists for; absent = every sim.
    * Everything in 'Pit strategy' drives LMU's own pit menu over its REST API
-   * or presses LMU's keys, and the race engineer runs in LMU mode only, so
-   * those two groups are LMU-only without each entry having to say so.
+   * or presses LMU's keys, so that group is LMU-only without each entry
+   * having to say so. The race engineer runs in LMU and iRacing mode
+   * (2026-11-10); a callout with no iRacing answer says so itself (`sims`).
    * main.js filters the Bindings list and the registered hotkeys on it.
    */
-  const LMU_GROUPS = ['Pit strategy', 'Engineer'];
+  const LMU_GROUPS = ['Pit strategy'];
   function define(action) {
     const sims = action.sims || (LMU_GROUPS.includes(action.group) ? ['lmu'] : undefined);
     registry.set(action.id, sims ? { ...action, sims } : action);
@@ -137,6 +138,7 @@ function createActions(deps = {}) {
         label: c.label,
         group: 'Engineer',
         kind: 'pulse',
+        ...(Array.isArray(c.sims) ? { sims: c.sims } : {}),
         run: async () => deps.engineerSpeak(c.intent),
       });
     }

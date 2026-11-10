@@ -765,7 +765,12 @@ export class IRacingProvider implements TelemetryProvider {
     }
     const lapsOf = (r: CarRow): number =>
       r.lapsRaw >= 0 ? r.lapsRaw : Math.max(0, r.result?.lapsComplete ?? 0);
-    const progress = (r: CarRow): number => lapsOf(r) + (r.pct >= 0 && r.pct <= 1 ? r.pct : 0);
+    // A car on track still short of the line it starts from reads LapCompleted
+    // -1: count it as such, or the first car across the line (pct back to ~0)
+    // sorts BEHIND the grid still waiting to cross (the race-start order
+    // jumbled for ~6 s in the 2026-11-10 captures, before CarIdxPosition fills).
+    const progress = (r: CarRow): number =>
+      (r.lapsRaw === -1 && r.pct >= 0 && r.pct <= 1 ? -1 : lapsOf(r)) + (r.pct >= 0 && r.pct <= 1 ? r.pct : 0);
 
     // Live order from telemetry; cars it has not scored (0) fall back to the
     // session's YAML results, then to track progress.
@@ -1184,7 +1189,7 @@ export class IRacingProvider implements TelemetryProvider {
             ? info.driverCarEstLapTime
             : 90;
     const estF = focus.est;
-    const focusProgress = Math.max(0, focus.lapsRaw) + focus.pct;
+    const focusProgress = Math.max(-1, focus.lapsRaw) + focus.pct;
 
     const cand: Array<{ r: CarRow; gap: number; laps: number }> = [];
     for (const r of rows) {
@@ -1206,7 +1211,7 @@ export class IRacingProvider implements TelemetryProvider {
         if (!disagrees) gap = dt;
       }
       const laps = isRace
-        ? Math.round(Math.max(0, r.lapsRaw) + r.pct - focusProgress - dPct)
+        ? Math.round(Math.max(-1, r.lapsRaw) + r.pct - focusProgress - dPct)
         : 0;
       cand.push({ r, gap, laps });
     }

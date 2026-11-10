@@ -51,8 +51,12 @@ const NON_RACE_MIN_STEP = 4;
 /** Points-to-the-limit at which every call carries the warning. */
 export const INCIDENT_WARN_LEFT = 4;
 
-/** Seconds after the green the start position is read (the order settles). */
-const START_POSITION_SETTLE_MS = 4000;
+/**
+ * How long after the green the start position is read, ms. At the green itself:
+ * the grid order still holds there (cars still short of the line count lap -1),
+ * while a few seconds later a stalled car ahead already reads as a place made.
+ */
+const START_POSITION_SETTLE_MS = 0;
 
 /** What this module offers — the trigger layer's own kinds. */
 export type IrCallKind = 'irIncident' | 'irRepair' | 'irCaution' | 'penalty' | 'penaltyServed' | 'sectorYellow' | 'qualiTimeLeft';

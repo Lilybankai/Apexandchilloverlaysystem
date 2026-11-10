@@ -186,7 +186,7 @@
       </button>
 
       <p class="rail__group">Driving</p>
-      <button class="tab" type="button" data-tab="engineer" data-sims="lmu">
+      <button class="tab" type="button" data-tab="engineer" data-sims="lmu iracing">
         <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
       </button>
       <button class="tab" type="button" data-tab="setups" data-sims="lmu">
@@ -1925,7 +1925,7 @@
          the answer, the voice — so the tab is mostly a voice picker plus the
          push-to-talk binding. Rendered by engineer-panel.js from main's
          engineer:status; no polling, pushes only. -->
-    <section class="view" data-view="engineer" data-sims="lmu">
+    <section class="view" data-view="engineer" data-sims="lmu iracing">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -2051,7 +2051,7 @@
                   <span class="field__hint" id="eng-tone-hint"></span>
                 </label>
 
-                <label class="field">
+                <label class="field" data-sims="lmu">
                   <span class="field__label">Practice pace reminders</span>
                   <select class="field__input" id="eng-pace-reminder">
                     <option value="2">Frequent · every 2 laps</option>
@@ -2068,7 +2068,7 @@
                 <!-- The live practice coach (2026-11-03, electron/live-coach.js).
                      Beta only, like the Practice tab: control-panel.js shows
                      the field with the tab (applyPracticeTabVisibility). -->
-                <label class="field field--toggle" id="eng-live-coach-field" hidden>
+                <label class="field field--toggle" id="eng-live-coach-field" data-sims="lmu" hidden>
                   <span class="field__label">Live practice coach</span>
                   <span class="switch">
                     <input type="checkbox" id="eng-live-coach" />
@@ -2085,7 +2085,7 @@
 
                 <!-- Coach v2 (2026-11-04): beta only, shown with the switch above
                      (control-panel.js applyPracticeTabVisibility). -->
-                <label class="field field--toggle" id="eng-live-coach-approach-field" hidden>
+                <label class="field field--toggle" id="eng-live-coach-approach-field" data-sims="lmu" hidden>
                   <span class="field__label">Coach cues before corners</span>
                   <span class="switch">
                     <input type="checkbox" id="eng-live-coach-approach" />
@@ -2098,7 +2098,7 @@
                   </span>
                 </label>
 
-                <label class="field" id="eng-live-coach-corners-field" hidden>
+                <label class="field" id="eng-live-coach-corners-field" data-sims="lmu" hidden>
                   <span class="field__label">Corners to work on</span>
                   <select class="field__input" id="eng-live-coach-corners">
                     <option value="1">One · the costliest corner</option>
