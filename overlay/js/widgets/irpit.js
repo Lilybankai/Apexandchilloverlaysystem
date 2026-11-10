@@ -15,7 +15,13 @@
  * from iRacing: success is the value changing on the next frames, which is why
  * every value here glows on change (the MFD widget's convention).
  *
- * URL params: ?opacity=0.4 (the damage/mfd contract).
+ * URL params: ?opacity=0.4 (the damage/mfd contract), ?irpit=always|pits.
+ *
+ * ## When it shows
+ * Mode `pits` (the default) keeps the panel out of the way on track and brings
+ * it up by itself on pit road, in the stall and through a stop; `always` keeps
+ * it up. The "Show / hide iRacing Pit panel" binding flips between the two
+ * (main.js WIDGET_MODES.irpit). Edit mode always shows it, so it can be placed.
  */
 (function () {
   "use strict";
@@ -155,8 +161,46 @@
     if (isFinite(v)) root.style.opacity = String(Math.min(1, Math.max(0.15, v)));
   }
 
+  /* ---- when it shows ---------------------------------------------------- */
+  var panelRoot = null;
+  var showMode = "pits";
+  var modePinned = false;
+  var hiddenCache = null;
+
+  /** On pit road, in the stall, or mid-stop: when `pits` mode brings it up. */
+  function inPitLane(frame, s) {
+    if (s && (s.active || s.status === "inProgress")) return true;
+    var p = frame.player || {};
+    if (p.pit && p.pit.phase && p.pit.phase !== "none") return true;
+    var st = frame.standings || [];
+    for (var i = 0; i < st.length; i++) if (st[i] && st[i].isPlayer) return !!st[i].inPit;
+    return false;
+  }
+
+  function applyShown(frame, s) {
+    if (!panelRoot) return;
+    var editing = document.body && document.body.classList.contains("ig-editing");
+    var hide = !editing && showMode !== "always" && !inPitLane(frame, s);
+    if (hiddenCache === hide) return;
+    hiddenCache = hide;
+    panelRoot.setAttribute("data-autohide", hide ? "true" : "false");
+  }
+
   function init(root, ctx) {
     octx = ctx;
+    panelRoot = root;
+    hiddenCache = null;
+    var q = new URLSearchParams(window.location.search).get("irpit");
+    if (q === "always" || q === "pits") {
+      showMode = q;
+      modePinned = true;
+    }
+    if (!modePinned && window.ApexAppearance && window.ApexAppearance.onModes) {
+      window.ApexAppearance.onModes(function (modes) {
+        showMode = modes && modes.irpit === "always" ? "always" : "pits";
+        hiddenCache = null;
+      });
+    }
     headerMeta = root.querySelector('[data-role="meta"]');
     var mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
@@ -278,6 +322,7 @@
     var p = frame.player || {};
     var s = p.pitService;
     var r = p.repair;
+    applyShown(frame, s);
     if (!s) {
       setLive(false);
       setText(headerMeta, "meta", "NOT IN CAR");

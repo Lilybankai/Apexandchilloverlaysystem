@@ -260,6 +260,19 @@ function createActions(deps = {}) {
   }
 
   if (deps.cycleWidgetMode) {
+    // Bring the iRacing Pit panel up anywhere, or put it back to showing only
+    // on pit road. Not a pit command: it needs no setting and sends nothing.
+    define({
+      id: 'irpit.toggle',
+      label: 'Show / hide iRacing Pit panel',
+      group: 'iRacing pit',
+      kind: 'pulse',
+      sims: ['iracing'],
+      run: async () => {
+        deps.cycleWidgetMode('irpit');
+        return { ok: true };
+      },
+    });
     define({
       id: 'widget.tyres.mode',
       label: 'Tyre readout (temp / surface / tread / map)',
@@ -540,6 +553,23 @@ function createActions(deps = {}) {
     irPit('irpit.fastRepair', 'Fast repair on / off', 'pulse', () => ({ kind: 'fastRepair' }));
     irPit('irpit.tearoff', 'Tear-off on / off', 'pulse', () => ({ kind: 'tearoff' }));
     irPit('irpit.clear', 'Clear all pit service', 'pulse', () => ({ kind: 'clear' }));
+    // Each tyre on its own, and the cold pressures — one press = one step
+    // (about 1 psi), the same step as the panel's ± buttons.
+    for (const [corner, name] of [['lf', 'left front'], ['rf', 'right front'], ['lr', 'left rear'], ['rr', 'right rear']]) {
+      irPit(`irpit.tyre.${corner}`, `Change ${name} tyre on / off`, 'pulse', () => ({ kind: 'tyre', corner }));
+    }
+    irPit('irpit.pressure.all', 'Tyre pressures, all four (± 1 psi)', 'delta', (dir) => ({
+      kind: 'pressure',
+      corner: 'all',
+      deltaKpa: dir < 0 ? -7 : 7,
+    }));
+    for (const [corner, name] of [['lf', 'Left front'], ['rf', 'Right front'], ['lr', 'Left rear'], ['rr', 'Right rear']]) {
+      irPit(`irpit.pressure.${corner}`, `${name} pressure (± 1 psi)`, 'delta', (dir) => ({
+        kind: 'pressure',
+        corner,
+        deltaKpa: dir < 0 ? -7 : 7,
+      }));
+    }
   }
 
   return {

@@ -4779,3 +4779,13 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
   font-size: calc(var(--s, 1) * 68px);
   font-weight: 700;
 }
+
+/* iRacing Pit: out of the way on track in 'pits' mode (widgets/irpit.js).
+   Faded rather than display:none so the in-game layer keeps its box and the
+   stored layout never collapses; no pointer events, so interact mode cannot
+   click a panel nobody can see. Edit mode is excluded in the widget itself. */
+#widget-irpit { transition: opacity 0.25s ease; }
+#widget-irpit[data-autohide="true"] {
+  opacity: 0;
+  pointer-events: none;
+}

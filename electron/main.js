@@ -266,6 +266,14 @@ const OVERLAY_CATALOG = [
     description: 'Fuel, tyres, pressures, fast repair and tear-off for the next stop, and the stop as it happens (iRacing)',
     ingameDefault: false,
     sims: ['iracing'],
+    // When it shows (2026-11-10, Carl): by default it comes up by itself on pit
+    // road and in the stall and stays out of the way on track; the "Show / hide
+    // iRacing Pit panel" binding flips to 'always' and back. In step with
+    // WIDGET_MODES.irpit; the first entry is the default.
+    designs: [
+      { id: 'pits', label: 'Pit lane only (auto)' },
+      { id: 'always', label: 'Always shown' },
+    ],
   },
   // Stream chat pulls its own feed from the /chat socket, not the telemetry
   // frame. Off in the in-game set by default — it is a deliberate add (a side
@@ -850,6 +858,9 @@ const WIDGET_MODES = {
   // The MFD's layout. 'stack' is the original column; 'row' puts the sections
   // side by side. In step with the mfd catalog entry's `designs` list.
   mfd: ['stack', 'row'],
+  // When the iRacing Pit panel shows: 'pits' = by itself on pit road / in the
+  // stall (default), 'always' = always up. The irpit.toggle binding flips them.
+  irpit: ['pits', 'always'],
 };
 
 /** Action ids whose binding is mirrored by a legacy single-purpose setting. */
