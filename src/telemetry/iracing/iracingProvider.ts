@@ -174,6 +174,9 @@ export interface IrTickSnapshot {
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/** `"R 2.76"` → true. iRacing's Rookie licence class; its holders are not iRating-rated. */
+export const isRookieLicence = (text: string | undefined): boolean => !!text && /^R/.test(text.trim());
+
 const fin = (v: number): boolean => typeof v === 'number' && Number.isFinite(v);
 const or = (v: number, fallback: number): number => (fin(v) ? v : fallback);
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
@@ -747,6 +750,12 @@ export class IRacingProvider implements TelemetryProvider {
       });
       const deltas = iRatingDeltasByClass(entries);
       for (const s of standings) {
+        // Rookie-licence drivers still count in everyone else's calculation
+        // (the field's expected scores include them), but iRacing does not
+        // change a Rookie's own iRating: their results row reads "----".
+        // Checked against a real official race on 2026-11-10 — all three R
+        // drivers unrated, the six D drivers within 0–3 of this projection.
+        if (isRookieLicence(s.license?.text)) continue;
         const d = deltas.get(s.slotId);
         if (d !== undefined) s.iRatingDelta = d;
       }

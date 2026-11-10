@@ -284,6 +284,10 @@ function replay(dir, laps, isFixture) {
       }
     }
     if (fr.radar && !fr.session.onTrack) bad('radar while not on track');
+    // Rookies are never iRating-rated (real official race, 2026-11-10).
+    for (const e of fr.standings) {
+      if (e.iRatingDelta !== undefined && e.license && /^R/.test(e.license.text)) bad('iRatingDelta on a Rookie licence', e.driverName);
+    }
     if (fr.session.onTrack && fr.player.slotId === p.snapshot().playerCarIdx && !pl.motion) bad('no motion while on track');
     if (isFixture && fr.session.onTrack && pl.speedKph > 100 && !onTrackFrame) {
       onTrackFrame = JSON.parse(JSON.stringify(src.raw()));
