@@ -5,6 +5,68 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.6 — 2026-11-10
+
+The race engineer, lap telemetry, the pit wall and the race log come to
+iRacing.
+
+### Added
+
+- **The race engineer on iRacing.** The Engineer tab now works in iRacing
+  mode: gaps, fuel, positions, blue flags, traffic and rival stops, plus
+  iRacing's own calls:
+  - **Qualifying:** "Out lap, then two timed laps", "Last lap of
+    qualifying, make it count", "That's your run, provisionally P2".
+  - **Race:** green flag, white flag and last lap, the chequered flag with
+    your result.
+  - **Incidents:** "Plus four, contact, 12 of 17", a warning when you are
+    one away from the limit, and the DQ.
+  - **Flags:** meatball (box this lap), black flag (serve your penalty) and
+    when it clears, local yellows, tows.
+  - **Cautions:** pace car out, pits open or closed, one to green, the
+    restart, and no position calls while it is out.
+  - Race reminders speak in iRacing mode too.
+
+- **Lap telemetry on iRacing.** Every lap is recorded, so the Pace Delta
+  overlay, the predicted lap and the speedo's projected lap now work, and
+  Review shows lap detail and Compare for iRacing laps, with your driven
+  line on the map. iRacing leaderboard laps upload with their telemetry, so
+  Compare works on the iRacing boards.
+
+- **Damage on iRacing.** The Damage overlay shows when iRacing says you
+  need a repair (optional or mandatory), the meatball flag, fast repairs
+  left, the tow countdown and your last hit. During a stop it shows the
+  stop clock and which service items are still to do.
+
+- **Race Control on iRacing.** Start lights, green, local yellows,
+  cautions, white, chequered, blue, black, meatball and DQ banners, and the
+  pit limiter.
+
+- **iRacing pit menu (beta, off by default).** A new iRacing Pit overlay
+  in the same style as the LMU pit menu: fuel, fuel to finish, all or no
+  tyres, each tyre and its pressure, tear-off, fast repair and clear, plus
+  the live stop. Turn on **iRacing pit commands (beta)** in Settings to let
+  it change iRacing's pit menu; with it off the panel only shows.
+
+- **Fuel per lap before your first lap.** iRacing's own fuel history for
+  the car and track gives a figure straight away.
+
+- **Race log for iRacing.** Review → Race log shows your iRacing races:
+  grid, finish, laps, best lap, the results table and your incidents.
+
+### Fixed
+
+- **The VR tab in iRacing mode** lists only the widgets iRacing has, and
+  its instructions describe iRacing.
+- **LMU reference pace** no longer scores iRacing sessions in Review.
+
+### Good to know
+
+- **Team relay for iRacing team races** is in but not yet tested on a real
+  team race.
+- **The engineer's caution calls** are built from iRacing's documentation
+  and have not met a real caution yet.
+
 ## 1.3.16-beta.5 — 2026-11-10
 
 iRacing: incident points, auto show/hide, and the standings in Apex colours.
