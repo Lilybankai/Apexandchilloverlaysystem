@@ -41,6 +41,7 @@
   const radarIconsEcho = $('#radar-icons-echo');
   const glowToggle = $('#glow-toggle');
   const mfdFadeToggle = $('#mfd-fade-toggle');
+  const irPitToggle = $('#irpit-commands-toggle');
   const startupToggle = $('#startup-toggle');
   const webRelayToggle = $('#webrelay-toggle');
   const speedUnit = $('#speed-unit');
@@ -97,6 +98,7 @@
     damage: 'Damage',
     limits: 'Track limits',
     mfd: 'MFD',
+    irpit: 'iRacing pit',
   };
   const igEditBtn = $('#ig-edit-btn');
   const igResetBtn = $('#ig-reset-btn');
@@ -424,6 +426,7 @@
     glowToggle.checked = settings.changeGlow !== false;
     // Ships OFF, so plain truthiness rather than the !== false idiom.
     mfdFadeToggle.checked = !!settings.mfdAutoFade;
+    if (irPitToggle) irPitToggle.checked = settings.iracingPitCommands === true;
     if (startupToggle) startupToggle.checked = !!settings.launchOnStartup;
     // Ships ON, so the !== false idiom: an old config with no key means on.
     if (webRelayToggle) webRelayToggle.checked = settings.webRelay !== false;
@@ -3031,6 +3034,11 @@
     await window.apex.updateSettings({ changeGlow: glowToggle.checked });
   });
 
+  if (irPitToggle) {
+    irPitToggle.addEventListener('change', async () => {
+      await window.apex.updateSettings({ iracingPitCommands: irPitToggle.checked });
+    });
+  }
   mfdFadeToggle.addEventListener('change', async () => {
     await window.apex.updateSettings({ mfdAutoFade: mfdFadeToggle.checked });
   });

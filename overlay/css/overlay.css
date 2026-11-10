@@ -2806,7 +2806,25 @@
 .damage__sel-val[data-state="off"] { color: var(--warn); }
 .damage__sel-val[data-state="na"]  { color: var(--text-muted); }
 
-/* --- iRacing: repair flags instead of component bars (damage.js renderIracing) */
+/* --- iRacing Pit (widgets/irpit.js): the MFD's look, iRacing's menu -------- */
+#widget-irpit .mfd__row[data-on="false"] .mfd__value { color: var(--text-muted); }
+#widget-irpit .mfd__row[data-svc="done"] .mfd__value { color: var(--pos-gain); }
+#widget-irpit .irpit__wide { width: auto; padding: 0 6px; font-size: var(--fs-micro); letter-spacing: 0.06em; }
+#widget-irpit .irpit__toggle { width: 22px; }
+#widget-irpit .mfd__row[data-on="true"] .irpit__toggle { background: color-mix(in srgb, var(--mfd-cat) 45%, var(--bg-control)); }
+#widget-irpit .mfd__step:disabled { opacity: 0.3; cursor: default; }
+#widget-irpit .mfd__row[data-error="true"] { box-shadow: inset 0 0 0 1px var(--pos-loss); }
+.irpit__status {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+}
+#widget-irpit .mfd__wrap[data-stop="active"] .irpit__status { color: var(--warn); }
+#widget-irpit .mfd__wrap[data-stop="done"] .irpit__status { color: var(--pos-gain); }
+.irpit__note { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--text-muted); }
+.irpit__note[data-error="true"] { color: var(--pos-loss); }
+
+
 .damage__ir[hidden],
 .damage__svc[hidden],
 .damage__ir .damage__tyre[hidden],
