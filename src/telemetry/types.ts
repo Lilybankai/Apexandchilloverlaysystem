@@ -662,6 +662,14 @@ export interface TyreSet {
   frontRight: TyreState;
   rearLeft: TyreState;
   rearRight: TyreState;
+  /**
+   * **iRacing only.** Seconds since the sim last refreshed these temperatures
+   * and wear figures. iRacing publishes tyre temps (carcass only) and wear
+   * ONLY while the car sits in its pit stall, so on track they are the last
+   * pit reading, not live — the widget says so. Omitted for LMU, whose tyre
+   * data is live.
+   */
+  readingAgeSec?: number;
 }
 
 /**

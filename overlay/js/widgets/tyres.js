@@ -301,6 +301,13 @@
     }
   }
 
+  /** iRacing's pit-reading age in seconds (TyreSet.readingAgeSec), or null. */
+  function tyresAge(frame) {
+    var t = frame && frame.player ? frame.player.tyres : null;
+    var a = t ? t.readingAgeSec : undefined;
+    return typeof a === "number" && isFinite(a) && a >= 0 ? a : null;
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var tyres = frame.player ? frame.player.tyres : null;
@@ -417,10 +424,21 @@
       // A compound change means a stop just happened — discrete, rare, and worth
       // confirming, so this one goes through the glow helper.
       var comp = compound || "—";
+      // iRacing: temps/wear are the last pit-stall reading, not live — say so,
+      // with its age, so a still number never looks like a frozen widget. The
+      // suffix ticks once a minute, so it is written plainly: only a COMPOUND
+      // change goes through the glow.
+      var age = tyresAge(frame);
+      var suffix = age === null ? "" : " · PIT READING" + (age >= 60 ? " " + Math.floor(age / 60) + "m" : "");
+      var text = (comp + suffix).toUpperCase();
       if (cache.compound !== comp) {
         cache.compound = comp;
-        if (ctx.crit) ctx.crit(header, comp.toUpperCase());
-        else header.textContent = comp.toUpperCase();
+        cache.compoundText = text;
+        if (ctx.crit) ctx.crit(header, text);
+        else header.textContent = text;
+      } else if (cache.compoundText !== text) {
+        cache.compoundText = text;
+        header.textContent = text;
       }
     }
   }

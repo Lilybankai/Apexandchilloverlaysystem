@@ -135,6 +135,8 @@
   function init(rootEl) {
     root = rootEl;
     headerMeta = rootEl.querySelector('[data-role="meta"]');
+    titleEl = rootEl.querySelector(".panel__title");
+    titleCache = null;
     var mount = rootEl.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -218,12 +220,15 @@
       lapDownSince = 0;
     } else {
       if (!lapDownSince) lapDownSince = Date.now();
-      stage = Date.now() - lapDownSince >= LAP_EVAL_MS ? "invalid" : "evaluating";
+      // iRacing has no stewards to talk round: an incident makes the lap not
+      // clean the moment it lands, so there is no EVALUATING stage.
+      stage = isIr || Date.now() - lapDownSince >= LAP_EVAL_MS ? "invalid" : "evaluating";
     }
-    if (lapCache === stage) return;
-    lapCache = stage;
+    var key = stage + (isIr ? "|ir" : "");
+    if (lapCache === key) return;
+    lapCache = key;
     lapEl.hidden = !stage;
-    if (stage) lapEl.textContent = stage === "invalid" ? "LAP INVALID" : "EVALUATING";
+    if (stage) lapEl.textContent = stage === "invalid" ? (isIr ? "NOT CLEAN" : "LAP INVALID") : "EVALUATING";
     root.setAttribute("data-lap", stage || "ok");
   }
 
@@ -248,7 +253,26 @@
    * 0.7500000000000001 never reaches the screen.
    */
   function pts(v) {
+    if (isIr) return Math.round(v) + "x";
     return String(Math.round(v * 100) / 100);
+  }
+
+  /*
+   * iRacing (2026-11-10): the same panel, fed iRacing's INCIDENT POINTS rather
+   * than LMU's stewarding points (iracingProvider.buildIncidents). Only the
+   * words change: counts are written "7x", the strip is headed INC, a fresh
+   * charge says what iRacing charges that amount for, and the header reads
+   * used / limit the way every iRacing driver says it ("7x / 17x").
+   */
+  var isIr = false;
+  var titleEl = null;
+  var titleCache = null;
+  /** What iRacing charges each amount for (0x light contact never registers). */
+  function incidentKind(n) {
+    if (n >= 4) return "CONTACT";
+    if (n === 2) return "LOSS OF CONTROL";
+    if (n === 1) return "OFF TRACK";
+    return "";
   }
 
   /** Fire a cue, if this page has the audio module at all. */
@@ -259,6 +283,12 @@
 
   function update(frame, ctx) {
     var fmt = ctx.fmt;
+    isIr = frame.source === "iracing";
+    // The panel is the same one; on iRacing it is the incident counter.
+    if (titleEl && titleCache !== isIr) {
+      titleCache = isIr;
+      titleEl.textContent = isIr ? "Incidents" : "Track Limits";
+    }
     var tl = frame.player ? frame.player.trackLimits : null;
 
     // No block at all — spectating, no shared memory, or out of a session. Say
@@ -337,10 +367,12 @@
     var freshPenalty = ctx.consequenceFresh(tl);
     var freshServed = ctx.servedFresh(tl);
 
-    ctx.crit(countEl, enforced ? pts(remaining) : pts(points));
+    // iRacing drivers count UP to the limit ("7x"), and the bar below still
+    // drains toward the DQ; LMU's headline is what is left of the allowance.
+    ctx.crit(countEl, enforced && !isIr ? pts(remaining) : pts(points));
     // "MY PTS" rather than "PTS" when the car has been shared — the possessive
     // is the entire message, and it sits where the driver is already looking.
-    var countLabel = enforced ? "LEFT" : stintOnly ? "MY PTS" : "PTS";
+    var countLabel = isIr ? "INC" : enforced ? "LEFT" : stintOnly ? "MY PTS" : "PTS";
     if (labelEl.textContent !== countLabel) labelEl.textContent = countLabel;
     showPenalty(ctx, tl, penalties);
 
@@ -368,7 +400,7 @@
       // The label rides inside the strip rather than sitting in its own element:
       // it only exists when there is something to label, and a "CUTS" heading
       // over an empty row is a heading about nothing.
-      chargesEl.textContent = strip ? "CUTS  " + strip : "";
+      chargesEl.textContent = strip ? (isIr ? "RECENT  " : "CUTS  ") + strip : "";
       chargesEl.hidden = !strip;
     }
 
@@ -398,6 +430,7 @@
       kind = "penalty";
     } else if (fresh && charges.length) {
       banner = "+" + pts(charges[0]);
+      if (isIr && incidentKind(charges[0])) banner += " " + incidentKind(charges[0]);
     }
     setBanner(banner, kind);
 
@@ -439,8 +472,12 @@
     // the header on one line — see the note above about long words in this strip.
     setMeta(
       enforced
-        ? pts(remaining) + " / " + pts(limit)
-        : stintOnly
+        ? isIr
+          ? pts(points) + " / " + pts(limit)
+          : pts(remaining) + " / " + pts(limit)
+        : isIr
+          ? pts(points)
+          : stintOnly
           ? "MY STINT"
           : pts(points) + " PTS",
     );

@@ -225,9 +225,9 @@ const OVERLAY_CATALOG = [
   {
     id: 'limits',
     label: 'Track Limits',
-    description: 'Excursions this session, the sim\'s penalties, and how much road is left',
-    // LMU's trace-limits feed and its penalty points.
-    sims: ['lmu'],
+    description: 'Track-limit points (LMU) or incident points (iRacing) this session, how close you are to the penalty, and what each one cost',
+    // LMU's trace-limits feed and its penalty points; on iRacing the same panel
+    // carries incident points (iracingProvider.buildIncidents, 2026-11-10).
   },
   {
     id: 'racecontrol',

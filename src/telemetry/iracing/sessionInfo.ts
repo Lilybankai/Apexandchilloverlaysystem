@@ -122,6 +122,12 @@ export interface IrSessionInfo {
   currentSessionNum: number;
   /** `SplitTimeInfo.Sectors[].SectorStartPct`. */
   sectorStartPcts: number[];
+  /**
+   * `WeekendInfo.WeekendOptions.IncidentLimit` — the incident count that
+   * disqualifies (17 in the 2026-11-10 official races). `0` when the session
+   * has none (`unlimited`, practice, or absent).
+   */
+  incidentLimit: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -329,6 +335,7 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
     trackDisplayName: str(wi.TrackDisplayName) || str(wi.TrackName),
     trackConfig: str(wi.TrackConfigName),
     trackLengthM: Math.round(num(wi.TrackLength) * 1000),
+    incidentLimit: Math.max(0, Math.round(num(obj(wi.WeekendOptions).IncidentLimit))),
     numCarClasses: num(wi.NumCarClasses, 1),
     official: num(wi.Official) === 1,
     eventType: str(wi.EventType),
