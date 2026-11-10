@@ -39,7 +39,7 @@
  * the black flag is never called a drive-through or a stop-and-go here.
  */
 
-import { UNKNOWN_VALUE } from './types';
+import { UNKNOWN_VALUE, isPreGreen } from './types';
 import type { IracingRaceControl, TelemetryFrame } from './types';
 
 /** How long the incident count must hold still before a rise is called, ms. */
@@ -50,13 +50,6 @@ const NON_RACE_MIN_STEP = 4;
 
 /** Points-to-the-limit at which every call carries the warning. */
 export const INCIDENT_WARN_LEFT = 4;
-
-/**
- * How long after the green the start position is read, ms. At the green itself:
- * the grid order still holds there (cars still short of the line count lap -1),
- * while a few seconds later a stalled car ahead already reads as a place made.
- */
-const START_POSITION_SETTLE_MS = 0;
 
 /** What this module offers — the trigger layer's own kinds. */
 export type IrCallKind = 'irIncident' | 'irRepair' | 'irCaution' | 'penalty' | 'penaltyServed' | 'sectorYellow' | 'qualiTimeLeft';
@@ -103,15 +96,24 @@ export class IrEngineerCalls {
     this.greenAt = 0;
     this.startPos = UNKNOWN_VALUE;
     this.startClassPos = UNKNOWN_VALUE;
+    this.gridPos = UNKNOWN_VALUE;
+    this.gridClassPos = UNKNOWN_VALUE;
   }
 
   /**
-   * Where we started the race (overall, and in class), read a few seconds
-   * after the green from the live order — {@link UNKNOWN_VALUE} before then
-   * or when the engineer joined the race late.
+   * Where we started the race (overall, and in class): the grid order on the
+   * last frame before the green — {@link UNKNOWN_VALUE} before the green or
+   * when the engineer joined the race late.
    */
   public startPosition(): { position: number; classPosition: number } {
     return { position: this.startPos, classPosition: this.startClassPos };
+  }
+
+  /** The grid slot as read so far (before the green, the latest grid reading). */
+  public gridPosition(): { position: number; classPosition: number } {
+    return known(this.startPos)
+      ? { position: this.startPos, classPosition: this.startClassPos }
+      : { position: this.gridPos, classPosition: this.gridClassPos };
   }
 
   /** Seed from the priming frame: levels only. */
@@ -261,17 +263,31 @@ export class IrEngineerCalls {
     if (frame.session.type !== 'race') return;
     const prevPhase = this.prevPhase;
     this.prevPhase = frame.session.phase;
-    if (this.greenAt === 0) {
-      // Only a start we watched: green arriving from the grid, not a late join.
-      if (frame.session.phase === 'green' && prevPhase !== '' && prevPhase !== 'green') this.greenAt = now;
+    if (this.greenAt !== 0) return;
+    const me = frame.standings.find((e) => e.isOwn === true) ?? frame.standings.find((e) => e.isPlayer);
+    if (isPreGreen(frame.session.phase)) {
+      // On the grid: the order is the grid (cars still short of the line count
+      // lap -1 in the provider's order). The last reading before the green is
+      // the start position — a few frames after it the order already flickers
+      // (P10 → P9 → P8 inside 4 s in the 2026-11-10 race as cars got away).
+      if (me && known(me.position) && me.position > 0) {
+        this.gridPos = me.position;
+        this.gridClassPos = known(me.classPosition) ? me.classPosition! : me.position;
+      }
       return;
     }
-    if (known(this.startPos) || now - this.greenAt < START_POSITION_SETTLE_MS) return;
-    const me = frame.standings.find((e) => e.isOwn === true) ?? frame.standings.find((e) => e.isPlayer);
-    if (!me || !known(me.position) || me.position <= 0) return;
-    this.startPos = me.position;
-    this.startClassPos = known(me.classPosition) ? me.classPosition! : me.position;
+    // Only a start we watched: green arriving from the grid, not a late join.
+    if (frame.session.phase === 'green' && prevPhase !== '' && prevPhase !== 'green') {
+      this.greenAt = now;
+      if (known(this.gridPos)) {
+        this.startPos = this.gridPos;
+        this.startClassPos = this.gridClassPos;
+      }
+    }
   }
+
+  private gridPos: number = UNKNOWN_VALUE;
+  private gridClassPos: number = UNKNOWN_VALUE;
 
   private prevPhase = '';
 

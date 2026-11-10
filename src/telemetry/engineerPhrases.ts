@@ -188,7 +188,10 @@ function leadSentence(
   const f = lead.facts;
   switch (lead.kind) {
     case 'raceStart': {
-      const pos = spokenPosition(cue);
+      // iRacing: the grid slot the trigger latched, not the order a second
+      // after the green (which flickers while the field gets away).
+      const grid = f.sim === 'iracing' ? num(f.startClassPosition) ?? num(f.startPosition) : undefined;
+      const pos = grid !== undefined ? `P${grid}` : spokenPosition(cue);
       const cars = num(cue.context.numCars);
       const where = pos ? ` ${pos}${cars ? `, ${cars} cars` : ''}.` : '';
       return pick(v, [
@@ -342,7 +345,7 @@ function leadSentence(
         const made = placesMade(start, fin);
         return pick(v, [
           `Chequered flag — ${pos}, ${made}. Good drive.`,
-          `That's the flag. ${pos}, ${made} from P${start}.`,
+          `That's the flag. ${pos}, ${made}${start !== fin ? ` from P${start}` : ''}.`,
           `Chequered flag. ${pos} — ${made}. Well done.`,
         ]);
       }

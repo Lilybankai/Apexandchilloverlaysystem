@@ -307,7 +307,7 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   // Each rise is already one settled call (irEngineerCalls.ts); this only
   // stops two of them landing back to back.
   irIncident: 8_000,
-  irRepair: 10_000, // the meatball and the tow are 11 s apart and both news
+  irRepair: 5_000, // the meatball and the tow were 9 s apart and both are news
   irCaution: 20_000,
   fuelWindow: 90_000,
   fuelCritical: 60_000,
@@ -1204,7 +1204,15 @@ export class EngineerTriggers {
           this.seenGreen = true;
           break;
         case 'raceStart':
-          this.offer('raceStart', now, 'green flag', { numCars: frame.session.numCars });
+          this.offer('raceStart', now, 'green flag', {
+            numCars: frame.session.numCars,
+            ...sim,
+            // iRacing: the grid slot, read off the order just before the green
+            // (the live order flickers for seconds after it).
+            ...(ir && known(this.irCalls.gridPosition().position)
+              ? { startPosition: this.irCalls.gridPosition().position, startClassPosition: this.irCalls.gridPosition().classPosition }
+              : {}),
+          });
           this.seenGreen = true;
           break;
         case 'finalLap':
