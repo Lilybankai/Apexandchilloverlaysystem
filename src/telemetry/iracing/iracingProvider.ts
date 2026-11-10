@@ -78,6 +78,7 @@ import { LiveIrsdkSource, type IrsdkFrame, type IrsdkSource } from './irsdk';
 import { SessionInfoCache, warmSessionInfoParser, type IrDriver, type IrResult, type IrSessionInfo } from './sessionInfo';
 import { iRatingDeltasByClass, type IRatingEntry } from './irating';
 import { toIracingDemo } from './irDemo';
+import { LiveRaceOrder } from './liveOrder';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { irSessionId, irTeamStint } from './teamIdentity';
@@ -443,6 +444,8 @@ export class IRacingProvider implements TelemetryProvider {
   private lapsAtFlag: Map<number, number> | null = null;
   private readonly finishLatch = new Map<number, { pos: number; cls?: number }>();
   private readonly gapHistory = new Map<number, { gap: number; at: number; rate: number }>();
+  /** Live race order and gaps between line crossings (liveOrder.ts). */
+  private readonly liveOrder = new LiveRaceOrder();
   private offTrackCount = 0;
   private wasOffTrack = false;
   private pitVisitStopped = false;
@@ -754,6 +757,7 @@ export class IRacingProvider implements TelemetryProvider {
     this.lapsAtFlag = null;
     this.finishLatch.clear();
     this.gapHistory.clear();
+    this.liveOrder.reset();
     this.offTrackCount = 0;
     this.wasOffTrack = false;
     this.pitVisitStopped = false;
@@ -829,8 +833,8 @@ export class IRacingProvider implements TelemetryProvider {
     const progress = (r: CarRow): number =>
       (r.lapsRaw === -1 && r.pct >= 0 && r.pct <= 1 ? -1 : lapsOf(r)) + (r.pct >= 0 && r.pct <= 1 ? r.pct : 0);
 
-    // Live order from telemetry; cars it has not scored (0) fall back to the
-    // session's YAML results, then to track progress.
+    // Official order from telemetry; cars it has not scored (0) fall back to
+    // the session's YAML results, then to track progress.
     rows.sort((a, b) => {
       const pa = a.telemPos > 0 ? a.telemPos : Infinity;
       const pb = b.telemPos > 0 ? b.telemPos : Infinity;
@@ -842,6 +846,31 @@ export class IRacingProvider implements TelemetryProvider {
       if (d !== 0) return d;
       return a.idx - b.idx;
     });
+    // …but the official order is only rescored at the line. In a race under
+    // green (and through the chequered lap), order and gaps come from the road
+    // instead — see liveOrder.ts for the calculation and where it stands down.
+    const caution = (flags & (FLAG.caution | FLAG.cautionWaving)) !== 0;
+    const live = this.liveOrder.update(
+      rows.map((r) => ({
+        idx: r.idx,
+        lapsRaw: r.lapsRaw,
+        pct: r.pct,
+        est: r.est,
+        classLapSec: r.driver.carClassEstLapTime,
+        officialPos: r.telemPos,
+        inWorld: r.surface !== TRK.NotInWorld,
+      })),
+      {
+        nowMs,
+        active: isRace && (state === SS.Racing || state === SS.Checkered) && !caution,
+        lapsAtFlag: this.lapsAtFlag,
+        trackLengthM: trackLengthM > 0 ? trackLengthM : 0,
+      },
+    );
+    if (live) {
+      const rank = new Map(live.order.map((idx, n) => [idx, n]));
+      rows.sort((a, b) => (rank.get(a.idx) ?? 1e6) - (rank.get(b.idx) ?? 1e6));
+    }
 
     /* --- standings ------------------------------------------------------ */
     const avg = this.paceAvg.update(
@@ -870,7 +899,13 @@ export class IRacingProvider implements TelemetryProvider {
       const lapsBehind =
         isRace && leader ? Math.max(0, Math.floor(progress(leader) - progress(r) + 1e-6)) : 0;
       let gapToLeader: number = UNKNOWN_VALUE;
+      const liveGap = live?.gapToLeaderSec.get(r.idx);
       if (n === 0) gapToLeader = 0;
+      else if (liveGap !== undefined) gapToLeader = liveGap;
+      // Live gaps running but none for this car (out of the world, no
+      // EstTime): its official F2Time is frozen from its last line crossing
+      // and would sit as a stale number among live ones — show none instead.
+      else if (live && live.gapToLeaderSec.size > 0) gapToLeader = UNKNOWN_VALUE;
       else if (isRace) {
         if (lapsBehind === 0 && r.f2 > 0) gapToLeader = round3(Math.max(0, r.f2 - leaderF2));
       } else if (r.best > 0 && leaderBest > 0) {
