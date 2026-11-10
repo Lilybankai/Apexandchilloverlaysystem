@@ -891,7 +891,7 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
     // session phrasing, which already fits two facts in the line.
     case 'qualiLap':
     case 'practiceLap': {
-      if (!alone || f.verdict !== 'deleted') return null;
+      if (!alone || f.verdict !== 'deleted' || f.sim === 'iracing') return null; // iRacing: an incident, not limits
       return pick(
         v,
         savage
