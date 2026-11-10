@@ -4127,8 +4127,11 @@ function sessionPaceFor(ref, session) {
  * `{ ok:false, reason:'not-lmu' }` instead of scanning the disk for a game the
  * driver is not running.
  */
+// review:racelogs / review:racelog answer in iRacing mode too, from the
+// iRacing race log (telemetry/iracing/irRaceLog.ts); the car picker and the
+// replay jump stay LMU's.
 const LMU_ONLY_IPC =
-  /^(?:lmu:|lmuBind:|plugin:|setup:|setuplib:togame$|review:racelog|review:replay|schedule:dailies$)/;
+  /^(?:lmu:|lmuBind:|plugin:|setup:|setuplib:togame$|review:racelogPick$|review:replay|schedule:dailies$)/;
 
 /**
  * `ipcMain`, with LMU_ONLY_IPC's handlers gated on the active sim. Everything
@@ -5387,6 +5390,16 @@ function registerIpc() {
    * parsed. Same lazy, never-throw shape as `review:sessions`.
    */
   ipcMain.handle('review:racelogs', async () => {
+    // iRacing: its own results copies + the live recorder, local only.
+    if (getActiveSim() === 'iracing') {
+      try {
+        const ir = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'irRaceLog.js'));
+        return { ok: true, races: ir.listIrRaceLogs(), outlines: {} };
+      } catch (err) {
+        console.error('[app] iRacing race log list unavailable:', err.message);
+        return { ok: false, races: [], error: err.message };
+      }
+    }
     try {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // The async form: a first listing parses every file (~120 MB on Carl's
@@ -5403,6 +5416,15 @@ function registerIpc() {
   /** One race's log: `{ ok, log }`. `log.slot` is null when our car was not found. */
   ipcMain.handle('review:racelog', async (_evt, id) => {
     if (typeof id !== 'string' || !id) return { ok: false, log: null, error: 'no race' };
+    if (getActiveSim() === 'iracing') {
+      try {
+        const ir = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'irRaceLog.js'));
+        return { ok: true, log: ir.loadIrRaceLog(id) };
+      } catch (err) {
+        console.error('[app] iRacing race log unavailable:', err.message);
+        return { ok: false, log: null, error: err.message };
+      }
+    }
     try {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // Async and sliced: the sync load held main ~92 ms on a 5 MB race.

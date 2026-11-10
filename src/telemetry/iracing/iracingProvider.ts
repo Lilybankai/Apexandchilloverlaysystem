@@ -80,6 +80,7 @@ import { iRatingDeltasByClass, type IRatingEntry } from './irating';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { irSessionId, irTeamStint } from './teamIdentity';
+import { IrRaceResultsRecorder, irRaceResultsDir, raceTeleOf } from './raceResults';
 import { TrackMapBuilder } from '../trackMap';
 
 /* -------------------------------------------------------------------------- */
@@ -328,6 +329,12 @@ export interface IRacingProviderOptions {
    * `null` disables lap logging.
    */
   lapSink?: ((rec: LapRecord) => void) | null;
+  /**
+   * Where the race-results copy goes (raceResults.ts, the iRacing race log).
+   * Defaults to `~/.apex-overlay/racelog/iracing` for the live shared memory
+   * and to `null` (nothing written) when a `source` is supplied (tests, replays).
+   */
+  raceResultsDir?: string | null;
 }
 
 /** One standings row plus the raw readings the later blocks need. */
@@ -357,6 +364,8 @@ export class IRacingProvider implements TelemetryProvider {
   private readonly pitStops = new PitStopCounter();
   private readonly lapRecorder = new LapRecorder();
   private readonly lapSink: ((rec: LapRecord) => void) | null;
+  /** The race log's results copy (raceResults.ts). */
+  public readonly raceResults: IrRaceResultsRecorder;
   private readonly verbose: boolean;
   private live = false;
   private wasConnected = false;
@@ -410,6 +419,9 @@ export class IRacingProvider implements TelemetryProvider {
     this.verbose = config.verbose;
     this.source = opts.source ?? new LiveIrsdkSource();
     this.lapSink = opts.lapSink === undefined ? appendLap : opts.lapSink;
+    this.raceResults = new IrRaceResultsRecorder(
+      opts.raceResultsDir !== undefined ? opts.raceResultsDir : opts.source ? null : irRaceResultsDir(),
+    );
   }
 
   public start(): void {
@@ -424,6 +436,7 @@ export class IRacingProvider implements TelemetryProvider {
   }
 
   public stop(): void {
+    void this.raceResults.flush();
     this.fallback.stop();
     this.source.close();
     this.live = false;
@@ -476,6 +489,11 @@ export class IRacingProvider implements TelemetryProvider {
       }
       const frame = this.buildFrame(f, info, nowMs);
       this.live = true;
+      try {
+        this.raceResults.update(info, raceTeleOf(f, info, frame), nowMs);
+      } catch {
+        /* the race log is a record, never the frame's problem */
+      }
       return frame;
     } catch (err) {
       if (this.verbose) console.log(`[iracing] frame build failed: ${(err as Error).message}`);

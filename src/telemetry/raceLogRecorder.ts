@@ -247,6 +247,8 @@ export class RaceLogRecorder {
     }
     this.standings = frame.standings;
     this.refreshIdentity(frame, nowMs);
+    // A provider with no identity source (iRacing) says replay on the frame.
+    if (s.replay === true) this.replay = true;
     if (this.replay !== false) {
       // A replay, or not yet known whether it is: nothing here is a race of ours.
       if (this.header) this.end();
