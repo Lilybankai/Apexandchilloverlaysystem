@@ -113,6 +113,61 @@ function limitsFacts(f: Readonly<Record<string, string | number | boolean>>): {
   };
 }
 
+/** Small counts as the radio says them. */
+const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
+}
+
+/** iRacing's incident types, as an engineer says them. */
+const INCIDENT_WORDS: Record<string, string> = {
+  offTrack: 'off track',
+  lossOfControl: 'loss of control',
+  contact: 'contact',
+};
+
+/**
+ * The iRacing incident call's facts, read once for every tone: "Plus four,
+ * contact" and "12 of 17", and how close the DQ is.
+ */
+function incidentFacts(f: Readonly<Record<string, string | number | boolean>>): {
+  head: string;
+  tally: string;
+  warn: '' | 'near' | 'last';
+  left: number | undefined;
+} | null {
+  const added = num(f.added);
+  const points = num(f.points);
+  if (added === undefined || points === undefined) return null;
+  const type = INCIDENT_WORDS[String(f.type ?? '')];
+  const limit = num(f.pointsLimit);
+  return {
+    head: `Plus ${countWord(added)}${type ? `, ${type}` : ' on the incidents'}`,
+    tally: limit !== undefined ? `${points} of ${limit}` : `${points} incidents`,
+    warn: f.warn === 'last' ? 'last' : f.warn === 'near' ? 'near' : '',
+    left: num(f.left),
+  };
+}
+
+/** A tow's length as said: "about two minutes", "40 seconds". */
+function speakableTow(sec: number): string {
+  if (sec < 50) return `${Math.round(sec / 5) * 5} seconds`;
+  const halves = Math.round(sec / 30); // to the nearest half minute
+  const whole = Math.floor(halves / 2);
+  const half = halves % 2 === 1;
+  if (whole === 0) return 'about half a minute';
+  const mins = whole === 1 ? 'a minute' : `${countWord(whole)} minutes`;
+  return half ? `about ${mins} and a half` : `about ${mins}`;
+}
+
+/** "up three places" / "down one place" / "held position", from start to finish. */
+function placesMade(start: number, finish: number): string {
+  const d = start - finish;
+  if (d === 0) return 'held position';
+  const n = Math.abs(d);
+  return `${d > 0 ? 'up' : 'down'} ${countWord(n)} ${n === 1 ? 'place' : 'places'}`;
+}
+
 /** The lead trigger's sentence. Returns null only for a kind with no words yet. */
 function leadSentence(
   cue: EngineerCue,
@@ -144,6 +199,15 @@ function leadSentence(
     }
 
     case 'fullCourseYellow':
+      if (f.sim === 'iracing') {
+        // iRacing runs real cautions with a pace car; the pits state rides along.
+        const pits = f.pitsOpen === false ? ' Pits are closed.' : '';
+        return pick(v, [
+          `Caution, caution — pace car's out. Hold position.${pits}`,
+          `Full course caution. Slow it down, no passing.${pits}`,
+          `Caution's out — pace car on track. Catch the line.${pits}`,
+        ]);
+      }
       return pick(v, [
         'Full course yellow — safety car. No overtaking, watch your delta.',
         'Safety car, safety car. Hold position, watch the delta.',
@@ -151,6 +215,11 @@ function leadSentence(
       ]);
 
     case 'sectorYellow': {
+      // iRacing flags the player's own station: a yellow means trouble just
+      // ahead, and "caution" there means the full-course pace car.
+      if (f.sim === 'iracing') {
+        return pick(v, ['Yellow flag — trouble ahead, careful.', 'Yellow, yellow — someone off ahead. No passing.', 'Local yellow — watch for a slow car.']);
+      }
       // `all` = every sector reads yellow at once. On a REST-only rig that is
       // one flag copied three times, so the line must not claim three separate
       // incidents — "yellows out" is everything that is actually known.
@@ -214,6 +283,15 @@ function leadSentence(
 
     case 'finalLap': {
       const pos = spokenPosition(cue);
+      if (f.sim === 'iracing') {
+        // iRacing DOES show a white flag, a lap before the chequer.
+        return pick(
+          v,
+          pos
+            ? [`White flag — last lap. ${pos}, bring it home.`, `White flag, ${pos}. One to go — keep it clean.`, `Last lap — white flag. ${pos}, nothing silly.`]
+            : ['White flag — last lap. Bring it home.', 'White flag. One to go — keep it clean.'],
+        );
+      }
       // No "white flag": Le Mans Ultimate never shows one — the chequered flag
       // comes out and the cars still running complete the lap they are on
       // (probed through a full race finish, 2026-08-22). Saying a flag the
@@ -247,6 +325,17 @@ function leadSentence(
           ? ` Best lap ${speakableLapTime(me.bestLapSec)}.`
           : '';
       const where = pos ? ` ${pos}.` : '';
+      // iRacing: the result against where we started — "P5, up three places".
+      const start = cls !== undefined ? num(f.startClassPosition) : num(f.startPosition);
+      const fin = cls ?? overall;
+      if (f.sim === 'iracing' && pos && start !== undefined && fin !== undefined) {
+        const made = placesMade(start, fin);
+        return pick(v, [
+          `Chequered flag — ${pos}, ${made}. Good drive.`,
+          `That's the flag. ${pos}, ${made} from P${start}.`,
+          `Chequered flag. ${pos} — ${made}. Well done.`,
+        ]);
+      }
       return pick(v, [
         `Chequered flag.${where}${best} Good drive.`,
         `That's the flag.${where}${best} Well done today.`,
@@ -281,6 +370,20 @@ function leadSentence(
     }
 
     case 'penalty': {
+      // iRacing: the flag says what it is; the reason is never published.
+      if (f.flag === 'black') {
+        return pick(v, ['Black flag — serve your penalty in the pit lane.', "We've got the black flag. Pit lane, serve it.", 'Black flag for us — come in and serve it.']);
+      }
+      if (f.flag === 'furled') {
+        return pick(v, ["Black-and-white flag — that's a warning. Clean it up.", 'Warning flag from race control. Tidy it up now.']);
+      }
+      if (f.flag === 'dq') {
+        const pts = num(f.points);
+        return pick(v, [
+          pts !== undefined ? `That's a DQ — ${pts} incidents. Bring it in.` : "That's a DQ. Bring it in.",
+          "We've been disqualified. Bring it back to the pits.",
+        ]);
+      }
       const type = typeof f.penaltyType === 'string' && f.penaltyType ? f.penaltyType : null;
       return pick(
         v,
@@ -308,11 +411,42 @@ function leadSentence(
     }
 
     case 'penaltyServed':
+      if (f.flag === 'black') {
+        return pick(v, ["Black flag's cleared — you're good.", "That's the black flag gone. Back to it."]);
+      }
       return pick(v, [
         "Penalty served — you're clear.",
         "That's the penalty done. Clean slate — go.",
         'Penalty cleared. Back to racing.',
       ]);
+
+    case 'irIncident': {
+      const t = incidentFacts(f);
+      if (!t) return null;
+      if (t.warn === 'last') return pick(v, [`${t.head} — ${t.tally}. One more and you're out.`, `${t.head}. ${t.tally} — that's the limit next time.`]);
+      if (t.warn === 'near' && t.left !== undefined) {
+        const to = `${countWord(t.left)} to the DQ`;
+        return pick(v, [`${t.head} — ${t.tally}. ${to}, careful.`, `${t.head}. ${t.tally} now — ${to}.`]);
+      }
+      return pick(v, [`${t.head} — ${t.tally}.`, `${t.head}. That's ${t.tally}.`, `${t.head} — ${t.tally} now. Keep it tidy.`]);
+    }
+
+    case 'irRepair': {
+      if (f.what === 'tow') {
+        const sec = num(f.towSec);
+        const howLong = sec !== undefined ? ` — ${speakableTow(sec)}` : '';
+        return pick(v, [`Tow to the pits${howLong}. Sit tight.`, `We're being towed in${howLong}. Deep breath.`]);
+      }
+      return pick(v, ['Meatball flag — the car needs repairs. Box this lap.', 'Meatball — repairs required. Bring it in.', "That's the meatball. Box for repairs."]);
+    }
+
+    case 'irCaution':
+      if (f.what === 'oneToGreen') {
+        return pick(v, ["Pace car's in this lap — one to green. Get ready.", 'One to green. Warm the tyres, be ready for the restart.']);
+      }
+      if (f.what === 'pitsOpen') return pick(v, ['Pits are open.', "Pit lane's open — box if you need it."]);
+      if (f.what === 'pitsClosed') return pick(v, ['Pits are closed — stay out.', "Pit lane's closed under the caution."]);
+      return null;
 
     case 'fuelWindow': {
       const laps = num(f.lapsLeft);
@@ -666,6 +800,12 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
     }
 
     case 'penalty': {
+      if (f.flag === 'furled') {
+        return pick(v, savage ? ['Black-and-white — a warning. Sort your fucking driving out.'] : ["Black-and-white — that's a warning. Behave, mate."]);
+      }
+      if (f.flag === 'dq') {
+        return pick(v, savage ? ["That's a DQ. Fucking spectacular. Bring it in."] : ["That's a DQ. Well, that's that. Bring it in."]);
+      }
       const type = typeof f.penaltyType === 'string' && f.penaltyType ? f.penaltyType : null;
       if (savage) {
         return pick(
@@ -719,6 +859,20 @@ function matureSentence(lead: EngineerTrigger, tone: RadioTone, v: number, alone
         savage
           ? [`Track limits — ${t.cost}. ${t.tally}. Stay on the fucking track.`, `Cut charged, ${t.cost}. ${t.tally}. Can't you see the fucking lines?`, `Cut charged — ${t.cost}. ${t.tally}. Stop cutting, you muppet.`]
           : [`Track limits — ${t.cost}. ${t.tally}. Stay on the bloody track.`, `Cut charged, ${t.cost}. ${t.tally}. The white lines aren't decoration.`, `That cut cost ${t.cost}. ${t.tally}. Use the road, mate.`],
+      );
+    }
+
+    case 'irIncident': {
+      const t = incidentFacts(f);
+      if (!t) return null;
+      if (t.warn === 'last') {
+        return pick(v, savage ? [`${t.head} — ${t.tally}. One more and you're fucking out.`] : [`${t.head} — ${t.tally}. One more and you're out, mate.`]);
+      }
+      return pick(
+        v,
+        savage
+          ? [`${t.head} — ${t.tally}. Stop fucking crashing.`, `${t.head}. ${t.tally}, you absolute menace.`]
+          : [`${t.head} — ${t.tally}. Bloody hell.`, `${t.head}. ${t.tally} — stay on the road, mate.`],
       );
     }
 

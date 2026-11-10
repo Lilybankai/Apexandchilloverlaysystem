@@ -198,13 +198,19 @@ function watchingOther(me: StandingEntry): boolean {
 }
 
 /**
- * OUR laps completed. iRacing's standings count clamps the out lap to 0 and
- * steps before the lap's time is published, so there the race-control block's
- * settled count (-1 on an out lap) is used for our own car.
+ * OUR lap counter — it must step at every line crossing, which is all the lap
+ * tracking compares. Elsewhere that is laps completed. On iRacing the
+ * standings count clamps the out lap to 0 (so the line that starts the first
+ * timed lap never moved it) and steps before the lap's time is published, so
+ * our own car counts off the race-control block's SETTLED laps instead: 0 on
+ * the out lap, laps completed + 1 after it, {@link UNKNOWN_VALUE} out of the car.
  */
 function lapsOf(frame: TelemetryFrame, me: StandingEntry): number {
   const ir = frame.iracing;
-  if (ir && me.isPlayer === true && ir.lapsCompleted !== UNKNOWN_VALUE) return ir.lapsCompleted;
+  if (ir && me.isPlayer === true) {
+    if (ir.outLap) return 0;
+    return ir.lapsCompleted === UNKNOWN_VALUE ? UNKNOWN_VALUE : ir.lapsCompleted + 1;
+  }
   return known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
 }
 
@@ -496,7 +502,7 @@ export class SessionCalls {
       const kind: SessionCallKind = family === 'qualifying' ? 'qualiLap' : 'practiceLap';
       // The time-left read is taken AT the line (the clock now), spoken with the summary.
       // A lap-limited run (iRacing) says the laps instead — the limit binds first.
-      const timeLeft = family === 'qualifying' ? this.lapLimitRead(frame, laps) ?? this.timeLeftRead(frame, me) : null;
+      const timeLeft = family === 'qualifying' ? this.lapLimitRead(frame) ?? this.timeLeftRead(frame, me) : null;
       this.deferred.push({
         kind,
         readyAt: now + LAP_SETTLE_MS,
@@ -507,7 +513,7 @@ export class SessionCalls {
     } else if (family === 'qualifying' && !me.inPit) {
       // An out-lap ending at the line starts the flying lap: the clock question
       // is just as live, there is simply no lap to summarise.
-      const timeLeft = this.lapLimitRead(frame, laps) ?? this.timeLeftRead(frame, me);
+      const timeLeft = this.lapLimitRead(frame) ?? this.timeLeftRead(frame, me);
       if (timeLeft) this.queueTimeLeft(timeLeft, now);
     }
 
@@ -627,11 +633,12 @@ export class SessionCalls {
    * At the line in a LAP-limited qualifying run (iRacing's lone qualifying is
    * often two timed laps after the out lap): the last lap is starting. Null
    * when the run is not lap-limited or this is not that line — the clock
-   * read then speaks as before. `laps` = our laps completed after the line.
+   * read then speaks as before. Reads our settled laps completed (iRacing only).
    */
-  private lapLimitRead(frame: TelemetryFrame, laps: number): { verdict: string; timeLeftSec: number; lapLimit?: number } | null {
+  private lapLimitRead(frame: TelemetryFrame): { verdict: string; timeLeftSec: number; lapLimit?: number } | null {
     const limit = lapLimitOf(frame);
-    if (!limit || !known(laps) || laps < 0) return null;
+    const laps = frame.iracing?.lapsCompleted ?? UNKNOWN_VALUE;
+    if (!limit || !known(laps) || laps < 0 || frame.iracing?.outLap) return null;
     if (limit - laps !== 1) return null;
     const t = frame.session.timeRemainingSec;
     return { verdict: 'lastLapLimit', timeLeftSec: known(t) ? Math.round(t) : UNKNOWN_VALUE, lapLimit: limit };

@@ -75,6 +75,7 @@ import {
   referencePaceTargets,
 } from './paceTargets';
 import { TrafficCallTracker } from './trafficCalls';
+import { IrEngineerCalls, type IrCallHost } from './irEngineerCalls';
 
 /* -------------------------------------------------------------------------- */
 /*  What the engineer can be told about                                        */
@@ -153,6 +154,15 @@ export type EngineerTriggerKind =
   | 'trafficAhead'
   /** Practice benchmark established, improved into a new band, or due for a check. */
   | 'practicePace'
+  /**
+   * iRacing incident points charged (irEngineerCalls.ts): the settled step,
+   * the type when it was one iRacing amount, and the count against the limit.
+   */
+  | 'irIncident'
+  /** iRacing's meatball (repairs required), or a tow to the pits beginning. */
+  | 'irRepair'
+  /** Under an iRacing caution: pits open / closed, one lap to green. */
+  | 'irCaution'
   /** Qualifying/practice hotlap calls — see `sessionCalls.ts` for each kind. */
   | SessionCallKind;
 
@@ -167,6 +177,8 @@ export type EngineerTriggerKind =
 export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   redFlag: 100,
   fullCourseYellow: 90,
+  irCaution: 88, // pits closing/opening and the restart coming are rule changes
+  irRepair: 84, // the car must be repaired — the iRacing damage call
   incident: 85,
   sectorYellow: 80, // timely: the driver may be arriving at it this corner
   penalty: 75,
@@ -174,6 +186,9 @@ export const TRIGGER_PRIORITY: Readonly<Record<EngineerTriggerKind, number>> = {
   // Below the penalty a cut can tip over into (that line already says it),
   // above the race story. The trace reports a charge up to ~25 s late anyway.
   trackLimits: 58,
+  // iRacing incident points — the same story as LMU's limits points, with a
+  // disqualification at the end of it.
+  irIncident: 57,
   checkered: 65,
   finalLap: 60,
   penaltyServed: 55,
@@ -239,6 +254,7 @@ const RACE_ONLY: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>
   'rivalRejoin',
   'pitWindowOpen',
   'trackLimits',
+  'irCaution',
 ]);
 
 /* -------------------------------------------------------------------------- */
@@ -288,6 +304,11 @@ const COOLDOWN_MS: Readonly<Partial<Record<EngineerTriggerKind, number>>> = {
   // A kerb clipped every lap is one call a lap at most; the next one that
   // gets through carries the up-to-date total.
   trackLimits: 20_000,
+  // Each rise is already one settled call (irEngineerCalls.ts); this only
+  // stops two of them landing back to back.
+  irIncident: 8_000,
+  irRepair: 10_000, // the meatball and the tow are 11 s apart and both news
+  irCaution: 20_000,
   fuelWindow: 90_000,
   fuelCritical: 60_000,
   fullCourseYellow: 30_000,
@@ -344,7 +365,14 @@ const DAMAGE_WORSENED_STEP = 0.15;
  * 25 s cooldown still stops repeats; the radio's one-slot hold still stops two
  * lines talking over each other.
  */
-const GLOBAL_GATE_EXEMPT: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>(['incident']);
+// iRacing's crash calls are the same story: the incident points settle a
+// couple of seconds after the hit and the meatball ~11 s after it, exactly
+// when the place lost has just taken the gate (2026-11-10 race capture).
+const GLOBAL_GATE_EXEMPT: ReadonlySet<EngineerTriggerKind> = new Set<EngineerTriggerKind>([
+  'incident',
+  'irIncident',
+  'irRepair',
+]);
 
 /** The whole car's damage as one number: aero plus the four corners. */
 function damageTotal(d: { aero?: number; suspension?: readonly number[] }): number {
@@ -933,6 +961,12 @@ export class EngineerTriggers {
 
   /** Qualifying/practice hotlap calls, gated by this class's own gates. */
   private readonly sessionCalls = new SessionCalls();
+  /** iRacing's incident, flag and caution calls (irEngineerCalls.ts). */
+  private readonly irCalls = new IrEngineerCalls();
+  private readonly irHost: IrCallHost = {
+    offer: (kind, atMs, detail, facts) => this.offer(kind, atMs, detail, facts),
+    cooling: (kind, atMs) => this.cooling(kind, atMs),
+  };
   private readonly sessionHost: SessionCallHost = {
     offer: (kind, atMs, detail, facts) => this.offer(kind, atMs, detail, facts),
     cooling: (kind, atMs) => this.cooling(kind, atMs),
@@ -1013,6 +1047,7 @@ export class EngineerTriggers {
     this.prevPracticePaceBand = '';
     this.lastPracticePaceLap = UNKNOWN_VALUE;
     this.sessionCalls.reset();
+    this.irCalls.reset();
     this.traffic.reset();
     this.lastFiredAt.clear();
     this.firedOnce.clear();
@@ -1079,6 +1114,7 @@ export class EngineerTriggers {
       this.observeRaceStory(frame);
       this.observePracticePace(frame);
       this.sessionCalls.observe(frame, now);
+      this.irCalls.observe(frame);
       this.primed = true;
       return null;
     }
@@ -1101,6 +1137,7 @@ export class EngineerTriggers {
     this.detectRaceStory(frame, now);
     this.detectPracticePace(frame, now);
     this.sessionCalls.detect(frame, now, this.sessionHost);
+    this.irCalls.detect(frame, now, this.irHost);
   }
 
   /**
@@ -1110,6 +1147,10 @@ export class EngineerTriggers {
    */
   private detectSessionFlags(frame: TelemetryFrame, now: number): void {
     const { phase, flag } = frame.session;
+    // iRacing says these differently (a white flag, a pace car, a grid to
+    // compare the result with) — the phrasebook reads `sim`.
+    const ir = frame.source === 'iracing';
+    const sim: Record<string, string | number | boolean> = ir ? { sim: 'iracing' } : {};
     const edges = flagEdges(
       {
         phase: this.prevPhase,
@@ -1128,7 +1169,12 @@ export class EngineerTriggers {
           this.offer('redFlag', now, 'session red-flagged', { phase, flag });
           break;
         case 'fullCourseYellow':
-          this.offer('fullCourseYellow', now, 'full-course yellow', { phase, flag });
+          this.offer('fullCourseYellow', now, 'full-course yellow', {
+            phase,
+            flag,
+            ...sim,
+            ...(ir && frame.iracing ? { pitsOpen: frame.iracing.pitsOpen } : {}),
+          });
           break;
         case 'sectorYellow': {
           const { lit, fresh } = e;
@@ -1154,7 +1200,7 @@ export class EngineerTriggers {
           this.offer('sectorClear', now, 'local yellows cleared', {});
           break;
         case 'restart':
-          this.offer('restart', now, 'racing resumes', { from: e.from });
+          this.offer('restart', now, 'racing resumes', { from: e.from, ...sim });
           this.seenGreen = true;
           break;
         case 'raceStart':
@@ -1164,6 +1210,7 @@ export class EngineerTriggers {
         case 'finalLap':
           this.offer('finalLap', now, 'last lap', {
             position: frame.player?.position ?? UNKNOWN_VALUE,
+            ...sim,
           });
           break;
         case 'checkered':
@@ -1174,6 +1221,15 @@ export class EngineerTriggers {
               frame.player?.finishPosition ?? frame.player?.position ?? UNKNOWN_VALUE,
             ...(frame.player?.finishClassPosition !== undefined
               ? { classPosition: frame.player.finishClassPosition }
+              : {}),
+            ...sim,
+            // Where we started, for "P5, up three" (iRacing: read off the
+            // order just after the green — irEngineerCalls.ts).
+            ...(ir && known(this.irCalls.startPosition().position)
+              ? {
+                  startPosition: this.irCalls.startPosition().position,
+                  startClassPosition: this.irCalls.startPosition().classPosition,
+                }
               : {}),
           });
           break;
@@ -1238,6 +1294,8 @@ export class EngineerTriggers {
    * counted (see `trackLimits.ts`).
    */
   private detectPenalties(frame: TelemetryFrame, now: number): void {
+    // iRacing's black flag, warning and DQ are irEngineerCalls.ts' calls.
+    if (frame.source === 'iracing') return;
     const penalties = frame.player?.trackLimits?.penalties;
     if (!known(penalties)) return;
     if (!known(this.prevPenalties)) return;
@@ -1263,6 +1321,8 @@ export class EngineerTriggers {
    * their cuts are invisible to us and the total would be ours alone.
    */
   private detectTrackLimits(frame: TelemetryFrame, now: number): void {
+    // On iRacing the block carries incident points: irEngineerCalls.ts says those.
+    if (frame.source === 'iracing') return;
     const tl = frame.player?.trackLimits;
     const charged = tl?.charged;
     if (!tl || !known(charged) || !known(this.prevCharged)) return;
@@ -1383,6 +1443,9 @@ export class EngineerTriggers {
         pitPhase !== 'none' ||
         this.prevPitPhase !== 'none' ||
         this.rivalStops.neighbourPitActive(now) || // a neighbour's stop is rivalStop's story
+        // Under an iRacing caution the order shuffles through pit stops and
+        // wave-arounds; the restart call says where we are.
+        (frame.source === 'iracing' && frame.session.phase === 'fullCourseYellow') ||
         !known(lap) ||
         lap <= 1 ||
         !known(this.posAnnounced);

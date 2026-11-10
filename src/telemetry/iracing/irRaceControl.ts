@@ -95,8 +95,11 @@ export class IrRaceControlReader {
       disqualified: (flags & F.disqualify) !== 0,
       pitsOpen: f.has('PitsOpen') ? f.bool('PitsOpen') : true,
       lapLimit: limit,
-      lapsCompleted: laps,
-      sessionDone: !isRace && limit > 0 && laps !== UNKNOWN_VALUE && laps >= limit,
+      // iRacing's out lap is -1, which is also our "unknown" sentinel on the
+      // wire: the out lap is said apart and counts as 0 laps completed.
+      lapsCompleted: !fin(laps) ? UNKNOWN_VALUE : Math.max(0, laps),
+      outLap: fin(laps) && laps < 0,
+      sessionDone: !isRace && limit > 0 && fin(laps) && laps >= limit,
       incidentLimit: incidentLimit > 0 ? incidentLimit : 0,
       towSec: fin(tow) && tow > 0 ? Math.round(tow * 10) / 10 : 0,
     };
@@ -107,9 +110,9 @@ export class IrRaceControlReader {
     const raw = f.num('LapCompleted');
     const last = f.num('LapLastLapTime');
     if (!f.bool('IsOnTrack') || !fin(raw)) {
-      // Out of the car: nothing to count. Keep the level so re-entering the
-      // same run does not read as a jump.
-      return fin(this.laps) ? this.laps : UNKNOWN_VALUE;
+      // Out of the car: nothing to count (NaN = unknown). The level is kept so
+      // re-entering the same run does not read as a jump.
+      return Number.NaN;
     }
     if (!fin(this.laps) || raw < this.laps || raw > this.laps + 1) {
       // First sight, a reset (back to the pits) or a jump: take it as it is.

@@ -471,6 +471,11 @@ const TRIGGER_TIERS = {
   // What a cut cost and how close the drive-through is — a rule, not story.
   trackLimits: 'essential',
   penaltyServed: 'essential',
+  // iRacing (irEngineerCalls.ts): incident points against the DQ limit, the
+  // meatball / tow, and the caution's pits and one-to-green — rules, not story.
+  irIncident: 'essential',
+  irRepair: 'essential',
+  irCaution: 'essential',
   fuelWindow: 'essential',
   fuelCritical: 'essential',
   fastestLapSelf: 'standard',

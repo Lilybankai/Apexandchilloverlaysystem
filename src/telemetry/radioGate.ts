@@ -76,8 +76,15 @@ export const KIND_URGENCY: Readonly<Record<string, RadioUrgency>> = {
   raceStart: 'urgent',
   restart: 'urgent',
   yieldTo: 'urgent',
+  // iRacing (irEngineerCalls.ts): pits closing/opening and the restart
+  // coming are rule changes under a caution.
+  irCaution: 'urgent',
 
   incident: 'priority',
+  // iRacing: the meatball / a tow is its damage call; incident points are its
+  // track-limits call. Neither is a safety kind.
+  irRepair: 'priority',
+  irIncident: 'priority',
   // The trace reports a charge up to ~25 s after the cut: it can wait for a
   // straight like damage can. Not a safety kind — "keep quiet" holds it.
   trackLimits: 'priority',

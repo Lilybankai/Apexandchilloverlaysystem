@@ -2157,10 +2157,16 @@ export interface IracingRaceControl {
   /**
    * The player's laps completed this session, SETTLED: it moves only once
    * iRacing has published that lap's time (or 3 s have passed), so a lap
-   * summary never reads the previous lap's time. `-1` on an out lap from the
-   * pits (iRacing's own count), {@link UNKNOWN_VALUE} out of the car.
+   * summary never reads the previous lap's time. `0` on an out lap from the
+   * pits (see {@link outLap}), {@link UNKNOWN_VALUE} out of the car.
    */
   lapsCompleted: number;
+  /**
+   * On an out lap from the pits: iRacing's `LapCompleted` reads -1 until the
+   * line that starts the first timed lap (said apart, because -1 is also the
+   * wire's unknown sentinel).
+   */
+  outLap: boolean;
   /** The player has used up a lap-limited non-race session (`lapsCompleted >= lapLimit`). */
   sessionDone: boolean;
   /** Incident points that disqualify (`WeekendOptions.IncidentLimit`); `0` = none. */
