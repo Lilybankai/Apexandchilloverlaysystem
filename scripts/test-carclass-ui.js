@@ -176,6 +176,40 @@ console.log('\n6) The full name, for a group header or a tooltip');
     classLabel('LMP2_ELMS') + '/' + classAbbrev('LMP2_ELMS'));
 }
 
+console.log('\n6b) iRacing\'s class names are its own, not LMU\'s');
+{
+  // dispatch() sets the vocabulary from every frame's `source`; the same
+  // string means a different class in each sim. GTP is the case that matters:
+  // LMU mods spell the Hypercar class that way, iRacing names its own series.
+  const rt = loadRuntime();
+  rt.setClassSource('iracing');
+  check('GTP stays GTP on iRacing (not HYPERCAR)',
+    rt.classLabel('GTP') === 'GTP' && rt.classAbbrev('GTP') === 'GTP',
+    rt.classLabel('GTP') + '/' + rt.classAbbrev('GTP'));
+  check('GTP wears the top-class colour, not a hashed one',
+    rt.classColor('GTP') === '#ff5470', rt.classColor('GTP'));
+  check('"GT3 Class" is tidied to GT3, in GT3\'s colour',
+    rt.classLabel('GT3 Class') === 'GT3' && rt.classAbbrev('GT3 Class') === 'GT3' &&
+      rt.classColor('GT3 Class') === rt.classColor('GT3'),
+    rt.classLabel('GT3 Class') + '/' + rt.classColor('GT3 Class'));
+  check('names both sims share keep their LMU colour',
+    ['LMP2', 'GT3', 'GT4', 'LMP3'].every((c) => rt.classColor(c) === classColor(c)));
+  check('TCR is its own class with its own colour',
+    rt.classAbbrev('TCR') === 'TCR' && rt.classColor('TCR') !== rt.classColor('GT3'),
+    rt.classColor('TCR'));
+  check('LMU spellings are NOT folded on iRacing (LMDh is not a Hypercar here)',
+    rt.classLabel('LMDh') === 'LMDH', rt.classLabel('LMDh'));
+  check('a one-make class keeps its own name and gets a colour',
+    rt.classLabel('BMW M2 G87') === 'BMW M2 G87' && /^#[0-9a-f]{6}$/i.test(rt.classColor('BMW M2 G87')),
+    rt.classLabel('BMW M2 G87') + ' ' + rt.classColor('BMW M2 G87'));
+  // And back: the memo is dropped on the switch, so an LMU frame after an
+  // iRacing one reads GTP as a Hypercar again rather than from a stale cache.
+  rt.setClassSource('lmu');
+  check('switching back to LMU restores GTP → HYPERCAR (caches dropped)',
+    rt.classLabel('GTP') === 'HYPERCAR' && rt.classAbbrev('GTP') === 'HY',
+    rt.classLabel('GTP') + '/' + rt.classAbbrev('GTP'));
+}
+
 console.log('\n7) The overlay table still agrees with the server\'s');
 {
   // carClass.ts is the source of truth for which spellings exist; this mirror

@@ -315,6 +315,55 @@
   var KNOWN_CLASS_LABELS = { LMP2_ELMS: "LMP2 ELMS" };
   var CLASS_COLORS = ["#8b5cf6", "#22d3ee", "#ec4899", "#4f8bff", "#35d07f", "#ffb020"];
 
+  /**
+   * iRacing's class names, which are NOT LMU's and must not be read as if they
+   * were. The table above folds "GTP" into HYPERCAR because LMU mods spell the
+   * top class that way; on iRacing GTP is its own series' own name, and a GTP
+   * field drawn as "HY · HYPERCAR" is a tower that has never seen iRacing. So
+   * while the frame says `source: 'iracing'`, class strings go through THIS
+   * table instead: it only tidies iRacing's own spellings ("GT3 Class" → GT3)
+   * and otherwise passes the name through as the sim wrote it. Colours and tags
+   * for the names both sims share (LMP2, GT3, GT4…) stay the ones above, so a
+   * GT3 is the same green whichever sim it is in. Anything else — a one-make
+   * class like "BMW M2 G87" — gets the hashed fallback, stable across sessions.
+   *
+   * Deliberately a separate table from CLASS_ALIASES, which mirrors the server's
+   * normaliser key for key (scripts/test-carclass-ui.js holds them together).
+   */
+  var IR_CLASS_ALIASES = {
+    GTP: "GTP",
+    LMP2: "LMP2", LMP2CLASS: "LMP2",
+    LMP3: "LMP3", LMP3CLASS: "LMP3",
+    GT3: "GT3", GT3CLASS: "GT3",
+    GT4: "GT4", GT4CLASS: "GT4",
+    GTE: "GTE", GTECLASS: "GTE",
+    TCR: "TCR", TCRCLASS: "TCR",
+  };
+  /** Colours for iRacing-only canonical names; shared names use the table above. */
+  var IR_CLASS_COLORS = {
+    // The top prototype class: the colour the top class wears in every other
+    // tower this app draws, so "the fastest cars" reads the same at a glance.
+    GTP: "#ff5470",
+    // Touring cars: the magenta the fallback palette already offers, pinned so
+    // it cannot hash onto GT3's green.
+    TCR: "#ec4899",
+  };
+  var IR_CLASS_ABBREV = { GTP: "GTP", TCR: "TCR" };
+
+  /**
+   * Which sim's class vocabulary is in force — the last frame's `source`. Set
+   * by dispatch before any widget draws, and the memo caches are dropped when it
+   * changes, because the same string ("GTP") means a different class in each.
+   */
+  var classSource = "";
+  function setClassSource(src) {
+    var next = src === "iracing" ? "iracing" : "";
+    if (next === classSource) return;
+    classSource = next;
+    colorCache = Object.create(null);
+    abbrevCache = Object.create(null);
+  }
+
   // Null-prototype: a class label is arbitrary text from a mod, and "constructor"
   // is a string a mod is entirely free to use.
   var colorCache = Object.create(null);
@@ -326,7 +375,8 @@
 
   function canonClass(cls) {
     var k = classKey(cls);
-    return typeof CLASS_ALIASES[k] === "string" ? CLASS_ALIASES[k] : k;
+    var table = classSource === "iracing" ? IR_CLASS_ALIASES : CLASS_ALIASES;
+    return typeof table[k] === "string" ? table[k] : k;
   }
 
   /**
@@ -341,6 +391,9 @@
     if (!cls) return "#6b7387";
     if (colorCache[cls]) return colorCache[cls];
     var canon = canonClass(cls);
+    if (classSource === "iracing" && typeof IR_CLASS_COLORS[canon] === "string") {
+      return (colorCache[cls] = IR_CLASS_COLORS[canon]);
+    }
     if (typeof KNOWN_CLASS_COLORS[canon] === "string") {
       return (colorCache[cls] = KNOWN_CLASS_COLORS[canon]);
     }
@@ -360,7 +413,10 @@
   function classAbbrev(cls) {
     if (!cls) return "";
     if (abbrevCache[cls]) return abbrevCache[cls];
-    var known = KNOWN_CLASS_ABBREV[canonClass(cls)];
+    var canonAb = canonClass(cls);
+    var known = classSource === "iracing" && typeof IR_CLASS_ABBREV[canonAb] === "string"
+      ? IR_CLASS_ABBREV[canonAb]
+      : KNOWN_CLASS_ABBREV[canonAb];
     if (typeof known === "string") return (abbrevCache[cls] = known);
     var words = String(cls).toUpperCase().split(/[^A-Z0-9]+/);
     var kept = [];
@@ -382,7 +438,7 @@
    */
   function classLabel(cls) {
     if (!cls) return "OTHER";
-    var alias = CLASS_ALIASES[classKey(cls)];
+    var alias = (classSource === "iracing" ? IR_CLASS_ALIASES : CLASS_ALIASES)[classKey(cls)];
     if (typeof alias !== "string") return String(cls).toUpperCase();
     return typeof KNOWN_CLASS_LABELS[alias] === "string" ? KNOWN_CLASS_LABELS[alias] : alias;
   }
@@ -1280,6 +1336,9 @@
 
     glowEnabledCache =
       document.documentElement.getAttribute("data-glow-enabled") !== "false";
+    // Before any widget draws: which sim's class names these are (see
+    // IR_CLASS_ALIASES).
+    setClassSource(frame.source);
     setDemo(frame.connected === false);
     // A replay counts as "show": nobody is at the wheel, but streaming or
     // reviewing a replay is exactly what the overlays are wanted over (THE-35).
@@ -1767,6 +1826,9 @@
     classColor: classColor,
     classAbbrev: classAbbrev,
     classLabel: classLabel,
+    // Which sim's class vocabulary is in force. dispatch() sets it from every
+    // frame; exposed so the class rules can be tested headlessly.
+    setClassSource: setClassSource,
     // For a widget that renders on its own rAF loop — see the function.
     noteWidgetWork: noteWidgetWork,
   };

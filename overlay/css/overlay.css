@@ -486,6 +486,87 @@
 .standings__ve-text { position: relative; color: var(--text-secondary); }
 .standings__ve[data-ve="low"]  .standings__ve-text { color: var(--warn); }
 .standings__ve[data-ve="crit"] .standings__ve-text { color: var(--pos-loss); }
+/* iRating (iRacing) — the VE cell's type exactly: the same strategy-fact column
+   in the same quiet mono, so on an iRacing tower it reads as the column VE is on
+   an LMU one rather than as something added. */
+.standings__ir {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+}
+/* Projected iRating change if the race finished now: a small tinted chip in the
+   ± column's own green / red, so "+23" here and "▲2" four columns left are read
+   as the same kind of news. Fixed minimum width and right-aligned so the signs
+   line up down the column. 3px on the left of the cell, not 5: the chip carries
+   its own padding. */
+.standings__irdelta {
+  padding-left: 3px;
+  text-align: right;
+}
+.standings__irchip {
+  display: inline-block;
+  min-width: 2.4em;
+  padding: 0 3px;
+  border-radius: 3px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  line-height: calc(var(--fs-body) * 1.25);
+  color: var(--text-muted);
+  text-shadow: none;
+}
+.standings__irchip[data-state="gain"] {
+  color: var(--pos-gain);
+  background: color-mix(in srgb, var(--pos-gain) 14%, transparent);
+}
+.standings__irchip[data-state="loss"] {
+  color: var(--pos-loss);
+  background: color-mix(in srgb, var(--pos-loss) 14%, transparent);
+}
+.standings__irchip[data-state="flat"] {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.standings__irchip[data-state="none"] { padding: 0; }
+/* iRacing licence chip ("B 1.41") — one rule for both tables, like the brand
+   and rank badges it stands in for. Drawn the way the relative panel draws a
+   class tag: the licence colour on its edge and in its letters, over a fixed
+   dark square that survives the background slider. The letters are mixed toward
+   white because iRacing's own licence colours are print colours — the A-licence
+   blue (#0153db) is close to invisible on a dark square at 11px — while the edge
+   keeps the colour exactly, so the hue still names the licence. Fixed width so
+   every name after it starts at the same x. */
+.standings__lic,
+.relative__lic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--fs-label) * 3.5);
+  height: calc(var(--fs-body) * 1.15);
+  margin-right: 5px;
+  vertical-align: middle;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(8, 10, 17, 0.82);
+  color: color-mix(in srgb, var(--lic, var(--text-muted)) 70%, #fff);
+  box-shadow: inset 0 0 0 1px var(--lic, var(--border-strong));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: none;
+}
+/* In the relative panel it sits beside the class tag, so it takes the tag's
+   height rather than the tower's tighter chip height. */
+.relative__lic { height: calc(var(--fs-body) * 1.35); }
+/* `display` above outranks the UA `[hidden]` rule — the trap documented at
+   .relative__class[hidden]. */
+.standings__lic[hidden],
+.relative__lic[hidden] { display: none; }
 /* The three numeric time columns. 12px (not the table's 13px) so a full
    "1:58.492" fits the 60px of content the colgroup leaves them. */
 .standings__gap,
@@ -512,6 +593,18 @@
    the setting is off (standings.js), so zeroing the box and clipping what is
    in it leaves nothing to draw while the cell keeps its place in the row. */
 [data-avg="off"] .standings__avg {
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* The data-driven columns collapse the same way, for the same reason: VE on an
+   iRacing frame (no virtual energy there), IR and IR± until a frame carries an
+   iRating. On an LMU frame the IR pair is collapsed and its <col>s are 0px, so
+   the tower is the one it always was. */
+[data-vecol="off"] .standings__ve,
+[data-ir="off"] .standings__ir,
+[data-irdelta="off"] .standings__irdelta {
   padding: 0;
   border: 0;
   overflow: hidden;
@@ -1286,6 +1379,21 @@
   color: var(--text-secondary);
 }
 .relative__driver { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+/* iRating (iRacing), between the name and the gap: the standings tower's IR type
+   in a tighter cell, muted so the gap beside it stays the loudest number on the
+   row. `display: none` is safe here, unlike the tower's collapsed columns — this
+   table has no <colgroup>, and the attribute is on the section root so every row
+   drops the cell together and no column shifts under another. */
+.relative__ir {
+  padding-left: 4px;
+  padding-right: 2px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+[data-ir="off"] .relative__ir { display: none; }
 .relative__delta {
   /* Sized off the LARGEST font this column ever holds — the promoted neighbour
      rows below, not the table's own size — and derived from the token so it

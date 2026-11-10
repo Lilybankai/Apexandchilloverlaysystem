@@ -216,8 +216,9 @@ function mount(search) {
     push: (view) => {
       if (onStandings) onStandings(view);
     },
-    update: (standings) =>
-      widget.update({ standings, session: {}, player: {} }, {
+    // `frame` adds frame-level fields (e.g. `source: 'iracing'`) to the update.
+    update: (standings, frame) =>
+      widget.update({ standings, session: {}, player: {}, ...(frame || {}) }, {
         fmt,
         penaltyBadge: BADGE.penaltyBadge,
         penaltyBadgeTitle: BADGE.penaltyBadgeTitle,
@@ -1174,6 +1175,79 @@ console.log('\nPenalty badges — any car still owing one, cleared when served')
     'a pinned view without the key keeps them on',
     w2.withClass('standings__pen').some((b) => !b.hidden && b.textContent === 'PEN'),
   );
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\niRacing — iRating, its projected change, the licence chip');
+/* -------------------------------------------------------------------------- */
+{
+  /** The field again, carrying what an iRacing provider sends per row. */
+  const irField = (withDelta) =>
+    field().map((r, i) => {
+      const { virtualEnergy, ...rest } = r;
+      return {
+        ...rest,
+        iRating: 1200 + i * 101,
+        ...(withDelta ? { iRatingDelta: [23, -41, 0, 7, -3, 12][i % 6] } : {}),
+        license: { text: 'B 1.41', color: '#00c702' },
+      };
+    });
+  const attrs = (w) => {
+    const r = w.rootEl();
+    return ['data-vecol', 'data-ir', 'data-irdelta'].map((k) => r.getAttribute(k)).join(',');
+  };
+  const licShown = (w) => w.withClass('standings__lic').filter((c) => !c.hidden).map((c) => c.textContent);
+  const cellText = (w, cls) =>
+    w.withClass('standings__cell standings__' + cls).map((c) => c.textContent);
+
+  // An LMU frame carries none of it, and the tower keeps exactly its columns.
+  const lmu = mount();
+  lmu.update(field(), { source: 'lmu' });
+  check('LMU: VE open, IR and IR± collapsed', attrs(lmu) === 'on,off,off', attrs(lmu));
+  check('LMU: no licence chip on any row', licShown(lmu).length === 0);
+
+  // An iRacing race: VE gives way, both iRating columns open.
+  const ir = mount();
+  ir.update(irField(true), { source: 'iracing' });
+  check('iRacing race: VE collapsed, IR and IR± open', attrs(ir) === 'off,on,on', attrs(ir));
+  check('the iRating is written whole', cellText(ir, 'ir')[0] === '1200', cellText(ir, 'ir').slice(0, 3).join(' '));
+  const chips = ir.withClass('standings__irchip');
+  const chipOf = (n) => chips[n];
+  check('a gain reads "+23", green',
+    chipOf(0).textContent === '+23' && chipOf(0).getAttribute('data-state') === 'gain');
+  check('a loss reads "−41" with a real minus, red',
+    chipOf(1).textContent === '−41' && chipOf(1).getAttribute('data-state') === 'loss',
+    chipOf(1).textContent);
+  check('no change reads "0", muted',
+    chipOf(2).textContent === '0' && chipOf(2).getAttribute('data-state') === 'flat');
+  check('every row shows its licence', licShown(ir).length === 12 && licShown(ir)[0] === 'B 1.41');
+
+  // Practice/qualifying: ratings but no projection — IR± stays shut.
+  const prac = mount();
+  prac.update(irField(false), { source: 'iracing' });
+  check('iRacing practice: IR open, IR± collapsed', attrs(prac) === 'off,on,off', attrs(prac));
+
+  // A row the sim gives no rating for (AI, a hidden-rating session).
+  const holes = irField(true);
+  delete holes[0].iRating;
+  delete holes[0].iRatingDelta;
+  delete holes[0].license;
+  const h = mount();
+  h.update(holes, { source: 'iracing' });
+  check('an unrated row draws a dash, no chip, no licence',
+    cellText(h, 'ir')[0] === '—' && h.withClass('standings__irchip')[0].textContent === '' &&
+      h.withClass('standings__lic')[0].hidden);
+
+  // OBS sources can drop any of the three.
+  const off = mount('?standings=all,ir=off,irdelta=off,lic=off');
+  off.update(irField(true), { source: 'iracing' });
+  check('?standings=ir=off,irdelta=off,lic=off drops all three',
+    attrs(off) === 'off,off,off' && licShown(off).length === 0, attrs(off));
+
+  // Back to LMU on the same tower (the app switched provider): the columns follow.
+  ir.update(field(), { source: 'lmu' });
+  check('an LMU frame after an iRacing one restores the LMU columns', attrs(ir) === 'on,off,off', attrs(ir));
+  check('…and clears every licence chip', licShown(ir).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
