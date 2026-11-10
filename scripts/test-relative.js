@@ -214,6 +214,12 @@ function mount(search) {
     badges: () =>
       all((e) => e.className === 'relative__pen').map((b) => (b.hidden ? '' : b.textContent)),
     badgeEls: () => all((e) => e.className === 'relative__pen'),
+    /** The section root's `data-ir` (whether the IR column is drawn). */
+    irAttr: () => root.getAttribute('data-ir'),
+    /** IR cell text, in table order. */
+    irs: () => all((e) => e.className === 'relative__cell relative__ir').map((c) => c.textContent),
+    /** Licence chips as drawn ("" when hidden), in table order. */
+    lics: () => all((e) => e.className === 'relative__lic').map((c) => (c.hidden ? '' : c.textContent)),
   };
 }
 
@@ -296,6 +302,30 @@ console.log('\nThe off switch');
   w.push({ pen: 'on' });
   w.update(f);
   check('a pinned source ignores the app', w.badges().every((b) => b === ''));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log('\niRacing — licence chip and iRating');
+{
+  const w = mount();
+  w.update(field());
+  check('an LMU table draws no IR column', w.irAttr() === 'off', w.irAttr());
+  check('…and no licence chip', w.lics().every((l) => l === ''));
+  w.update(field({
+    1: { iRating: 2643, iRatingDelta: 12, license: { text: 'A 3.70', color: '#0153db' } },
+    2: { iRating: 987, license: { text: 'R 2.50', color: '#fc0706' } },
+    3: { iRating: 1573, license: { text: 'B 1.41', color: '#00c702' } },
+  }));
+  check('rows with iRatings open the column', w.irAttr() === 'on');
+  check('written the way iRacing\'s relative writes it (1.6k; under 1000 whole)',
+    w.irs().slice(0, 3).join('|') === '2.6k|987|1.6k', w.irs().join('|'));
+  check('a row without one stays blank', w.irs()[3] === '', w.irs()[3]);
+  check('licence chips in table order',
+    w.lics().join('|') === 'A 3.70|R 2.50|B 1.41||', w.lics().join('|'));
+  const pinned = mount('?relative=ir=off,lic=off');
+  pinned.update(field({ 1: { iRating: 2643, license: { text: 'A 3.70' } } }));
+  check('?relative=ir=off,lic=off drops both',
+    pinned.irAttr() === 'off' && pinned.lics().every((l) => l === ''));
 }
 
 /* -------------------------------------------------------------------------- */

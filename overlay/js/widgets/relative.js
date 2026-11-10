@@ -30,11 +30,22 @@
  * the shared runtime's `penaltyBadge`). Next to you on track it answers "is the
  * car I am fighting about to drop out to serve one?". On by default; the
  * relative card's PENALTY setting or `?relative=pen=off` turns it off.
+ *
+ * ## iRacing: licence and iRating
+ * An iRacing row carries the driver's licence ("B 1.41", tinted by iRacing's own
+ * licence colour) as a chip in the identity block — the slot LMU's DR/SR shields
+ * hold — and their iRating in a small column before the gap ("1.6k", the way
+ * iRacing's own relative writes it, with the full figure and any projected
+ * race change on its tooltip). Both appear only when the frame carries them
+ * (`license`, `iRating`), so an LMU table is exactly the table it always was.
+ * `?relative=ir=off` / `lic=off` drop either for one OBS source.
  */
 (function () {
   "use strict";
 
   var mount, tbody, alertEl;
+  /** The section root: carries `data-ir`, which opens or collapses the IR column. */
+  var rootEl = null;
   var cellLast, cellBest, cellCur, cellDelta;
   var stripCache = {};
   var alertCache = {};
@@ -46,20 +57,25 @@
    * `?standings=`); otherwise it follows the relative card via the appearance
    * channel.
    */
-  var view = { pen: "on" };
+  var view = { pen: "on", ir: "on", lic: "on" };
   var viewPinned = false;
+
+  /** "on" unless the value says off — the parse every toggle here shares. */
+  function onOff(val) {
+    return val === "off" || val === "0" || val === "no" ? "off" : "on";
+  }
 
   function initView(params) {
     var raw = (params.get("relative") || "").trim().toLowerCase();
     if (raw) {
       viewPinned = true;
-      var next = { pen: "on" };
+      var next = { pen: "on", ir: "on", lic: "on" };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
         var kv = parts[i].split("=");
         var key = (kv[0] || "").trim();
         var val = (kv[1] || "").trim();
-        if (key === "pen") next.pen = val === "off" || val === "0" || val === "no" ? "off" : "on";
+        if (key === "pen" || key === "ir" || key === "lic") next[key] = onOff(val);
       }
       view = next;
       return;
@@ -67,7 +83,13 @@
     if (window.ApexAppearance && window.ApexAppearance.onRelative) {
       window.ApexAppearance.onRelative(function (next) {
         if (viewPinned || !next) return;
-        view = { pen: next.pen === "off" ? "off" : "on" };
+        // The app's relative card only knows `pen` today; the iRacing toggles
+        // stay on unless it ever sends them off.
+        view = {
+          pen: next.pen === "off" ? "off" : "on",
+          ir: next.ir === "off" ? "off" : "on",
+          lic: next.lic === "off" ? "off" : "on",
+        };
       });
     }
   }
@@ -179,6 +201,15 @@
     srRank.onerror = function () {
       srRank.hidden = true;
     };
+    // iRacing licence chip, right after the class tag: it stands in for the
+    // rank shields (the same fact, how the sim grades this driver, for a sim
+    // that has none), but sits ahead of the badge run so it cannot come between
+    // the adjacent-sibling spacing rules there (.relative__rank + …), which an
+    // element in the middle — even a hidden one — breaks on every LMU row.
+    // Two chips side by side also read as one identity block. Hidden until known.
+    var licChip = document.createElement("span");
+    licChip.className = "relative__lic";
+    licChip.hidden = true;
     // The ghost lives in its own span before the name, so toggling it never
     // rewrites the name text node (which the reconciler diffs).
     var ghostWrap = document.createElement("span");
@@ -195,12 +226,17 @@
     penChip.hidden = true;
     driverTd.appendChild(penChip);
     driverTd.appendChild(classTag);
+    driverTd.appendChild(licChip);
     driverTd.appendChild(badge);
     driverTd.appendChild(drRank);
     driverTd.appendChild(srRank);
     driverTd.appendChild(srBadge);
     driverTd.appendChild(ghostWrap);
     driverTd.appendChild(nameSpan);
+    // iRating (iRacing), between the identity and the gap. Collapsed on every
+    // row while the table has no iRatings to show — see `data-ir` in update().
+    var irTd = document.createElement("td");
+    irTd.className = "relative__cell relative__ir";
     var deltaTd = document.createElement("td");
     deltaTd.className = "relative__cell relative__delta";
     // Pit flag, in its own column past the gap rather than a " ·PIT" on the
@@ -218,6 +254,7 @@
     pitTd.appendChild(pitFlag);
     tr.appendChild(posTd);
     tr.appendChild(driverTd);
+    tr.appendChild(irTd);
     tr.appendChild(deltaTd);
     tr.appendChild(pitTd);
     return {
@@ -231,7 +268,9 @@
       srRank: srRank,
       ghostWrap: ghostWrap,
       nameSpan: nameSpan,
+      licChip: licChip,
       penChip: penChip,
+      irTd: irTd,
       deltaTd: deltaTd,
       pitFlag: pitFlag,
       cache: {},
@@ -245,6 +284,9 @@
   }
 
   function init(root) {
+    rootEl = root;
+    // Collapsed until a frame carries an iRating, so an LMU table never draws it.
+    rootEl.setAttribute("data-ir", "off");
     initView(new URLSearchParams(window.location.search));
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
@@ -356,6 +398,46 @@
     return true;
   }
 
+  /**
+   * An iRating the way iRacing's own relative writes it: "1.6k" from 1000 up,
+   * the bare figure below. The column is a glance — who is quick, who is new —
+   * and the full number is on the tooltip.
+   */
+  function irShort(ir) {
+    if (ir >= 1000) return (Math.round(ir / 100) / 10).toFixed(1) + "k";
+    return String(Math.round(ir));
+  }
+
+  /** The IR cell and the licence chip for one row (iRacing only). */
+  function renderIRacing(row, e, irOn, licOn) {
+    if (irOn) {
+      var has = typeof e.iRating === "number" && e.iRating > 0;
+      set(row, "ir", row.irTd, "textContent", has ? irShort(e.iRating) : "");
+      var d = typeof e.iRatingDelta === "number" && isFinite(e.iRatingDelta)
+        ? Math.round(e.iRatingDelta)
+        : null;
+      var title = has
+        ? "iRating " + Math.round(e.iRating) +
+          (d === null ? "" : " (" + (d > 0 ? "+" : d < 0 ? "\u2212" : "") + Math.abs(d) + " if the race finished now)")
+        : "";
+      set(row, "irTitle", row.irTd, "title", title);
+    }
+    var lic = licOn && e.license && e.license.text ? e.license : null;
+    var licText = lic ? String(lic.text) : "";
+    if (row.cache.lic !== licText) {
+      row.cache.lic = licText;
+      row.licChip.textContent = licText;
+      row.licChip.hidden = !licText;
+      row.licChip.title = licText ? "Licence " + licText : "";
+    }
+    var licCol = lic && typeof lic.color === "string" ? lic.color : "";
+    if (row.cache.licCol !== licCol) {
+      row.cache.licCol = licCol;
+      if (licCol) row.licChip.style.setProperty("--lic", licCol);
+      else row.licChip.style.removeProperty("--lic");
+    }
+  }
+
   function update(frame, ctx) {
     var fmt = ctx.fmt;
     var lap = frame.player ? frame.player.lap : null;
@@ -392,6 +474,18 @@
     // Which count the position column is reporting this frame. Decided once for
     // the whole table — see classMode.
     var inClass = classMode(frame, list);
+
+    // The iRacing column and chip: open only when some row carries the data.
+    var irOn = false;
+    var licOn = false;
+    for (var q = 0; q < list.length; q++) {
+      if (typeof list[q].iRating === "number" && list[q].iRating > 0) irOn = true;
+      if (list[q].license && list[q].license.text) licOn = true;
+    }
+    irOn = irOn && view.ir !== "off";
+    licOn = licOn && view.lic !== "off";
+    var irAttr = irOn ? "on" : "off";
+    if (rootEl && rootEl.getAttribute("data-ir") !== irAttr) rootEl.setAttribute("data-ir", irAttr);
 
     // The two cars either side of the player are Tier 1: they are the race you
     // are actually in. Everything further up or down the list is context, and
@@ -513,6 +607,8 @@
       var name = e.driverName || "—";
       if (e.carNumber) name = "#" + e.carNumber + " " + name;
       set(row, "name", row.nameSpan, "textContent", name);
+
+      renderIRacing(row, e, irOn, licOn);
 
       var gapText = e.isPlayer ? "—" : fmt.relGap(e.relativeGapSec);
       set(row, "delta", row.deltaTd, "textContent", gapText);

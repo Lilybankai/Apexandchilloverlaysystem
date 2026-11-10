@@ -27,6 +27,14 @@
  *     "DT" / "SG" where the sim names the kind (`penaltyKind`), "PEN" where it
  *     does not, "×2" beside it for more than one. Gone the frame it is served.
  *     On by default; the PENALTIES setting or `?standings=pen=off` turns it off.
+ *   - iRacing only: IR (the driver's iRating), IR± (the projected iRating
+ *     change if the race finished in the current order — a green / red chip)
+ *     and a licence chip ("B 1.41", in iRacing's own licence colour) in the
+ *     driver cell. Each appears only when the frame actually carries the field
+ *     (`iRating`, `iRatingDelta`, `license`), so an LMU tower — which never
+ *     does — draws exactly the columns it always has. On an iRacing frame the
+ *     VE column (an LMU-only budget) gives its width to them instead. `ir=off`,
+ *     `irdelta=off`, `lic=off` on `?standings=` drop any of the three.
  * GAP counts either the cumulative gap to the class leader (the default) or the
  * interval to the car directly in front — an operator setting, because a
  * broadcast tower wants the first and a driver usually wants the second.
@@ -125,6 +133,20 @@
   var gapCol = null;
   /** The AVG `<col>` — its width follows the AVG setting (0 while off). */
   var avgCol = null;
+  /**
+   * The VE, IR and IR± `<col>`s. Unlike AVG these follow the DATA rather than a
+   * setting: VE collapses on an iRacing frame (there is no virtual energy to
+   * show), IR and IR± open only when a row carries an iRating / a projected
+   * change. All three are written in update() off `data-vecol` / `data-ir` /
+   * `data-irdelta` on the section root — the same collapse AVG uses.
+   */
+  var veCol = null;
+  var irCol = null;
+  var irdCol = null;
+  /** Widths, in px at the 12px base, of the three data-driven columns. */
+  var VE_PX = 42;
+  var IR_PX = 40;
+  var IRD_PX = 42;
 
   /**
    * Column widths are given in em, NOT px, because they are only correct
@@ -218,6 +240,16 @@
     drRank.onerror = function () {
       drRank.hidden = true;
     };
+    // iRacing licence chip ("B 1.41"), straight after the class dot. It stands
+    // in for the DR plaque — the same kind of fact, how the sim grades this
+    // driver, and an iRacing row never carries the plaque — but it is placed
+    // BEFORE the badge run rather than inside it: the rank/badge spacing is
+    // done with adjacent-sibling rules (.standings__rank + .standings__srbadge),
+    // and an element between them, even a hidden one, would break that on every
+    // LMU row. Hidden until the frame names a licence.
+    var licChip = document.createElement("span");
+    licChip.className = "standings__lic";
+    licChip.hidden = true;
     var nameSpan = document.createElement("span");
     // Outstanding-penalty badge. FIRST in the cell but floated to its right
     // edge (see .standings__pen): the name's start stays exactly where every
@@ -229,6 +261,7 @@
     penChip.hidden = true;
     driverTd.appendChild(penChip);
     driverTd.appendChild(classDot);
+    driverTd.appendChild(licChip);
     driverTd.appendChild(badge);
     driverTd.appendChild(drRank);
     driverTd.appendChild(srBadge);
@@ -243,6 +276,18 @@
     veText.className = "standings__ve-text";
     veTd.appendChild(veBar);
     veTd.appendChild(veText);
+
+    // iRating and its projected change (iRacing). Past VE, at the end of the
+    // run of race facts: the rating is who the driver is, and the projection is
+    // what the race so far is worth — both read after the race itself. On an
+    // LMU frame both cells are collapsed (see `data-ir` in update()).
+    var irTd = document.createElement("td");
+    irTd.className = "standings__cell standings__ir";
+    var irdTd = document.createElement("td");
+    irdTd.className = "standings__cell standings__irdelta";
+    var irdChip = document.createElement("span");
+    irdChip.className = "standings__irchip";
+    irdTd.appendChild(irdChip);
 
     var gapTd = document.createElement("td");
     gapTd.className = "standings__cell standings__gap";
@@ -301,6 +346,8 @@
     tr.appendChild(avgTd);
     tr.appendChild(bestTd);
     tr.appendChild(veTd);
+    tr.appendChild(irTd);
+    tr.appendChild(irdTd);
     tr.appendChild(pitTd);
 
     return {
@@ -313,7 +360,11 @@
       srBadge: srBadge,
       drRank: drRank,
       nameSpan: nameSpan,
+      licChip: licChip,
       penChip: penChip,
+      irTd: irTd,
+      irdTd: irdTd,
+      irdChip: irdChip,
       veTd: veTd,
       veBar: veBar,
       veText: veText,
@@ -334,7 +385,7 @@
     td.className = "standings__group";
     // Every column including the AVG one; a span past the drawn columns is
     // harmless when AVG is off, a one-short span would leave a notch when on.
-    td.colSpan = 9;
+    td.colSpan = 11;
     var dot = document.createElement("span");
     dot.className = "standings__group-dot";
     var label = document.createElement("span");
@@ -386,6 +437,12 @@
     names: "full",
     avg: "off",
     pen: "on",
+    // iRacing columns. On unless switched off — and only ever DRAWN when the
+    // frame carries the data, so on an LMU frame these say nothing. A view
+    // arriving from the app without them (every build so far) reads as on.
+    ir: "on",
+    irdelta: "on",
+    lic: "on",
   };
   var viewPinned = false;
 
@@ -430,6 +487,9 @@
         names: "full",
         avg: "off",
         pen: "on",
+        ir: "on",
+        irdelta: "on",
+        lic: "on",
       };
       var parts = raw.split(",");
       for (var i = 0; i < parts.length; i++) {
@@ -457,6 +517,10 @@
           // `pen=off` drops the penalty badges for an OBS source that wants a
           // plain timing tower. Anything else keeps them — they are on by default.
           next.pen = val === "off" || val === "0" || val === "no" ? "off" : "on";
+        } else if (key === "ir" || key === "irdelta" || key === "lic") {
+          // `ir=off` / `irdelta=off` / `lic=off`: an iRacing OBS source that
+          // wants a plainer tower. Anything else leaves them on.
+          next[key] = val === "off" || val === "0" || val === "no" ? "off" : "on";
         } else if (key === "top" || key === "ahead" || key === "behind") {
           var n = parseInt(val, 10);
           if (isFinite(n)) next[key] = Math.min(30, Math.max(0, n));
@@ -683,6 +747,11 @@
     // Before the first frame, so the AVG heading cannot flash into a tower
     // whose setting has it off.
     rootEl.setAttribute("data-avg", view && view.avg === "on" ? "on" : "off");
+    // The data-driven columns start in their LMU shape — VE open, IR and IR±
+    // shut — so nothing flashes in before the first frame says otherwise.
+    rootEl.setAttribute("data-vecol", "on");
+    rootEl.setAttribute("data-ir", "off");
+    rootEl.setAttribute("data-irdelta", "off");
     mount = root.querySelector('[data-role="mount"]');
     mount.innerHTML = "";
 
@@ -730,7 +799,9 @@
     //
     // Given in em, not px — see BASE_PX at the top of the file for why.
     // Index 5 is the AVG column, 0 until the setting turns it on (update()).
-    var widths = [26, 28, 0, GAP_PX[3], 70, 0, 70, 42, 23];
+    // Indices 8 and 9 are IR and IR±, 0 until a frame carries iRatings; 7 (VE)
+    // goes to 0 on an iRacing frame. See update().
+    var widths = [26, 28, 0, GAP_PX[3], 70, 0, 70, VE_PX, 0, 0, 23];
     for (var c = 0; c < widths.length; c++) {
       var col = document.createElement("col");
       if (widths[c] > 0) col.style.width = (widths[c] / BASE_PX).toFixed(3) + "em";
@@ -743,6 +814,9 @@
     // on/off setting.
     gapCol = colgroup.children[3];
     avgCol = colgroup.children[5];
+    veCol = colgroup.children[7];
+    irCol = colgroup.children[8];
+    irdCol = colgroup.children[9];
     table.appendChild(colgroup);
     table.appendChild(createHead());
     tbody = document.createElement("tbody");
@@ -773,14 +847,18 @@
     var thead = document.createElement("thead");
     var tr = document.createElement("tr");
     tr.className = "standings__headrow";
-    var labels = ["POS", "±", "DRIVER", "GAP", "LAST", "AVG", "BEST", "VE", ""];
-    var classes = ["pos", "delta", "driver", "gap", "last", "avg", "best", "ve", "pit"];
+    var labels = ["POS", "±", "DRIVER", "GAP", "LAST", "AVG", "BEST", "VE", "IR", "IR±", ""];
+    var classes = ["pos", "delta", "driver", "gap", "last", "avg", "best", "ve", "ir", "irdelta", "pit"];
     for (var i = 0; i < labels.length; i++) {
       var th = document.createElement("th");
       th.className = "standings__head standings__" + classes[i];
       th.scope = "col";
       th.textContent = labels[i];
       if (classes[i] === "avg") th.title = "Average of the last 5 laps";
+      if (classes[i] === "ir") th.title = "iRating";
+      if (classes[i] === "irdelta") {
+        th.title = "Projected iRating change if the race finished in this order";
+      }
       tr.appendChild(th);
     }
     headGap = tr.children[3];
@@ -943,6 +1021,13 @@
       if (avgCol.style.width !== avgWidth) avgCol.style.width = avgWidth;
     }
 
+    // The data-driven columns (see veCol). Decided from the FULL field, like
+    // everything else that is a fact about the race rather than the panel.
+    var cols = dataColumns(frame, full);
+    setColumn("data-vecol", veCol, cols.ve, VE_PX);
+    setColumn("data-ir", irCol, cols.ir, IR_PX);
+    setColumn("data-irdelta", irdCol, cols.irdelta, IRD_PX);
+
     setSession(frame.session, window.ApexOverlay.playerLapsCompleted(frame));
 
     // Fastest lap of the race and fastest lap per class. Both are always
@@ -1036,7 +1121,7 @@
       var purpleSlot = perClass ? clsFastestSlot : fastestSlot;
       var greenSlot = perClass ? -1 : clsFastestSlot;
       for (var m = 0; m < members.length; m++) {
-        renderRow(members[m], fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks);
+        renderRow(members[m], fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks, cols);
         seen.add(members[m].slotId);
       }
     }
@@ -1148,11 +1233,97 @@
   }
 
   /**
+   * Which of the data-driven columns this frame draws.
+   *
+   *   ve       everywhere but iRacing. Tested on the source rather than on the
+   *            data so an LMU field with no energy budget (a GT3-only race,
+   *            the demo) keeps the column it has always drawn.
+   *   ir       some row carries an iRating, and the operator has not said no.
+   *   irdelta  some row carries a projected change — a race session — likewise.
+   *   lic      some row carries a licence, likewise. Not a column: a chip in
+   *            the driver cell, so it needs no width of its own.
+   */
+  function dataColumns(frame, full) {
+    var anyIr = false;
+    var anyIrd = false;
+    var anyLic = false;
+    for (var i = 0; i < full.length; i++) {
+      var e = full[i];
+      if (typeof e.iRating === "number" && e.iRating > 0) anyIr = true;
+      if (typeof e.iRatingDelta === "number" && isFinite(e.iRatingDelta)) anyIrd = true;
+      if (e.license && e.license.text) anyLic = true;
+    }
+    return {
+      ve: !frame || frame.source !== "iracing",
+      ir: anyIr && !(view && view.ir === "off"),
+      irdelta: anyIrd && !(view && view.irdelta === "off"),
+      lic: anyLic && !(view && view.lic === "off"),
+    };
+  }
+
+  /** Open or collapse one data-driven column: the root attribute and its width. */
+  function setColumn(attr, col, on, px) {
+    var v = on ? "on" : "off";
+    if (rootEl && rootEl.getAttribute(attr) !== v) rootEl.setAttribute(attr, v);
+    if (!col) return;
+    var w = on ? (px / BASE_PX).toFixed(3) + "em" : "0px";
+    if (col.style.width !== w) col.style.width = w;
+  }
+
+  /**
+   * A projected iRating change as the chip writes it: "+23", "−41" (a real
+   * minus, the width of the plus) or "0", and the state its colour follows.
+   */
+  function irDeltaText(d) {
+    var n = Math.round(d);
+    if (n > 0) return { text: "+" + n, state: "gain" };
+    if (n < 0) return { text: "\u2212" + -n, state: "loss" };
+    return { text: "0", state: "flat" };
+  }
+
+  /**
+   * The iRating, the projected change and the licence chip for one row. Only
+   * touched while the column (or chip) is open, and cached like every other
+   * cell, so an LMU frame costs a few boolean tests per row and nothing else.
+   */
+  function renderIRacing(row, e, cols) {
+    if (cols.ir) {
+      var ir = typeof e.iRating === "number" && e.iRating > 0 ? String(Math.round(e.iRating)) : "—";
+      set(row, "ir", row.irTd, "textContent", ir);
+    }
+    if (cols.irdelta) {
+      var has = typeof e.iRatingDelta === "number" && isFinite(e.iRatingDelta);
+      var d = has ? irDeltaText(e.iRatingDelta) : { text: "", state: "none" };
+      set(row, "ird", row.irdChip, "textContent", d.text);
+      if (row.cache.irdState !== d.state) {
+        row.cache.irdState = d.state;
+        row.irdChip.setAttribute("data-state", d.state);
+      }
+      set(row, "irdTitle", row.irdTd, "title",
+        has ? "iRating " + d.text + " if the race finished now" : "");
+    }
+    var lic = cols.lic && e.license && e.license.text ? e.license : null;
+    var licText = lic ? String(lic.text) : "";
+    if (row.cache.lic !== licText) {
+      row.cache.lic = licText;
+      row.licChip.textContent = licText;
+      row.licChip.hidden = !licText;
+      row.licChip.title = licText ? "Licence " + licText : "";
+    }
+    var licCol = lic && typeof lic.color === "string" ? lic.color : "";
+    if (row.cache.licCol !== licCol) {
+      row.cache.licCol = licCol;
+      if (licCol) row.licChip.style.setProperty("--lic", licCol);
+      else row.licChip.style.removeProperty("--lic");
+    }
+  }
+
+  /**
    * `purpleSlot` is whichever car's BEST wears the purple in this group — the
    * race's fastest lap, or the class's, per the `fastest` setting. `greenSlot`
    * is the class benchmark, and is -1 when the purple already marks it.
    */
-  function renderRow(e, fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks) {
+  function renderRow(e, fmt, now, purpleSlot, greenSlot, ctx, intervals, classRanks, cols) {
     var row = rows.get(e.slotId);
     if (!row) {
       row = createRow();
@@ -1300,6 +1471,9 @@
     // Outstanding penalties (see createRow for where the badge sits).
     renderPenalty(row, e, ctx);
 
+    // iRating, its projected change and the licence chip (iRacing only).
+    renderIRacing(row, e, cols);
+
     // Pit state, flagged in the right-hand column (see createRow).
     var inPit = !!e.inPit;
     if (row.cache.inPit !== inPit) {
@@ -1307,17 +1481,9 @@
       row.pitFlag.classList.toggle("is-off", !inPit);
     }
 
-    // Virtual energy: % + a fill bar behind the number.
-    var hasVe = fmt.has(e.virtualEnergy) && e.virtualEnergy >= 0;
-    var vePct = hasVe ? Math.round(e.virtualEnergy * 100) : -1;
-    set(row, "veText", row.veText, "textContent", hasVe ? vePct + "%" : "—");
-    if (row.cache.vePct !== vePct) {
-      row.cache.vePct = vePct;
-      row.veBar.style.width = hasVe ? Math.max(0, Math.min(100, vePct)) + "%" : "0%";
-      // Colour the bar by remaining energy: healthy -> low -> critical.
-      var veState = !hasVe ? "none" : vePct <= 15 ? "crit" : vePct <= 35 ? "low" : "ok";
-      row.veTd.setAttribute("data-ve", veState);
-    }
+    // Virtual energy: % + a fill bar behind the number. Skipped while the
+    // column is collapsed — an iRacing frame has no budget to draw.
+    if (cols.ve) renderVe(row, e, fmt);
 
     // GAP. Two readings, and which one is drawn is the operator's choice (the
     // Hub's standings card, or `?standings=gap=ahead`):
@@ -1439,6 +1605,20 @@
     row.penChip.hidden = !txt;
     row.penChip.title = txt ? ctx.penaltyBadgeTitle(e) : "";
     row.penChip.setAttribute("data-kind", txt ? e.penaltyKind || "unknown" : "");
+  }
+
+  /** Virtual energy: % + a fill bar behind the number. */
+  function renderVe(row, e, fmt) {
+    var hasVe = fmt.has(e.virtualEnergy) && e.virtualEnergy >= 0;
+    var vePct = hasVe ? Math.round(e.virtualEnergy * 100) : -1;
+    set(row, "veText", row.veText, "textContent", hasVe ? vePct + "%" : "—");
+    if (row.cache.vePct !== vePct) {
+      row.cache.vePct = vePct;
+      row.veBar.style.width = hasVe ? Math.max(0, Math.min(100, vePct)) + "%" : "0%";
+      // Colour the bar by remaining energy: healthy -> low -> critical.
+      var veState = !hasVe ? "none" : vePct <= 15 ? "crit" : vePct <= 35 ? "low" : "ok";
+      row.veTd.setAttribute("data-ve", veState);
+    }
   }
 
   /** Paint the AVG cell green ("better"), red ("worse") or neither (""). */
