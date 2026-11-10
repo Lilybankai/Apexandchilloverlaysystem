@@ -430,12 +430,21 @@
       row.licChip.hidden = !licText;
       row.licChip.title = licText ? "Licence " + licText : "";
     }
-    var licCol = lic && typeof lic.color === "string" ? lic.color : "";
-    if (row.cache.licCol !== licCol) {
-      row.cache.licCol = licCol;
-      if (licCol) row.licChip.style.setProperty("--lic", licCol);
-      else row.licChip.style.removeProperty("--lic");
+    // The chip wears the Apex palette, not iRacing's print colours: only the
+    // licence CLASS letter is passed to CSS (data-lic), which maps it onto the
+    // brand blue→purple ladder (overlay.css, .standings__lic).
+    var licCls = licText ? licClassOf(licText) : "";
+    if (row.cache.licCls !== licCls) {
+      row.cache.licCls = licCls;
+      if (licCls) row.licChip.setAttribute("data-lic", licCls);
+      else row.licChip.removeAttribute("data-lic");
     }
+  }
+
+  /** "B 1.41" → "b"; "PWC 4.99"/"P 4.99" (Pro) → "p"; anything else → "". */
+  function licClassOf(text) {
+    var c = String(text).trim().charAt(0).toLowerCase();
+    return "rdcbap".indexOf(c) >= 0 && c ? c : "";
   }
 
   function update(frame, ctx) {
