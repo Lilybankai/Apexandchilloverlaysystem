@@ -5,6 +5,9 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https://cdn.thesimgrid.com; media-src https://huggingface.co https://*.hf.co;" />
   <title>Apex AIO System</title>
+  <!-- First of all: <html data-sim> from ?sim=, so the per-sim rule in hub.css
+       hides LMU-only things before first paint. -->
+  <script src="sim-boot.js"></script>
   <link rel="stylesheet" href="control-panel.css" />
   <!-- Second, so the Hub shell's frame rules win over the original
        single-scrolling-page layout in control-panel.css. -->
@@ -59,6 +62,18 @@
       <img class="brand__icon" src="assets/apex-aio-icon.svg" alt="Apex AIO" />
     </div>
 
+    <!-- Which sim this panel is set up for, beside the product it belongs to.
+         Both labels are in the markup and the per-sim rule in hub.css shows
+         the active one, so it is right on first paint with no script. A click
+         opens #sim-menu (below the strip) to switch sims — which restarts the
+         telemetry server and reloads the panel (main.js chooseSim). -->
+    <button class="sim-chip" id="sim-chip" type="button" aria-haspopup="menu"
+            aria-expanded="false" aria-controls="sim-menu" title="Switch sim">
+      <b class="sim-chip__tag" data-sims="lmu">LMU</b><b class="sim-chip__tag" data-sims="iracing">iR</b>
+      <span class="sim-chip__name" data-sims="lmu">Le Mans Ultimate</span><span class="sim-chip__name" data-sims="iracing">iRacing</span>
+      <svg class="icon sim-chip__caret"><use href="#i-chevron-down" /></svg>
+    </button>
+
     <span class="nav__spacer"></span>
 
     <!-- Race / Training. Training opens the Training tab, which is where
@@ -67,7 +82,7 @@
          the markup — it ships disabled so a stable install never offers a mode
          that has nothing in it. The lap database and audio markers this toggle
          was originally drawn for are still unbuilt. -->
-    <div class="seg" id="mode-seg"
+    <div class="seg" id="mode-seg" data-sims="lmu"
          title="Race = lightweight. Training = Ghost HUD and the tools for chasing a reference lap.">
       <button type="button" data-mode="race" data-active="true">
         <svg class="icon"><use href="#i-zap" /></svg><span class="seg__label">Race</span>
@@ -95,6 +110,28 @@
 
     <button class="btn btn--power" id="power-btn" type="button">Start</button>
   </header>
+
+  <!-- The sim chip's menu. Outside the strip on purpose: the strip is the
+       window's drag area, and a menu hanging off it would have to opt every
+       row out of that. Positioned under the chip by control-panel.js. -->
+  <div class="sim-menu" id="sim-menu" role="menu" aria-label="Sim" hidden>
+    <p class="sim-menu__head">Sim</p>
+    <button class="sim-menu__opt" type="button" role="menuitemradio" data-sim-pick="lmu">
+      <b class="sim-menu__tag">LMU</b>
+      <span class="sim-menu__text"><strong>Le Mans Ultimate</strong><small>Every feature</small></span>
+      <svg class="icon sim-menu__check"><use href="#i-check" /></svg>
+    </button>
+    <button class="sim-menu__opt" type="button" role="menuitemradio" data-sim-pick="iracing">
+      <b class="sim-menu__tag">iR</b>
+      <span class="sim-menu__text"><strong>iRacing</strong><small>Overlays, Team and Review</small></span>
+      <svg class="icon sim-menu__check"><use href="#i-check" /></svg>
+    </button>
+    <label class="sim-menu__remember">
+      <input type="checkbox" id="sim-remember" />
+      <span>Skip the sim chooser at launch</span>
+    </label>
+    <p class="sim-menu__note" id="sim-menu-note" hidden></p>
+  </div>
 
   <!-- Banners live OUTSIDE the views on purpose: a failed server start or a
        pending update has to be visible from whichever tab you are on. -->
@@ -149,23 +186,23 @@
       </button>
 
       <p class="rail__group">Driving</p>
-      <button class="tab" type="button" data-tab="engineer">
+      <button class="tab" type="button" data-tab="engineer" data-sims="lmu">
         <svg class="icon"><use href="#i-mic" /></svg><span class="tab__label">Engineer</span>
       </button>
-      <button class="tab" type="button" data-tab="setups">
+      <button class="tab" type="button" data-tab="setups" data-sims="lmu">
         <svg class="icon"><use href="#i-sliders-horizontal" /></svg><span class="tab__label">Setups</span>
       </button>
       <!-- Beta-channel feature for now: hidden until the update state says the
            user follows beta (control-panel.js applyFuelTabVisibility). Hidden
            by default so a stable install never flashes a tab it can't keep. -->
-      <button class="tab" type="button" data-tab="fuel" hidden>
+      <button class="tab" type="button" data-tab="fuel" data-sims="lmu" hidden>
         <svg class="icon"><use href="#i-fuel" /></svg><span class="tab__label">Fuel</span>
       </button>
       <!-- Shown only on the beta channel AND only in Training mode, so this
            one answers to two gates rather than Fuel's one — see
            applyTrainingVisibility. Hidden in the markup for the same reason as
            Fuel: a stable install must never flash a tab it cannot keep. -->
-      <button class="tab" type="button" data-tab="training" hidden>
+      <button class="tab" type="button" data-tab="training" data-sims="lmu" hidden>
         <svg class="icon"><use href="#i-graduation-cap" /></svg><span class="tab__label">Training</span>
       </button>
       <!-- The pit-wall view (docs/TEAM-ENGINEER-PAGE.md). Beta-gated from
@@ -191,7 +228,7 @@
            tab, not a view inside Review (Carl, 2026-10-08). Beta-only,
            hidden until the channel is known (applyPracticeTabVisibility): Carl
            held it out of the 1.3.8 stable release. -->
-      <button class="tab" type="button" data-tab="practice" hidden>
+      <button class="tab" type="button" data-tab="practice" data-sims="lmu" hidden>
         <svg class="icon"><use href="#i-target" /></svg><span class="tab__label">Practice</span>
       </button>
 
@@ -213,10 +250,10 @@
            The league's own boards are still to come and the view says so, but a
            lock on a tab that scores every lap you have driven would be lying
            about what is behind it. -->
-      <button class="tab" type="button" data-tab="leaderboard">
+      <button class="tab" type="button" data-tab="leaderboard" data-sims="lmu">
         <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
       </button>
-      <button class="tab" type="button" data-tab="schedule">
+      <button class="tab" type="button" data-tab="schedule" data-sims="lmu">
         <svg class="icon"><use href="#i-calendar" /></svg><span class="tab__label">Schedule</span>
       </button>
       <!-- League staff only. Hidden until admin:whoami confirms this account is
@@ -489,7 +526,7 @@
              this data, not a new idea bolted on. Dashboard.jsx carries it inside
              LatestSession; there is no session card here, so it gets its own,
              sitting where LatestSession sits in the kit's right column. -->
-        <section class="card card--rank" id="pace-card" hidden>
+        <section class="card card--rank" id="pace-card" data-sims="lmu" hidden>
           <h2 class="card__title">
             <svg class="icon"><use href="#i-target" /></svg>Pace rank
           </h2>
@@ -1107,7 +1144,7 @@
     </section>
 
     <!-- ======================== LEADERBOARD ============================ -->
-    <section class="view" data-view="leaderboard">
+    <section class="view" data-view="leaderboard" data-sims="lmu">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -1347,7 +1384,7 @@
          Cards and rows are built at runtime — only the frame is static, so a
          restyle that drops an id here is caught by the panel parity contract
          the same way as every other tab. -->
-    <section class="view" data-view="schedule">
+    <section class="view" data-view="schedule" data-sims="lmu">
       <div class="wrap wrap--wide">
         <div class="view__head">
           <div>
@@ -1447,7 +1484,7 @@
          Nothing here polls or renders until the tab is shown — the zero-cost-
          when-closed rule is owned by the tab router calling apexSetup.shown()/
          hidden(). -->
-    <section class="view" data-view="setups">
+    <section class="view" data-view="setups" data-sims="lmu">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -1791,7 +1828,7 @@
          the answer, the voice — so the tab is mostly a voice picker plus the
          push-to-talk binding. Rendered by engineer-panel.js from main's
          engineer:status; no polling, pushes only. -->
-    <section class="view" data-view="engineer">
+    <section class="view" data-view="engineer" data-sims="lmu">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -2190,7 +2227,7 @@
 
         <div class="team-empty" id="team-empty">
           <svg class="icon"><use href="#i-users" /></svg>
-          <p>Waiting for telemetry. Start the overlay server on the Dashboard and join a session in Le Mans Ultimate — the pit wall lights up as soon as frames flow.</p>
+          <p>Waiting for telemetry. Start the overlay server on the Dashboard and join a session in <span data-sims="lmu">Le Mans Ultimate</span><span data-sims="iracing">iRacing</span> — the pit wall lights up as soon as frames flow.</p>
         </div>
 
         <!-- ── The board ─────────────────────────────────────────────────
@@ -2489,7 +2526,7 @@
          pickers, the target, the session's facts), then the overview or one
          lap studied against the session's target in #pr-detail, then "Your
          driving" (practice-habits.js mounts into #pr-habits when present). -->
-    <section class="view" data-view="practice">
+    <section class="view" data-view="practice" data-sims="lmu">
       <div class="wrap wrap--wide prx">
         <header class="prx-head">
           <h1 class="prx-title"><svg class="icon"><use href="#i-activity" /></svg>Practice review</h1>
@@ -2534,7 +2571,7 @@
       </div>
     </section>
 
-    <section class="view" data-view="training">
+    <section class="view" data-view="training" data-sims="lmu">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -2587,7 +2624,7 @@
       </div>
     </section>
 
-    <section class="view" data-view="fuel">
+    <section class="view" data-view="fuel" data-sims="lmu">
       <div class="wrap">
         <div class="view__head">
           <div>
@@ -3622,7 +3659,7 @@
              used to be undiagnosable is the runtime row — the plugin links
              against MSVCR120 (VC++ 2013), and without it LMU skips the plugin
              silently while every file on disk looks correct. -->
-        <section class="card" id="plugin-card">
+        <section class="card" id="plugin-card" data-sims="lmu">
           <div class="card__head">
             <h2 class="card__title">
               <svg class="icon"><use href="#i-activity" /></svg>Telemetry plugin
@@ -3652,7 +3689,7 @@
              so when it is wrong the symptom is "community setups will not
              install and the key bindings never write", with a healthy-looking
              app all around it. Reported live by a tester with the game on Z:. -->
-        <section class="card" id="lmu-path-card">
+        <section class="card" id="lmu-path-card" data-sims="lmu">
           <div class="card__head">
             <h2 class="card__title">
               <svg class="icon"><use href="#i-folder" /></svg>Game folder
@@ -3969,7 +4006,7 @@
                it and flash it. This pane holds two cards that both say
                "keyboard" in their title, and landing here from a checklist row
                with no idea which one was meant is the whole failure it avoids. -->
-          <section class="card" id="lmu-controls-card">
+          <section class="card" id="lmu-controls-card" data-sims="lmu">
             <div class="card__head">
               <h2 class="card__title"><svg class="icon"><use href="#i-keyboard" /></svg>LMU controls</h2>
               <p class="card__desc">
@@ -4014,6 +4051,7 @@
                 Bind a key to any action. Bindings are <strong>global</strong>, so they
                 fire while the sim has focus — and a <strong>Stream Deck</strong> button
                 set to that key works too, since it just sends a keystroke.
+                <span data-sims="lmu">
                 <br />
                 Engineer <strong>Call …</strong> rows speak that fact over the radio
                 with no microphone — last lap, sectors, gaps, fuel, track-limit
@@ -4022,12 +4060,13 @@
                 There are no per-aid actions here: bind the four
                 <strong>Pit menu ▲ ▼ + −</strong> controls and they reach every row the
                 MFD shows, driving aids included.
+                </span>
               </p>
             </div>
             <ul class="binding-list" id="binding-list"><!-- rows injected by JS --></ul>
             <p class="field__hint binding-note">
               A bound key is <strong>consumed</strong> — it will not also reach the sim.
-              Pick keys LMU doesn't use.
+              Pick keys <span data-sims="lmu">LMU doesn't</span><span data-sims="iracing">iRacing doesn't</span> use.
             </p>
             <p class="field__hint binding-note">
               <button type="button" class="btn btn--ghost btn--sm" id="bindings-guide-open"
@@ -4409,7 +4448,7 @@
         <svg class="icon"><use href="#i-circle-dot" /></svg><span id="foot-feed-text">STOPPED</span>
       </span>
       <span class="foot__item foot__hide-sm" id="foot-source">—</span>
-      <span class="foot__item foot__mode foot__hide-sm">RACE MODE · lightweight</span>
+      <span class="foot__item foot__mode foot__hide-sm" data-sims="lmu">RACE MODE · lightweight</span>
     </span>
     <span class="foot__group">
       <span class="foot__item foot__hide-sm" id="foot-url">—</span>

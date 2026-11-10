@@ -87,9 +87,17 @@
    * written with its `#` so the parity guard sees it as an id being looked up
    * and refuses to let anyone rename it out from under us.
    */
+  /**
+   * The rows that only mean anything in Le Mans Ultimate — its plugin, its
+   * controls file, and the tabs iRacing mode hides (Engineer, Setups,
+   * Schedule). `s.sim` is `<html data-sim>`; absent reads as LMU.
+   */
+  const lmuOnly = (s) => s.sim !== 'iracing';
+
   const STEPS = [
     {
       id: 'plugin',
+      gate: lmuOnly,
       icon: 'activity',
       title: 'Let the sim talk to Apex',
       lead:
@@ -110,6 +118,7 @@
     },
     {
       id: 'lmu-keys',
+      gate: lmuOnly,
       icon: 'circuit',
       title: "Give the sim's own controls a key",
       lead:
@@ -177,6 +186,7 @@
     },
     {
       id: 'engineer',
+      gate: lmuOnly,
       icon: 'mic',
       title: 'Meet your race engineer',
       lead:
@@ -194,6 +204,7 @@
     },
     {
       id: 'setups',
+      gate: lmuOnly,
       icon: 'sliders-horizontal',
       title: 'Learn the setup screen',
       lead:
@@ -240,6 +251,7 @@
     },
     {
       id: 'schedule',
+      gate: lmuOnly,
       icon: 'calendar',
       title: 'Know when you are racing',
       lead:
@@ -412,6 +424,11 @@
       }
     }
     const state = {
+      // The active sim (sim-boot.js). Gates the LMU-only rows; see lmuOnly.
+      sim:
+        typeof document !== 'undefined' && document.documentElement.dataset.sim === 'iracing'
+          ? 'iracing'
+          : 'lmu',
       plugin: 'unknown',
       lmuKeysKnown: false,
       lmuKeysToBind: 0,
@@ -443,15 +460,17 @@
     const apex = typeof window !== 'undefined' ? window.apex : null;
     if (!apex) return state;
 
+    // LMU's plugin and controls file: not probed at all in iRacing mode, where
+    // their rows are gated out.
     try {
-      const p = await apex.pluginStatus();
+      const p = state.sim === 'lmu' ? await apex.pluginStatus() : null;
       if (p && p.ok !== false && p.verdict) state.plugin = p.verdict;
     } catch {
       /* leaves 'unknown' */
     }
 
     try {
-      const plan = await apex.lmuBindPlan();
+      const plan = state.sim === 'lmu' ? await apex.lmuBindPlan() : null;
       if (plan && plan.ok !== false && plan.path) {
         state.lmuKeysKnown = true;
         state.lmuKeysToBind = Number(plan.toBind) || 0;

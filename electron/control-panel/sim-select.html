@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Same lockdown as the account screens and the panel: no remote anything. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'none';" />
+  <title>Apex AIO System — Choose your sim</title>
+  <link rel="stylesheet" href="sim-select.css" />
+</head>
+<body>
+
+<!-- Icon sprite, shared with the panel and the account screens. -->
+<script src="icons.js"></script>
+
+<!-- The window's drag strip — this window has no Windows caption bar. See
+     .titlebar in sim-select.css and electron/titleBar.js. -->
+<div class="titlebar" aria-hidden="true"></div>
+
+<!--
+  The sim chooser: between the account gate and the panel, on every launch
+  unless "Remember my choice" was ticked (main.js needsSimChoice). Nothing
+  sim-specific has started yet — the telemetry server waits for this answer,
+  so an iRacing driver's PC is never scanned for an LMU install on the way in.
+  Both sims are named in plain text: no third-party logos.
+-->
+<main class="pick">
+  <img class="pick__logo" src="assets/apex-aio-lockup.svg" alt="Apex AIO" />
+
+  <h1 class="pick__title">Which sim are you <span class="pick__grad">driving?</span></h1>
+  <p class="pick__sub">Apex sets itself up for the game you pick — its overlays, its tabs, its telemetry.</p>
+
+  <form class="pick__form" id="pick-form" novalidate>
+    <div class="cards" role="radiogroup" aria-label="Sim">
+      <label class="card" data-sim="lmu">
+        <input class="card__radio" type="radio" name="sim" value="lmu" />
+        <span class="card__top">
+          <b class="card__tag">LMU</b>
+          <span class="card__tick"><svg class="icon"><use href="#i-check" /></svg></span>
+        </span>
+        <span class="card__name">Le Mans Ultimate</span>
+        <span class="card__desc">The full Apex toolkit — every overlay, the race engineer, setups, fuel and the league.</span>
+        <span class="card__feats">
+          <span>Overlays</span><span>Engineer</span><span>Setups</span><span>Team</span><span>League</span>
+        </span>
+      </label>
+
+      <label class="card" data-sim="iracing">
+        <input class="card__radio" type="radio" name="sim" value="iracing" />
+        <span class="card__top">
+          <b class="card__tag">iR</b>
+          <span class="card__badge">New</span>
+          <span class="card__tick"><svg class="icon"><use href="#i-check" /></svg></span>
+        </span>
+        <span class="card__name">iRacing</span>
+        <span class="card__desc">Broadcast overlays, the team pit wall and session review — with more on the way.</span>
+        <span class="card__feats">
+          <span>Overlays</span><span>Team</span><span>Review</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="pick__actions">
+      <label class="check" for="pick-remember">
+        <input class="chk" id="pick-remember" type="checkbox" /> Remember my choice
+      </label>
+      <button class="btn btn--accent" id="pick-go" type="submit" disabled>
+        <span class="btn__label">Continue</span>
+        <svg class="icon"><use href="#i-chevron-right" /></svg>
+      </button>
+    </div>
+    <p class="pick__msg" id="pick-msg" role="alert" hidden></p>
+  </form>
+
+  <p class="pick__foot">Switch sims at any time from the chip beside the logo at the top of the app.</p>
+</main>
+
+<script src="sim-select.js"></script>
+</body>
+</html>
