@@ -181,6 +181,9 @@
         }),
       ];
     });
+    // Read-only: the burn the fuel numbers stand on — measured this session,
+    // or before the first timed lap iRacing's own history for this car here.
+    makeRow(svc, "burn", "FUEL / LAP", "fuel", null);
     makeRow(svc, "finish", "FUEL TO FINISH", "fuel", function (refs) {
       return [
         button("SET", "irpit__wide", function () {
@@ -294,6 +297,16 @@
       s.autoFuel ? "AUTO" : fuelOn ? (s.fuelAddL >= 0 ? "+" + Math.round(s.fuelAddL) + " L" : "FILL") : "NO FUEL",
     );
     rows.fuel.root.setAttribute("data-on", fuelOn || s.autoFuel ? "true" : "false");
+    var fu = frame.fuel || {};
+    critText(
+      rows.burn.value,
+      "burn",
+      fu.perLapAvgLiters > 0
+        ? fu.perLapAvgLiters.toFixed(2) + " L"
+        : fu.historyPerLapLiters > 0
+          ? fu.historyPerLapLiters.toFixed(2) + " L · HISTORY"
+          : "—",
+    );
     var need = frame.fuel && frame.fuel.refuelToFinishLiters;
     critText(rows.finish.value, "finish", typeof need === "number" && need >= 0 ? Math.ceil(need) + " L" : "—");
 

@@ -275,5 +275,31 @@ console.log('\n6) the provider over the committed fixture (iracing-cap1)');
   check('never a repair / service block for a spectated car', specLeak === 0, specLeak);
 }
 
+/* -------------------------------------------------------------------------- */
+console.log('\n7) fuel history (fueldata.ini)');
+{
+  const F = dist('telemetry/iracing/irFuelData.js');
+  // The file's real shape (2026-11-10), values only.
+  const text =
+    '[bmwm2g87]\r\nwinton\\national=10,1.05,1.10,1.04,1.05,1.08,1.04,1.25,1.08,1.02,1.07\t; \r\n\r\n' +
+    '[mx5\\mx52016]\r\nwinton\\national=8,0.52,0.50,0.46,0.50,0.51,0.51,0.50,0.47,-1.00,-1.00\t;\r\n';
+  const data = F.parseFuelData(text);
+  check('key: CarPath / TrackName spaces → backslash', F.fuelDataKey('mx5 mx52016') === 'mx5\\mx52016' && F.fuelDataKey('Winton National') === 'winton\\national');
+  const m2 = F.fuelHistory(data, 'bmwm2g87', 'winton national', 0.75);
+  check('M2 at Winton: 10 laps, 1.08 kg → 1.44 L/lap (measured S/F delta 1.41)', m2 && m2.laps === 10 && Math.abs(m2.perLapLiters - 1.437) < 0.001, JSON.stringify(m2));
+  const mx5 = F.fuelHistory(data, 'mx5 mx52016', 'winton national', 0.75);
+  check('MX-5: -1 slots ignored (8 laps), 0.66 L/lap', mx5 && mx5.laps === 8 && Math.abs(mx5.perLapLiters - 0.662) < 0.001, JSON.stringify(mx5));
+  check('unknown car / track → null', F.fuelHistory(data, 'dallara', 'winton national', 0.75) === null && F.fuelHistory(data, 'bmwm2g87', 'spa', 0.75) === null);
+  check('no published density → null, not a guessed 0.75', F.fuelHistory(data, 'bmwm2g87', 'winton national', 0) === null);
+  const os = require('os');
+  const fs = require('fs');
+  const tmp = path.join(os.tmpdir(), `apex-fueldata-${process.pid}.ini`);
+  fs.writeFileSync(tmp, text, 'latin1');
+  const h = new F.IrFuelHistory([path.join(os.tmpdir(), 'nope.ini'), tmp]);
+  check('IrFuelHistory falls through missing paths to the file', h.lookup('bmwm2g87', 'winton national', 0.75)?.laps === 10);
+  fs.unlinkSync(tmp);
+  check('…and caches per car/track (file gone, same answer)', h.lookup('bmwm2g87', 'winton national', 0.75)?.laps === 10);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

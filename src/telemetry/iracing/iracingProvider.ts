@@ -81,6 +81,7 @@ import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { TrackMapBuilder } from '../trackMap';
 import { IrPitTracker, readDriverFlags } from './irPit';
+import { IrFuelHistory } from './irFuelData';
 
 /* -------------------------------------------------------------------------- */
 /*  Constants and enums                                                       */
@@ -358,6 +359,8 @@ export class IRacingProvider implements TelemetryProvider {
   private readonly lapRecorder = new LapRecorder();
   /** Repairs, the pit service and its progress (irPit.ts). */
   private readonly irPit = new IrPitTracker();
+  /** iRacing's own fuel history (fueldata.ini), read once per car/track. */
+  private readonly fuelHistory = new IrFuelHistory();
   private readonly lapSink: ((rec: LapRecord) => void) | null;
   private readonly verbose: boolean;
   private live = false;
@@ -999,6 +1002,16 @@ export class IRacingProvider implements TelemetryProvider {
       });
     } else {
       fuel = unknownFuel(capacity);
+    }
+
+    // iRacing's own per-lap history for this car here: a prior before the first
+    // timed lap, carried beside (never inside) the measured average.
+    if (ownIsFocus && ownDriver?.carPath) {
+      const hist = this.fuelHistory.lookup(ownDriver.carPath, info.trackInternalName, info.driverCarFuelKgPerLtr ?? 0);
+      if (hist) {
+        fuel.historyPerLapLiters = hist.perLapLiters;
+        fuel.historyLaps = hist.laps;
+      }
     }
 
     const tyres = ownIsFocus ? readTyres(f, info) : unknownTyres();

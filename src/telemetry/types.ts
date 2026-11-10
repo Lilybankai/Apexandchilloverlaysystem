@@ -1991,6 +1991,14 @@ export interface FuelState {
   levelLitersExact?: number;
   /** Tank capacity, litres; {@link UNKNOWN_VALUE} if unknown. */
   capacityLiters: number;
+  /**
+   * The sim's own per-lap burn history for this car at this track, litres —
+   * a prior from before this session (iRacing fueldata.ini), NOT part of
+   * {@link perLapAvgLiters}. Omitted when the sim keeps none.
+   */
+  historyPerLapLiters?: number;
+  /** How many recorded laps {@link historyPerLapLiters} averages. */
+  historyLaps?: number;
   /** Rolling-average consumption per lap, litres; {@link UNKNOWN_VALUE} until enough laps. */
   perLapAvgLiters: number;
   /** Estimated laps remaining on current fuel; {@link UNKNOWN_VALUE} if unknown. */
