@@ -22,10 +22,17 @@
  * The server runs inside Electron's main process, which has a history of
  * main-thread stalls. So this reader never blocks: there is no wait on the
  * data-valid event, just a poll that compares tick counts. The whole mapping is
- * exposed once through `koffi.view` (a zero-copy ArrayBuffer over the view), so a
- * poll costs one ~8.6 KB `memcpy` into a reused Buffer plus a handful of int
- * reads — not a `koffi.decode` into a JS number array, which is what once lagged
- * the LMU pedal feed by seconds (see `lmuLocalCar.ts`).
+ * copied with `RtlMoveMemory` straight into a Node Buffer, so a poll costs one
+ * ~8.6 KB `memcpy` plus a handful of int reads — not a `koffi.decode` into a JS
+ * number array, which is what once lagged the LMU pedal feed by seconds (see
+ * `lmuLocalCar.ts`).
+ *
+ * **Never `koffi.view` here.** It wraps foreign memory in an external
+ * ArrayBuffer, which plain Node allows but Electron's V8 memory cage does not:
+ * in the app's main process it is a FATAL napi error that no try/catch can
+ * stop, and the whole app exits silently the moment iRacing is chosen
+ * (1.3.16-beta.3, 2026-11-10). Every test passed under plain Node, so
+ * `scripts/test-irsdk-electron.js` runs this reader inside Electron itself.
  *
  * ## Torn reads
  * The sim may be overwriting the oldest buffer while we copy. The C++ SDK's
@@ -215,9 +222,7 @@ interface Win32 {
   CloseHandle: (h: unknown) => boolean;
   /** Committed size of the region at `addr` (VirtualQuery), 0 when unknown. */
   regionSize: (addr: unknown) => number;
-  /** A zero-copy Buffer over `len` bytes at `addr`, or `null` if unsupported. */
-  view: (addr: unknown, len: number) => Buffer | null;
-  /** Copying fallback for when `view` is unavailable. */
+  /** A private copy of `len` bytes at `addr + offset` (memcpy, else decode). */
   readBytes: (addr: unknown, offset: number, len: number) => Buffer;
 }
 
@@ -248,18 +253,23 @@ function loadWin32(): Win32 | null {
         return 0;
       }
     };
-    const view = (addr: unknown, len: number): Buffer | null => {
-      try {
-        if (typeof koffi.view !== 'function') return null;
-        const ab = koffi.view(addr, len) as ArrayBuffer;
-        return Buffer.from(ab);
-      } catch {
-        return null;
+    // memcpy into a Node-owned Buffer: the destination is ordinary JS memory,
+    // so nothing foreign is ever wrapped (see the file header on koffi.view).
+    let move: ((dst: Buffer, src: bigint, len: number) => void) | null = null;
+    try {
+      move = k32.func('void __stdcall RtlMoveMemory(void *dst, uintptr_t src, size_t len)');
+    } catch {
+      move = null;
+    }
+    const readBytes = (addr: unknown, offset: number, len: number): Buffer => {
+      if (move && typeof koffi.address === 'function') {
+        const out = Buffer.allocUnsafe(len);
+        if (len > 0) move(out, (koffi.address(addr) as bigint) + BigInt(offset), len);
+        return out;
       }
+      return Buffer.from(koffi.decode(addr, offset, koffi.array('uint8', len)) as number[]);
     };
-    const readBytes = (addr: unknown, offset: number, len: number): Buffer =>
-      Buffer.from(koffi.decode(addr, offset, koffi.array('uint8', len)) as number[]);
-    return { OpenFileMappingW, MapViewOfFile, UnmapViewOfFile, CloseHandle, regionSize, view, readBytes };
+    return { OpenFileMappingW, MapViewOfFile, UnmapViewOfFile, CloseHandle, regionSize, readBytes };
   } catch {
     return null;
   }
@@ -274,8 +284,6 @@ export class LiveIrsdkSource implements IrsdkSource {
   private handle: unknown = null;
   private addr: unknown = null;
   private size = 0;
-  /** Zero-copy view over the whole mapping, when koffi supports it. */
-  private mem: Buffer | null = null;
   private lastOpenAttempt = -Infinity;
   /** When the sim was first seen disconnected in the current run, or -1. */
   private disconnectedSince = -1;
@@ -286,7 +294,11 @@ export class LiveIrsdkSource implements IrsdkSource {
   /** Whether {@link frame} holds a good row. */
   private haveRow = false;
 
-  public constructor() {
+  /**
+   * @param mappingName the shared-memory name; only tests pass anything else,
+   * so they can exercise this reader without touching a running iRacing.
+   */
+  public constructor(private readonly mappingName: string = IRSDK_MEMMAP_NAME) {
     this.win32 = loadWin32();
   }
 
@@ -307,7 +319,7 @@ export class LiveIrsdkSource implements IrsdkSource {
     if (now - this.lastOpenAttempt < REOPEN_EVERY_MS) return false;
     this.lastOpenAttempt = now;
     try {
-      const h = w.OpenFileMappingW(FILE_MAP_READ, false, IRSDK_MEMMAP_NAME);
+      const h = w.OpenFileMappingW(FILE_MAP_READ, false, this.mappingName);
       if (!h) return false;
       // Length 0 maps the whole file; asking for more than exists fails outright.
       const addr = w.MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
@@ -319,7 +331,6 @@ export class LiveIrsdkSource implements IrsdkSource {
       this.handle = h;
       this.addr = addr;
       this.size = size > HEADER_BYTES ? size : 0;
-      this.mem = this.size > 0 ? w.view(addr, this.size) : null;
       this.layoutKey = '';
       this.haveRow = false;
       this.disconnectedSince = -1;
@@ -332,8 +343,6 @@ export class LiveIrsdkSource implements IrsdkSource {
 
   public close(): void {
     const w = this.win32;
-    // Drop the view BEFORE unmapping: touching it afterwards would fault.
-    this.mem = null;
     this.haveRow = false;
     this.layoutKey = '';
     if (w !== null) {
@@ -353,12 +362,11 @@ export class LiveIrsdkSource implements IrsdkSource {
     this.size = 0;
   }
 
-  /** Bytes at `offset` — zero-copy when the view exists, else a decode copy. */
+  /** A private copy of the bytes at `offset` (never a view over the mapping). */
   private bytes(offset: number, len: number): Buffer | null {
     if (this.addr === null) return null;
     if (offset < 0 || len < 0) return null;
     if (this.size > 0 && offset + len > this.size) return null;
-    if (this.mem) return this.mem.subarray(offset, offset + len);
     try {
       return this.win32 ? this.win32.readBytes(this.addr, offset, len) : null;
     } catch {
