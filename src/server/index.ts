@@ -88,6 +88,9 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 export function selectProvider(config: ServerConfig): TelemetryProvider {
   if (config.forceSimulator || config.provider === 'simulator') return new SimulatorProvider();
   if (config.provider === 'rf2') return new RF2Provider(config);
+  // Placeholder until the IRacingProvider lands (claude/iracing-integ): demo
+  // data rather than LMU's REST client in iRacing mode.
+  if (config.provider === 'iracing') return new SimulatorProvider();
   return new LmuRestProvider(config);
 }
 
@@ -1058,7 +1061,8 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // Those rows read LMU's keyboard.json, which is found via Steam's registry
   // entry. Ask for it now, off the thread, so the first rebuild never spawns
   // reg.exe on the main thread itself — see steamRootsFromRegistry.
-  void primeSteamRoots();
+  // Not for iRacing: nothing there reads LMU's files, so no reg.exe at all.
+  if (config.provider !== 'iracing') void primeSteamRoots();
 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.
@@ -1199,7 +1203,9 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // "no delta / no radar" tester reports. Runs after the bind so a failed port
   // never leaks the retry timer; keeps retrying while the game is up, because
   // LMU only reads its plugin list at launch and rewrites config on exit.
-  const cancelPluginInstall = ensureSharedMemoryPluginOnStartup();
+  // LMU's plugin, so never in iRacing mode: no disk scan for an LMU install.
+  const cancelPluginInstall =
+    config.provider === 'iracing' ? () => {} : ensureSharedMemoryPluginOnStartup();
 
   // The race log's live recorder (docs/RACE-LOG-PLAN.md phase 2). Here, beside
   // the provider, so a race is written down whether or not the engineer or any
