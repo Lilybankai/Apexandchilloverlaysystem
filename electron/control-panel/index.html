@@ -253,6 +253,13 @@
       <button class="tab" type="button" data-tab="leaderboard" data-sims="lmu">
         <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
       </button>
+      <!-- iRacing's own boards (2026-11-10): the same board as LMU's above, on
+           iRacing's own circuits, classes and drivers — a separate set of
+           tracks rows in the league database, so the two never share a row.
+           Only one of the pair is on the rail at a time (data-sims). -->
+      <button class="tab" type="button" data-tab="iracingboard" data-sims="iracing">
+        <svg class="icon"><use href="#i-trophy" /></svg><span class="tab__label">Leaderboard</span>
+      </button>
       <button class="tab" type="button" data-tab="schedule" data-sims="lmu">
         <svg class="icon"><use href="#i-calendar" /></svg><span class="tab__label">Schedule</span>
       </button>
@@ -1373,6 +1380,96 @@
             </div>
             <p class="ovcard__desc">A board that resets, so a fast week counts for something.</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== IRACING LEADERBOARD ======================== -->
+    <!-- The LMU board's twin, painted by the same code (createLeaderboard in
+         control-panel.js) against iRacing's boards. Same sidebar, same
+         columns, same Compare; what is missing is everything built on Ohne
+         Speed's reference sheet — the Pace column, click-to-score, the pace
+         card and its credit — because those times are LMU laps at LMU
+         layouts and grading an iRacing lap against them would be a wrong
+         number that looks right. -->
+    <section class="view" data-view="iracingboard" data-sims="iracing">
+      <div class="wrap">
+        <div class="view__head">
+          <div>
+            <h1 class="view__title">Leaderboard <span class="chip view__simchip" data-tone="cyan">iRacing</span></h1>
+            <p class="view__sub">
+              The league's best iRacing laps, ranked — its own boards, kept
+              apart from LMU's.
+            </p>
+          </div>
+        </div>
+
+        <div class="lbgrid">
+          <aside class="card lbside">
+            <label class="field">
+              <span class="field__label">Track</span>
+              <select class="field__input" id="irboard-track"></select>
+            </label>
+
+            <div class="field">
+              <span class="field__label">Car class</span>
+              <div class="clschips" id="irboard-classes"></div>
+            </div>
+
+            <div class="field" id="irboard-cond-field" hidden>
+              <span class="field__label">Conditions</span>
+              <div class="clschips" id="irboard-conditions"></div>
+              <span class="field__hint">
+                Each surface is its own board — a wet lap is never ranked
+                against a dry one.
+              </span>
+            </div>
+
+            <label class="field">
+              <span class="field__label">Car</span>
+              <select class="field__input" id="irboard-car"></select>
+              <span class="field__hint">
+                Narrows the board. Rankings are per class, so leaving this on
+                <em>All cars</em> is the real board.
+              </span>
+            </label>
+
+            <div class="dbnote">
+              <svg class="icon"><use href="#i-database" /></svg>
+              <span>Best clean iRacing laps, uploaded from every member's app.</span>
+            </div>
+          </aside>
+
+          <!-- lbmain--nopace: the Pace column's heading and cells are kept in
+               the DOM (the columns are positional) and hidden by the sheet. -->
+          <section class="card lbmain lbmain--nopace">
+            <div class="card__head">
+              <h2 class="card__title" id="irboard-title">Leaderboard</h2>
+              <span class="card__meta" id="irboard-count"></span>
+            </div>
+
+            <div class="lbhead lbhead--board" id="irboard-head">
+              <span>Pos</span><span>Driver</span><span>Car</span><span>Lap</span><span>Gap</span><span>Pace</span><span></span>
+            </div>
+
+            <ul class="lblist" id="irboard-list"></ul>
+
+            <p class="lbnote" id="irboard-cmpnote" hidden></p>
+
+            <p class="weekempty" id="irboard-empty">Loading the league boards…</p>
+
+            <!-- No iRacing lap on any board yet: the first-run state of a
+                 whole sim, not an empty board, so it says what fills it. -->
+            <div class="lbwelcome" id="irboard-welcome" hidden>
+              <span class="lbwelcome__icon"><svg class="icon"><use href="#i-trophy" /></svg></span>
+              <p class="lbwelcome__title">No iRacing laps on the boards yet</p>
+              <p class="lbwelcome__text">
+                Drive a clean lap in iRacing with Apex running and it is uploaded
+                here on its own. Each circuit and class gets its own board, with
+                dry, damp and wet kept apart, exactly as on LMU's.
+              </p>
+            </div>
+          </section>
         </div>
       </div>
     </section>

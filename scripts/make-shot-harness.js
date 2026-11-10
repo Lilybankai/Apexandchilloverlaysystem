@@ -270,6 +270,21 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     window.addEventListener('DOMContentLoaded', () => setTimeout(openRace, 300));
   }
 
+  // ?sim=iracing puts the panel in iRacing mode the way the sim switch does
+  // (<html data-sim>), before control-panel.js reads it. The data-sims rule
+  // below is a stand-in for the sim switch's own stylesheet rule, so a shot
+  // shows only the active sim's tabs and views, as the app does.
+  {
+    const sim = new URLSearchParams(location.search).get('sim') === 'iracing' ? 'iracing' : 'lmu';
+    document.documentElement.dataset.sim = sim;
+    const rule = document.createElement('style');
+    rule.textContent = '[data-sims]:not([data-sims~="' + sim + '"]) { display: none !important; }';
+    document.head.append(rule);
+    if (sim === 'iracing' && new URLSearchParams(location.search).get('tab') === 'leaderboard') {
+      try { localStorage.setItem('apex.panel.tab', 'iracingboard'); } catch (e) { /* default tab */ }
+    }
+  }
+
   const noopUnsub = () => () => {};
   const P = (v) => () => Promise.resolve(v);
   const rows = ['Pit request', 'Traction control +', 'Traction control -', 'ABS +', 'ABS -',
@@ -384,7 +399,15 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // the only way to see the condition chips without a signed-in account and
     // a wet session in the database. The rows answer whichever surface the
     // panel asks for, so clicking Dry/Damp/Wet actually changes the board.
-    leaderboardFilters: P(q.get('board') === null ? { ok: true, rows: [] } : { ok: true, rows: [
+    // ?sim=iracing&board=1 answers the iRacing board's reads with iRacing's own
+    // circuits and classes (ir-<TrackID> tracks rows, GTP as iRacing names it);
+    // without &board it is a league with no iRacing laps yet.
+    leaderboardFilters: (sim) => Promise.resolve(q.get('board') === null ? { ok: true, rows: [] } : sim === 'iracing' ? { ok: true, rows: [
+      { track_id: 'ir1', track_name: 'Circuit de Spa-Francorchamps · Grand Prix Pits', track_length_m: 7004, car_class: 'GT3', car: 'Porsche 911 GT3 R (992)', condition: 'dry', laps: 4 },
+      { track_id: 'ir1', track_name: 'Circuit de Spa-Francorchamps · Grand Prix Pits', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'dry', laps: 2 },
+      { track_id: 'ir1', track_name: 'Circuit de Spa-Francorchamps · Grand Prix Pits', track_length_m: 7004, car_class: 'GTP', car: 'Porsche 963 GTP', condition: 'dry', laps: 3 },
+      { track_id: 'ir2', track_name: 'Road Atlanta · Full Course', track_length_m: 4088, car_class: 'GT3', car: 'BMW M4 GT3', condition: 'dry', laps: 5 },
+    ] } : { ok: true, rows: [
       { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'dry', laps: 6 },
       { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Porsche 911 GT3 R', condition: 'dry', laps: 3 },
       { track_id: 't1', track_name: 'Spa-Francorchamps', track_length_m: 7004, car_class: 'GT3', car: 'Ferrari 296 GT3', condition: 'damp', laps: 2 },
@@ -392,7 +415,15 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     ] }),
     leaderboardRows: (query) => Promise.resolve(q.get('board') === null ? { ok: true, rows: [] } : (function () {
       const cond = (query && query.condition) || 'dry';
-      const sets = {
+      const sets = query && query.sim === 'iracing' ? {
+        dry: [
+          ['Max Hartley', 137480, 'Porsche 911 GT3 R (992)', null],
+          ['Carl', 137912, 'Porsche 911 GT3 R (992)', null],
+          ['Jess Okoro', 138260, 'Ferrari 296 GT3', null],
+          ['Tom Reyes', 138905, 'Porsche 911 GT3 R (992)', null],
+          ['Lena Brandt', 139644, 'Ferrari 296 GT3', null],
+        ],
+      } : {
         dry: [
           ['Ohne Speed', 138100, 'Ferrari 296 GT3', null],
           ['Carl', 138940, 'Porsche 911 GT3 R', null],
@@ -418,7 +449,8 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
         set_at: new Date().toISOString(),
         is_you: name === 'Carl',
         has_trace: cond === 'dry' && name !== 'Carl',
-        has_line: cond === 'dry',
+        // iRacing traces carry no driven line (no live world position).
+        has_line: cond === 'dry' && !(query && query.sim === 'iracing'),
         condition: cond,
         wetness: typeof wet === 'number' ? wet : null,
         legacy_wet: wet === 'legacy',

@@ -244,6 +244,11 @@ function requireRefPace() {
  */
 function paceFor(row) {
   if ((row.condition || 'dry') !== 'dry') return null;
+  // LMU only. The sheet is LMU lap times at LMU layouts; an iRacing lap at a
+  // circuit of the same name and a similar length would be graded against the
+  // wrong car on the wrong surface model and the score would ride into Discord
+  // looking authoritative. (0047 also drops a non-LMU pace server-side.)
+  if ((row.sim || 'lmu') !== 'lmu') return null;
   const ref = requireRefPace();
   if (!ref) return null;
   try {
@@ -273,7 +278,16 @@ function pendingCorpus(cache) {
   const c = requireCorpus();
   if (!c) return { stops: [], laps: [] };
   const plan = dirs ? c.buildCorpusPlan(dirs.laps, dirs.stops) : c.buildCorpusPlan();
-  return c.diffCorpus(plan, cache);
+  const pending = c.diffCorpus(plan, cache);
+  // The strategy corpus is LMU's: its fitter models VE, LMU's refuel and LMU's
+  // tyre stops. Another sim's stints would land on their own track_ids, but
+  // cross-track aggregates would still mix them, so they stay home for now.
+  const lmu = (r) => !r || (r.sim || 'lmu') === 'lmu';
+  return {
+    ...pending,
+    stops: (pending.stops || []).filter(lmu),
+    laps: (pending.laps || []).filter(lmu),
+  };
 }
 
 /**

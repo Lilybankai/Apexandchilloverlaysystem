@@ -2045,7 +2045,10 @@
     if (loadedOnce && !force) return null;
     listRead = (async () => {
       try {
-        const res = await window.apex.reviewSessions();
+        // The active sim's sessions only (missing data-sim is LMU).
+        const root = document.documentElement;
+        const sim = root && root.dataset && root.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
+        const res = await window.apex.reviewSessions(sim);
         const all = (res && Array.isArray(res.sessions)) ? res.sessions : [];
         summaries = all.filter((row) => isPracticeType(row.sessionType));
       } catch {

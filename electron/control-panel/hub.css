@@ -1636,6 +1636,60 @@ html[data-sim="iracing"] [data-sims]:not([data-sims~="iracing"]) {
    characters ("104.5%") and the heading above it is the shortest on the row. */
 .lbrow--board .lbrow__score { flex: 0 0 62px; }
 
+/* A board with no reference pace (iRacing's — Ohne Speed's sheet is LMU's).
+   The Pace cell stays in the row and its heading in the head, because the
+   columns above are positional; both are simply not drawn, and the car column
+   takes the room. */
+.lbmain--nopace .lbhead--board > :nth-child(6),
+.lbmain--nopace .lbrow--board .lbrow__score { display: none; }
+
+/* Which sim a view belongs to, beside its title (the iRacing Leaderboard). */
+.view__simchip { vertical-align: middle; margin-left: 8px; position: relative; top: -2px; }
+
+/* A sim whose boards hold no laps at all yet: a first-run state, so it is
+   drawn as one — the board's own trophy, what fills it, and nothing that
+   looks like a table that failed to load. */
+.lbwelcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin: 16px 0 4px;
+  padding: 36px 24px;
+  background: var(--panel-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+}
+.lbwelcome[hidden] { display: none; }
+/* The column headings go with the table when there is no table to head. */
+.lbhead[hidden] { display: none; }
+.lbwelcome__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(38, 187, 244, 0.1);
+  border: 1px solid rgba(38, 187, 244, 0.35);
+  color: var(--cyan);
+}
+.lbwelcome__icon .icon { width: 20px; height: 20px; }
+.lbwelcome__title {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+}
+.lbwelcome__text {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
 /* Quickest in a comparable set — the kit's purple, and the only place in the
    app it is used, because it is the only place the comparison holds. */
 .lbrow__time[data-fastest="true"] { color: #b47cff; }

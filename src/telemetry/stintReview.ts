@@ -49,7 +49,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { DirtyReason, LapRecord } from './lapLog';
-import { lapDir, readDay } from './lapLog';
+import { lapDir, lapInSim, readDay } from './lapLog';
 import { traceFilePath } from './lapTrace';
 
 /* -------------------------------------------------------------------------- */
@@ -843,8 +843,12 @@ export function careerStats(records: LapRecord[], traces = ''): CareerStats {
 export function listSessionsWithCareer(
   dir = lapDir(),
   limit = 400,
+  sim?: string,
 ): { sessions: SessionSummary[]; career: CareerStats } {
-  const records = readAllLaps(dir);
+  // One sim at a time (see `lapInSim`): the career card and the list both
+  // describe the sim the panel is in, so an iRacing evening never pads the
+  // LMU totals and vice versa.
+  const records = readAllLaps(dir).filter((r) => lapInSim(r, sim));
   const traces = tracesBeside(dir);
   const sessions = groupSessions(records, traces)
     .reverse()
@@ -878,12 +882,14 @@ export function bestTracedLap(
   trackKeys: readonly string[],
   carClass: string,
   dir = lapDir(),
+  sim?: string,
 ): BestTracedLap | null {
   const keys = new Set(trackKeys.map((k) => String(k || '').toLowerCase()).filter(Boolean));
   const cls = String(carClass || '').trim().toUpperCase();
   if (!keys.size || !cls) return null;
   const records = readAllLaps(dir).filter(
-    (r) => keys.has(String(r.trackKey || '').toLowerCase())
+    (r) => lapInSim(r, sim)
+      && keys.has(String(r.trackKey || '').toLowerCase())
       && String(r.carClass || '').trim().toUpperCase() === cls,
   );
   if (!records.length) return null;

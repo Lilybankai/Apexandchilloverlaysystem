@@ -433,5 +433,37 @@ function run(startMs, n, over = () => ({})) {
   check('and names no first lap', none.firstAt === null);
 }
 
+{
+  // One sim at a time (2026-11-10): Review lists the active sim's sessions,
+  // and its career strip counts that sim's laps. A lap with no sim is LMU's.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-review-sim-'));
+  const lapsDir = path.join(dir, 'laps');
+  fs.mkdirSync(lapsDir, { recursive: true });
+  const lmu = run(Date.parse('2026-09-05T09:00:00.000Z'), 3);
+  const legacy = run(Date.parse('2026-09-05T12:00:00.000Z'), 2).map((r) => {
+    const { sim, ...rest } = r;
+    return rest;
+  });
+  const ir = run(Date.parse('2026-09-05T18:00:00.000Z'), 4, () => ({
+    sim: 'iracing',
+    trackKey: 'ir-163',
+    carClass: 'GT3',
+  }));
+  fs.writeFileSync(
+    path.join(lapsDir, '2026-09-05.jsonl'),
+    [...lmu, ...legacy, ...ir].map((r) => JSON.stringify(r)).join('\n') + '\n',
+  );
+  const both = R.listSessionsWithCareer(lapsDir);
+  const onlyLmu = R.listSessionsWithCareer(lapsDir, 400, 'lmu');
+  const onlyIr = R.listSessionsWithCareer(lapsDir, 400, 'iracing');
+  check('no sim asked for lists every session, as before', both.sessions.length === 3, both.sessions.length);
+  check('LMU mode lists LMU sessions, sim-less ones included', onlyLmu.sessions.length === 2, onlyLmu.sessions.length);
+  check('…and its career counts no iRacing lap', onlyLmu.career.laps === 5, onlyLmu.career.laps);
+  check('iRacing mode lists only the iRacing session',
+    onlyIr.sessions.length === 1 && onlyIr.sessions[0].trackKey === 'ir-163');
+  check('…and its career is that session alone', onlyIr.career.laps === 4, onlyIr.career.laps);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\ntest-stintreview: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

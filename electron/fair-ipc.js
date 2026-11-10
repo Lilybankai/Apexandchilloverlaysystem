@@ -204,8 +204,11 @@ class FairService {
    * The board for a circuit, class and surface: `{ rows }` or
    * `{ rows: null, signedOut?, error }`. Cached; see the header.
    */
-  async board(trackKey, carClass, condition) {
-    const key = `${trackKey}|${String(carClass).toUpperCase()}|${condition}`;
+  async board(trackKey, carClass, condition, sim) {
+    // The session's own sim: a trackKey only means something in that sim's
+    // alias table. Absent (every lap before iRacing support) is LMU.
+    const boardSim = sim === 'iracing' ? 'iracing' : 'lmu';
+    const key = `${boardSim}|${trackKey}|${String(carClass).toUpperCase()}|${condition}`;
     const now = this.now();
     const hit = this.boards.get(key);
     if (hit && now - hit.at < BOARD_TTL_MS) return hit;
@@ -217,7 +220,7 @@ class FairService {
     if (!p) {
       // The same call, with the same arguments, as Review's `review:board`.
       p = this.rpc('board_for_lap', {
-        p_sim: 'lmu',
+        p_sim: boardSim,
         p_track_key: trackKey,
         p_car_class: carClass,
         p_limit: 200,
@@ -248,7 +251,7 @@ class FairService {
     if (!session.trackKey || !session.carClass) return { ...empty, mine, error: 'no circuit or class' };
 
     const condition = mine && mine.condition ? mine.condition : 'dry';
-    const board = await this.board(session.trackKey, session.carClass, condition);
+    const board = await this.board(session.trackKey, session.carClass, condition, session.sim);
     if (!board.rows) {
       return { ...empty, mine, signedOut: !!board.signedOut, error: board.error || 'Board unavailable.' };
     }
@@ -310,7 +313,7 @@ class FairService {
     if (!session.trackKey || !session.carClass || !(session.trackLengthM > 0)) return fail('no circuit or class');
 
     // Traces live behind the DRY board only.
-    const board = await this.board(session.trackKey, session.carClass, 'dry');
+    const board = await this.board(session.trackKey, session.carClass, 'dry', session.sim);
     if (!board.rows) return fail(board.error || 'Board unavailable.', board.signedOut ? { signedOut: true } : null);
     const row = board.rows.find((r) => r && r.driver_id === want.driverId);
     if (!row || !boardLapId(row)) return fail('not on the board');

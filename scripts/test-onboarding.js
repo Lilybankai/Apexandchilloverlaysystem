@@ -454,8 +454,10 @@ check('it wraps the content in a row', /<div class="body">/.test(html));
   // and is the first tab behind two gates — the beta channel AND Training
   // mode (applyTrainingVisibility); 17 with Practice, the practice review
   // in a tab of its own (2026-10-08); 16 again with the Race log folded back
-  // into Review as a tab of a race (2026-10-19).
-  check('nothing was dropped in the move', tabs.length === 16, `${tabs.length} items`);
+  // into Review as a tab of a race (2026-10-19); 17 with iRacing's own
+  // Leaderboard (2026-11-10), which shares the rail slot with LMU's — only one
+  // of the two is shown at a time (data-sims).
+  check('nothing was dropped in the move', tabs.length === 17, `${tabs.length} items`);
   check('the Race log is inside Review, not a tab of the rail', !tabs.includes('racelog'), tabs.join(','));
   check('settings is a destination of its own now', tabs.includes('settings'));
   check(
