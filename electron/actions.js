@@ -90,8 +90,17 @@ function createActions(deps = {}) {
   /** @type {Map<string, object>} */
   const registry = new Map();
 
+  /**
+   * `sims` (optional) names the sims an action exists for; absent = every sim.
+   * Everything in 'Pit strategy' drives LMU's own pit menu over its REST API
+   * or presses LMU's keys, and the race engineer runs in LMU mode only, so
+   * those two groups are LMU-only without each entry having to say so.
+   * main.js filters the Bindings list and the registered hotkeys on it.
+   */
+  const LMU_GROUPS = ['Pit strategy', 'Engineer'];
   function define(action) {
-    registry.set(action.id, action);
+    const sims = action.sims || (LMU_GROUPS.includes(action.group) ? ['lmu'] : undefined);
+    registry.set(action.id, sims ? { ...action, sims } : action);
   }
 
   /* ---------------------------------------------------------------- */
@@ -220,6 +229,8 @@ function createActions(deps = {}) {
       // it in the headset exactly as they do on screen.
       label: 'Show / hide the MFD in the VR headset',
       group: 'VR',
+      // The MFD is LMU's pit menu.
+      sims: ['lmu'],
       kind: 'pulse',
       run: async () => deps.toggleVrMfd(),
     });
@@ -509,6 +520,7 @@ function createActions(deps = {}) {
         label: a.label,
         group: a.group,
         kind: a.kind,
+        ...(a.sims ? { sims: a.sims } : {}),
       })),
 
     get: (id) => registry.get(id),

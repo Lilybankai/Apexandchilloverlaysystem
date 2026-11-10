@@ -14,6 +14,26 @@ contextBridge.exposeInMainWorld('apex', {
   /** Full initial state: settings, overlay catalog (with URLs), status. */
   getState: () => ipcRenderer.invoke('app:getState'),
 
+  /* ---- Which sim: LMU or iRacing ---- */
+
+  /*
+   * The panel also knows the sim synchronously, before first paint, from
+   * `document.documentElement.dataset.sim` ('lmu' | 'iracing') — read that in
+   * renderer code. These are for the chooser page and the sim chip.
+   */
+
+  /** `{ sim, remember, chosen }` — the active sim and "Remember my choice". */
+  getSim: () => ipcRenderer.invoke('sim:get'),
+  /**
+   * Pick a sim (`'lmu' | 'iracing'`), optionally setting "Remember my choice".
+   * Restarts the telemetry server on the new sim and reloads the panel.
+   */
+  chooseSim: (sim, opts) =>
+    ipcRenderer.invoke('sim:choose', {
+      sim,
+      ...(opts && typeof opts.remember === 'boolean' ? { remember: opts.remember } : {}),
+    }),
+
   /** Persist a partial settings change; returns the fresh state. */
   updateSettings: (partial) => ipcRenderer.invoke('settings:update', partial),
 

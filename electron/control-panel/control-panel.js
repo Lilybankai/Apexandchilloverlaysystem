@@ -14,6 +14,16 @@
 (function () {
   const $ = (sel) => document.querySelector(sel);
 
+  /**
+   * The sim this panel is set up for, 'lmu' | 'iracing' — stamped on <html>
+   * from ?sim= by sim-boot.js before anything here runs. Fixed for the life
+   * of the page: switching sims reloads the panel (main.js chooseSim). The
+   * LMU-only markup is hidden by hub.css's `[data-sims]` rule; this is for the
+   * script side — LMU probes not to fire, text that names the sim.
+   */
+  const SIM = document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
+  const IS_LMU = SIM === 'lmu';
+
   // --- Elements ------------------------------------------------------------
   const feedPill = $('#feed-pill');
   const feedText = $('#feed-text');
@@ -378,7 +388,7 @@
         ? 'server stopped'
         : feed === 'demo'
           ? 'simulated data'
-          : `rFactor 2 / LMU · ${rateRange.value} Hz`,
+          : `${IS_LMU ? 'rFactor 2 / LMU' : 'iRacing'} · ${rateRange.value} Hz`,
     );
   }
 
@@ -3721,7 +3731,8 @@
       void renderLmuPaths();
     });
   }
-  void renderLmuPaths();
+  // LMU's install folder means nothing in iRacing mode (the card is hidden).
+  if (IS_LMU) void renderLmuPaths();
 
   // --- LMU's own controls file ----------------------------------------------
   /*
@@ -6635,9 +6646,24 @@
    * ordinary destination and that toggle is gone.
    */
 
-  const TAB_STORAGE_KEY = 'apex.panel.tab';
+  // Per sim: an iRacing driver who lives in Overlays and an LMU one who lives
+  // in Setups are often the same person. LMU keeps the original key.
+  const TAB_STORAGE_KEY = IS_LMU ? 'apex.panel.tab' : `apex.panel.tab.${SIM}`;
   const views = Array.from(document.querySelectorAll('[data-view]'));
   const tabButtons = Array.from(document.querySelectorAll('.tab[data-tab]'));
+
+  /** Whether an element is tagged for other sims only (`data-sims`, hub.css). */
+  function simHides(el) {
+    const tagged = el && el.closest('[data-sims]');
+    return !!tagged && !tagged.dataset.sims.split(/\s+/).includes(SIM);
+  }
+
+  /** A view this sim does not have — its tab or the view itself is sim-tagged. */
+  function viewHiddenForSim(name) {
+    const tab = tabButtons.find((t) => t.dataset.tab === name);
+    const view = views.find((v) => v.dataset.view === name);
+    return simHides(tab) || simHides(view);
+  }
 
   /**
    * The Fuel tab is a beta-channel feature for now — it reached stable ahead
@@ -6964,7 +6990,9 @@
   });
 
   function showView(name) {
-    const known = views.some((v) => v.dataset.view === name);
+    // A tab this sim does not have is as good as unknown: a remembered or
+    // tour-driven visit to Setups in iRacing mode lands on Dashboard.
+    const known = views.some((v) => v.dataset.view === name) && !viewHiddenForSim(name);
     const target = known ? name : 'dashboard';
     // Before anything moves: the tab being left is owed its seconds.
     closeUsageTab();
@@ -7090,6 +7118,93 @@
 
   for (const tab of tabButtons) {
     tab.addEventListener('click', () => showView(tab.dataset.tab));
+  }
+
+  /* ---- the sim chip: switch between LMU and iRacing ----------------------
+   *
+   * The chip names the active sim (its labels are markup, shown by the
+   * per-sim CSS rule); this only drives its menu. Picking the other sim hands
+   * over to main, which saves it, restarts the telemetry server on that sim's
+   * provider and reloads this page with the new ?sim= — so nothing here has to
+   * un-paint one sim's panel into the other's.
+   */
+  const simChip = $('#sim-chip');
+  const simMenu = $('#sim-menu');
+  const simRemember = $('#sim-remember');
+  const simNote = $('#sim-menu-note');
+
+  function placeSimMenu() {
+    if (!simChip || !simMenu) return;
+    const r = simChip.getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - simMenu.offsetWidth - 8));
+    simMenu.style.left = `${left}px`;
+    simMenu.style.top = `${r.bottom + 6}px`;
+  }
+
+  function closeSimMenu() {
+    if (!simMenu || simMenu.hidden) return;
+    simMenu.hidden = true;
+    simChip?.setAttribute('aria-expanded', 'false');
+  }
+
+  async function openSimMenu() {
+    if (!simMenu || !simChip) return;
+    for (const opt of simMenu.querySelectorAll('[data-sim-pick]')) {
+      opt.setAttribute('aria-checked', String(opt.dataset.simPick === SIM));
+      opt.disabled = false;
+    }
+    if (simNote) simNote.hidden = true;
+    simMenu.hidden = false;
+    simChip.setAttribute('aria-expanded', 'true');
+    placeSimMenu();
+    try {
+      const s = await window.apex.getSim();
+      if (simRemember && s) simRemember.checked = !!s.remember;
+    } catch {
+      /* the box keeps its last state */
+    }
+  }
+
+  if (simChip && simMenu) {
+    simChip.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+      if (simMenu.hidden) void openSimMenu();
+      else closeSimMenu();
+    });
+    simMenu.addEventListener('click', (evt) => evt.stopPropagation());
+    document.addEventListener('click', closeSimMenu);
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') closeSimMenu();
+    });
+    window.addEventListener('resize', closeSimMenu);
+
+    for (const opt of simMenu.querySelectorAll('[data-sim-pick]')) {
+      opt.addEventListener('click', async () => {
+        const pick = opt.dataset.simPick;
+        if (pick === SIM) {
+          closeSimMenu();
+          return;
+        }
+        for (const o of simMenu.querySelectorAll('[data-sim-pick]')) o.disabled = true;
+        if (simNote) {
+          simNote.textContent = `Switching to ${pick === 'iracing' ? 'iRacing' : 'Le Mans Ultimate'}…`;
+          simNote.hidden = false;
+        }
+        // On success main reloads this page; anything else is said here.
+        const res = await window.apex.chooseSim(pick).catch(() => null);
+        if (!res || res.ok === false) {
+          for (const o of simMenu.querySelectorAll('[data-sim-pick]')) o.disabled = false;
+          if (simNote) simNote.textContent = (res && res.error) || 'Could not switch sims.';
+        }
+      });
+    }
+
+    if (simRemember) {
+      simRemember.addEventListener('change', () => {
+        // Same sim, so main saves the box and reloads nothing.
+        void window.apex.chooseSim(SIM, { remember: simRemember.checked });
+      });
+    }
   }
 
   /* ---- the rail: tooltips, then collapse ---------------------------------
@@ -8569,8 +8684,12 @@
   window.apex.auth.getState().then(renderAuth);
   window.apex.chatLink.status().then(renderChatState);
   void renderBindings();
-  void renderLmuBindings();
-  void renderPluginStatus();
+  // Both read LMU's files (its controls file, its Plugins folder) and their
+  // cards are hidden in iRacing mode — so no disk probe for a game not in use.
+  if (IS_LMU) {
+    void renderLmuBindings();
+    void renderPluginStatus();
+  }
   // The logo list lives on disk, not in settings, so it is fetched separately.
   window.apex.sponsorsList().then(renderSponsors);
   // Same for the lap history — files on disk, not part of app state.

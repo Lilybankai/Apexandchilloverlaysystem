@@ -42,6 +42,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     const tab = q.get('tab') || 'settings';
     const pane = q.get('pane') || 'general';
     localStorage.setItem('apex.panel.tab', tab);
+    // ?sim=iracing shoots the panel in iRacing mode (sim-boot.js reads the same
+    // ?sim= from the URL); its remembered tab has a key of its own.
+    localStorage.setItem('apex.panel.tab.iracing', tab);
     localStorage.setItem('apex.panel.settingsPane', pane);
     // Which Admin section to land on: ?tab=admin&adminpane=usage. The Admin tab
     // is revealed asynchronously by admin:whoami, but showView() does not care
@@ -309,12 +312,19 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     ['radar', 'Proximity Radar'], ['trackmap', 'Track Map'], ['limits', 'Track Limits'],
     ['racecontrol', 'Race Control'], ['mfd', 'MFD Control'],
   ].map(([id, label]) => ({ id, label, enabled: true, url: '' }));
+  // The LMU-only widgets (\`sims: ['lmu']\` in main.js), which main leaves out
+  // of the list in iRacing mode — as this does under ?sim=iracing.
+  const LMU_ONLY = ['refpace', 'fuelplan', 'damage', 'limits', 'racecontrol', 'mfd'];
+  for (const o of overlayCatalog) if (LMU_ONLY.includes(o.id)) o.sims = ['lmu'];
   const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
   const trainingOverlays = [{ id: 'ghosthud', label: 'Ghost HUD', enabled: true, ingame: true,
-    url: 'http://127.0.0.1:8082/widget.html?w=ghosthud', group: 'training', gated: 'beta',
+    url: 'http://127.0.0.1:8082/widget.html?w=ghosthud', group: 'training', gated: 'beta', sims: ['lmu'],
     description: 'A fast lap’s racing line on the road ahead, with the live delta',
     obs: { w: 640, h: 307 } }];
-  const overlays = overlayCatalog.concat(streamingOverlays, trainingOverlays);
+  const SIM = q.get('sim') === 'iracing' ? 'iracing' : 'lmu';
+  const overlays = overlayCatalog
+    .concat(streamingOverlays, trainingOverlays)
+    .filter((o) => !o.sims || o.sims.includes(SIM));
   /*
    * The Training tab's status line: ?training=live|no-session|session|stopped|
    * race-mode|idle (idle = live, nothing switched on), plus &gpu=software for
@@ -339,6 +349,7 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   window.apex = {
     getState: P({ settings, overlays, status: { running: false, port: 8082, wsClients: 0, source: '—', training: trainingStatus } }),
     trainingEditStart: P({ training: trainingStatus }), trainingEditStop: P({ training: trainingStatus }),
+    getSim: P({ sim: SIM, remember: false, chosen: true }), chooseSim: P({ ok: true, reloaded: false }),
     updateSettings: (p) => Promise.resolve({ settings: Object.assign(settings, p), overlays, status: {} }),
     startServer: P({}), stopServer: P({}), copy: P(true), openInBrowser: P(true),
     sponsorsList: P([]), sponsorsAdd: P([]), sponsorsRemove: P([]),

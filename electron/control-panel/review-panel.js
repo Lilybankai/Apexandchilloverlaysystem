@@ -646,6 +646,9 @@
    * still opens it.
    */
 
+  /** The active sim, from sim-boot.js (absent = LMU). */
+  const IS_LMU = document.documentElement.dataset.sim !== 'iracing';
+
   const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'laps', label: 'Laps &amp; stints' },
@@ -669,6 +672,10 @@
    * Coach only when following beta (review-coach.js `filterTabs`).
    */
   const tabsFor = (s) => {
+    // Race log (LMU's results files) and Coach (LMU's practice sessions) are
+    // Le Mans Ultimate only; the panel reloads on a sim switch, so reading
+    // `<html data-sim>` here is enough.
+    if (!IS_LMU) return TABS.filter((t) => !t.race && !t.coach);
     const list = TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
     return COACH ? COACH.filterTabs(list, coachCtx(s)) : list.filter((t) => !t.coach);
   };

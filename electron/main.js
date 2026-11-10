@@ -134,6 +134,10 @@ const OVERLAY_CATALOG = [
     id: 'refpace',
     label: 'Reference Pace',
     description: "Your lap vs the class benchmark — Alien to Offline (times by Ohne Speed)",
+    // `sims` (generic, like `gated`): the sims this widget is offered for.
+    // Absent = every sim. Ohne Speed's benchmarks are LMU lap times on LMU's
+    // tracks and classes. See overlayOnThisChannel.
+    sims: ['lmu'],
   },
   { id: 'weather', label: 'Weather', description: 'Current conditions + forecast' },
   { id: 'fuel', label: 'Fuel Calculator', description: 'Per-lap use, laps left, pit window' },
@@ -145,6 +149,7 @@ const OVERLAY_CATALOG = [
     label: 'Fuel Planner',
     description: 'Pre-race fuel/VE plan, live stint timer, fuel-ratio control (LMU only)',
     ingameDefault: false,
+    sims: ['lmu'],
     // A banner across this card on the Overlays screen. The field is generic
     // rather than a fuelplan special case, so the next widget to be reworked
     // says so by adding one line here and nothing in the renderer.
@@ -210,7 +215,7 @@ const OVERLAY_CATALOG = [
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
-  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)" },
+  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)", sims: ['lmu'] },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
   {
     id: 'trackmap',
@@ -221,11 +226,14 @@ const OVERLAY_CATALOG = [
     id: 'limits',
     label: 'Track Limits',
     description: 'Excursions this session, the sim\'s penalties, and how much road is left',
+    // LMU's trace-limits feed and its penalty points.
+    sims: ['lmu'],
   },
   {
     id: 'racecontrol',
     label: 'Race Control',
     description: 'Start lights, green flag, sector yellows, and the pit-limiter prompts (LMU only)',
+    sims: ['lmu'],
   },
   // A clickable control page, not a HUD graphic: it belongs in a browser tab
   // (or an OBS source as a readout), never the locked, click-through in-game
@@ -235,6 +243,7 @@ const OVERLAY_CATALOG = [
     label: 'MFD Control',
     description: 'Set pit strategy from the overlay — open in a browser to click (LMU only)',
     ingameDefault: false,
+    sims: ['lmu'],
     // Same generic machinery as the speedo's designs: the card grows a DESIGN
     // dropdown from this list alone. 'stack' is the original two-sections-deep
     // column; 'row' lays the sections out side by side for a rig that has more
@@ -276,6 +285,7 @@ const TRAINING_CATALOG = [
     id: 'ghosthud',
     label: 'Ghost HUD',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'A fast lap’s racing line on the road ahead, with the live delta',
     ingameDefault: false,
@@ -285,6 +295,7 @@ const TRAINING_CATALOG = [
     id: 'traininginputs',
     label: 'Telemetry',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'Throttle, brake, speed and the gap against the reference lap by distance — with its next braking zone coming',
     ingameDefault: false,
@@ -294,6 +305,7 @@ const TRAINING_CATALOG = [
     id: 'trainingcorner',
     label: 'Corner Analysis',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'How the corner you just left went against the reference: time, speed through it, and what to change',
     ingameDefault: false,
@@ -303,6 +315,7 @@ const TRAINING_CATALOG = [
     id: 'trainingsectors',
     label: 'Lap Strip',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'Sectors against the reference, and every corner of the lap coloured by time won or lost',
     ingameDefault: false,
@@ -312,6 +325,7 @@ const TRAINING_CATALOG = [
     id: 'trainingcoach',
     label: 'Coach',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'Your pedals, speed and gear against the reference right now, with the last few seconds of inputs',
     ingameDefault: false,
@@ -321,6 +335,7 @@ const TRAINING_CATALOG = [
     id: 'trainingbrake',
     label: 'Brake Cue',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'A red light that comes on at the reference lap’s braking point',
     ingameDefault: false,
@@ -337,6 +352,7 @@ const TRAINING_CATALOG = [
     id: 'trainingfocus',
     label: 'Focus',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: 'The live coach’s one corner to work on, what to change there, and a light as you come to it',
     ingameDefault: true,
@@ -351,6 +367,7 @@ const TRAINING_CATALOG = [
     id: 'trainingrefpace',
     label: 'Reference Pace',
     gated: 'beta',
+    sims: ['lmu'],
     group: 'training',
     description: "Your lap vs the class benchmark — Alien to Offline (times by Ohne Speed)",
     ingameDefault: false,
@@ -374,6 +391,42 @@ const MIN_PORT = 1;
 const MAX_PORT = 65535;
 const MIN_HZ = 1;
 const MAX_HZ = 120;
+
+/* -------------------------------------------------------------------------- */
+/*  Active sim — LMU or iRacing                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The sims the app can be set up for. The panel reads the active one from
+ * `document.documentElement.dataset.sim` (set from `?sim=` before first
+ * paint), and anything tagged `data-sims="lmu"` is hidden in iRacing mode by
+ * one CSS rule in hub.css. Main reads it from here.
+ */
+const SIMS = ['lmu', 'iracing'];
+
+/** The sim a settings object is set up for, 'lmu' for anything unrecognised. */
+function simOf(settings) {
+  return settings && SIMS.includes(settings.sim) ? settings.sim : 'lmu';
+}
+
+/**
+ * The active sim, without touching the disk on the hot path: kept current by
+ * saveSettings, and read once from config.json the first time it is asked.
+ */
+let activeSimCache = null;
+function getActiveSim() {
+  if (activeSimCache === null) activeSimCache = simOf(loadSettings());
+  return activeSimCache;
+}
+
+/**
+ * Whether the driver has picked a sim for THIS run of the app — on the
+ * chooser, or by having ticked "Remember my choice" last time. Until then
+ * the telemetry server and the LMU background services stay down: an iRacing
+ * driver's PC should never be scanned for an LMU install on the way to
+ * the chooser.
+ */
+let simChosenThisRun = false;
 
 /** Default settings for a fresh install (all overlays enabled). */
 function defaultSettings() {
@@ -414,6 +467,20 @@ function defaultSettings() {
     updateRateHz: 30,
     forceSimulator: false,
     provider: 'lmu', // 'lmu' | 'rf2' | 'simulator'
+    /*
+     * Which sim this install is set up for: 'lmu' | 'iracing'. Chosen on the
+     * sim chooser (control-panel/sim-select.html) that opens before the panel,
+     * or from the sim chip in the panel's top strip. 'lmu' by default, so an
+     * install from before iRacing support carries on exactly as it was.
+     *
+     * Distinct from `provider` above: that is the TRANSPORT within LMU (REST,
+     * the rF2 shared memory, or the simulator); this is the game. See
+     * buildServerConfig for how the two combine.
+     */
+    sim: 'lmu',
+    // "Remember my choice" on the chooser: skip it at launch and open
+    // straight into `sim`. The sim chip still switches at any time.
+    simRemember: false,
     lmuApiPort: 6397,
     /*
      * The game's folder on disk, when the driver has had to point at it.
@@ -901,6 +968,9 @@ function loadSettings() {
       stored.provider === 'lmu' || stored.provider === 'rf2' || stored.provider === 'simulator'
         ? stored.provider
         : defaults.provider,
+    sim: SIMS.includes(stored.sim) ? stored.sim : defaults.sim,
+    simRemember:
+      typeof stored.simRemember === 'boolean' ? stored.simRemember : defaults.simRemember,
     lmuApiPort: clamp(stored.lmuApiPort, MIN_PORT, MAX_PORT, defaults.lmuApiPort),
     lmuRoot: typeof stored.lmuRoot === 'string' ? stored.lmuRoot.trim() : defaults.lmuRoot,
     enabledOverlays,
@@ -1105,6 +1175,7 @@ function saveSettings(settings) {
   } catch (err) {
     console.error('[app] failed to save settings:', err.message);
   }
+  activeSimCache = simOf(settings);
   publishLmuRoot(settings);
   // Every path that changes an overlay's on/off state ends here, so this is
   // the one place the day's enabled set has to be restated.
@@ -1186,9 +1257,16 @@ function buildServerConfig(settings) {
     overlayDir: overlayDir(), // absolute — resolve(cwd, abs) === abs
     forceSimulator: settings.forceSimulator,
     // Le Mans Ultimate REST API is the default live source (robust, whole-field).
-    provider: settings.provider === 'rf2' || settings.provider === 'simulator'
-      ? settings.provider
-      : 'lmu',
+    // In iRacing mode the sim decides the provider, except that a stored
+    // 'simulator' (and forceSimulator, the Demo switch, above) still wins.
+    provider:
+      settings.provider === 'simulator'
+        ? 'simulator'
+        : simOf(settings) === 'iracing'
+          ? 'iracing'
+          : settings.provider === 'rf2'
+            ? 'rf2'
+            : 'lmu',
     lmuApiPort: Number.isFinite(settings.lmuApiPort) ? settings.lmuApiPort : 6397,
     // Empty when sponsors are off, which makes the server 404 the whole
     // /sponsors/ route rather than serving a directory nobody asked for.
@@ -2259,7 +2337,9 @@ async function syncEngineer(settings) {
   const s = settings || loadSettings();
   const eng = getEngineer();
   const installed = eng.engineInstalled() && eng.voiceInstalled(s.engineerVoice);
-  const wanted = !!s.engineerEnabled && status.running && installed;
+  // LMU only for now: its calls read LMU frame fields and its pit commands go
+  // to LMU's REST API, and the Engineer tab is hidden in iRacing mode.
+  const wanted = !!s.engineerEnabled && simOf(s) === 'lmu' && status.running && installed;
   if (eng.running) eng.stop();
   if (wanted) {
     try {
@@ -2364,6 +2444,11 @@ function onWheelButton(device, button, down) {
   }
 }
 
+/** Whether a bindable action exists for the active sim (see `sims` in actions.js). */
+function actionOnThisSim(action, sim = getActiveSim()) {
+  return !action || !Array.isArray(action.sims) || action.sims.includes(sim);
+}
+
 /**
  * Run an action by id, putting the outcome where the driver can see it.
  *
@@ -2376,6 +2461,10 @@ function onWheelButton(device, button, down) {
  * stepping) are their own feedback.
  */
 async function runAction(id, dir) {
+  // A binding kept from LMU mode does nothing in iRacing mode — quietly, not
+  // as an in-game error on every press of a wheel button the driver has
+  // since given another job in the other sim.
+  if (!actionOnThisSim(getActions().get(id))) return { ok: false, reason: 'not-lmu' };
   const result = await getActions().run(id, dir);
   if (result && result.ok === false) {
     console.warn(`[action] ${id} failed: ${result.error}`);
@@ -2501,6 +2590,9 @@ function applyBindings(settings) {
 
   for (const [actionId, accel] of Object.entries(s.actionBindings || {})) {
     if (!accel) continue;
+    // LMU's pit actions are not registered in iRacing mode, so their keys
+    // stay free for the game. The binding itself is kept for switching back.
+    if (simOf(s) !== 'lmu' && !actionOnThisSim(getActions().get(actionId), simOf(s))) continue;
     if (seen.has(accel)) {
       result.failed.push({
         action: actionId,
@@ -2579,6 +2671,11 @@ function isTrainingWidget(id) {
  * GitHub and `docs/RELEASING.md` says so. It decides what is OFFERED.
  */
 function overlayOnThisChannel(settings, o) {
+  // An entry with `sims` is offered only for those sims (the LMU-only widgets
+  // in iRacing mode). Folded in here because this is already the one choke
+  // point for the Overlays cards, the in-game layer, the training layer and
+  // the usage counters.
+  if (Array.isArray(o.sims) && !o.sims.includes(simOf(settings))) return false;
   if (o.gated !== 'beta') return true;
   return (
     settings.updateChannel === 'beta' || updateChannel.isPrereleaseVersion(app.getVersion())
@@ -3591,7 +3688,8 @@ function finishPracticeSession(ended) {
  * panel hides.
  */
 function practiceOnThisChannel(settings) {
-  return overlayOnThisChannel(settings, { gated: 'beta' });
+  // LMU only as well: the Practice tab and the live coach read LMU sessions.
+  return overlayOnThisChannel(settings, { gated: 'beta', sims: ['lmu'] });
 }
 
 const practiceWatch = createPracticeWatch({
@@ -3668,7 +3766,8 @@ const trainingLayer = createTrainingLayer({
 
 /** Training is beta-only, by the rule every `gated: 'beta'` entry follows. */
 function trainingOnThisChannel(settings) {
-  return overlayOnThisChannel(settings, { gated: 'beta' });
+  // LMU only as well, like every widget in TRAINING_CATALOG.
+  return overlayOnThisChannel(settings, { gated: 'beta', sims: ['lmu'] });
 }
 
 /** Whether the training overlays are running right now. */
@@ -3993,7 +4092,80 @@ function sessionPaceFor(ref, session) {
 /*  IPC — the safe API the control panel calls (see preload.js)               */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Channels that only mean anything with Le Mans Ultimate: its install folder,
+ * its controls file, the shared-memory plugin, the live garage, the results
+ * files and replays, its daily races. In iRacing mode the panel hides every
+ * control that calls them; this is the backstop, so a stray call answers
+ * `{ ok:false, reason:'not-lmu' }` instead of scanning the disk for a game the
+ * driver is not running.
+ */
+const LMU_ONLY_IPC =
+  /^(?:lmu:|lmuBind:|plugin:|setup:|setuplib:togame$|review:racelog|review:replay|schedule:dailies$)/;
+
+/**
+ * `ipcMain`, with LMU_ONLY_IPC's handlers gated on the active sim. Everything
+ * else passes straight through, so registerIpc reads exactly as it did.
+ */
+function simGatedIpcMain() {
+  const target = ipcMain;
+  return new Proxy(target, {
+    get(t, prop) {
+      if (prop === 'handle') {
+        return (channel, fn) =>
+          t.handle(
+            channel,
+            LMU_ONLY_IPC.test(channel)
+              ? (...args) =>
+                  getActiveSim() === 'lmu'
+                    ? fn(...args)
+                    : { ok: false, reason: 'not-lmu', error: 'Le Mans Ultimate only', races: [] }
+              : fn,
+          );
+      }
+      const v = t[prop];
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+}
+
+/**
+ * Swap the active sim. Saves it (and "Remember my choice"), restarts the
+ * telemetry server on the new sim's provider, starts or stops the LMU-only
+ * background services, re-registers hotkeys (LMU's pit actions come and go),
+ * and loads the panel fresh with `?sim=` so every tab boots knowing the sim.
+ *
+ * From the panel with the same sim (only "Remember" changed) nothing restarts.
+ */
+async function chooseSim(req) {
+  const sim = req && SIMS.includes(req.sim) ? req.sim : null;
+  if (!sim) return { ok: false, error: 'unknown sim' };
+  const current = loadSettings();
+  const changed = simOf(current) !== sim;
+  const next = { ...current, sim };
+  if (req && typeof req.remember === 'boolean') next.simRemember = req.remember;
+  saveSettings(next);
+  pushSettings(next);
+  const onPanel =
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    /index\.html(?:[?#].*)?$/.test(mainWindow.webContents.getURL() || '');
+  const firstChoice = !simChosenThisRun;
+  simChosenThisRun = true;
+  if (!changed && onPanel && !firstChoice) return { ok: true, sim, reloaded: false };
+  console.log(`[app] sim → ${sim}${changed ? ' (switched)' : ''}`);
+  syncLmuServices();
+  applyBindings(next);
+  loadPage('panel');
+  if (changed || !status.running) void startServer();
+  return { ok: true, sim, reloaded: true };
+}
+
 function registerIpc() {
+  // Shadows the module's ipcMain for every handler below — see simGatedIpcMain.
+  // eslint-disable-next-line no-shadow
+  const ipcMain = simGatedIpcMain();
+
   ipcMain.handle('app:getState', () => ({
     settings: loadSettings(),
     overlays: overlaysForUi(),
@@ -4003,7 +4175,16 @@ function registerIpc() {
     // top bar so a user reporting a bug can say which version they are on
     // without hunting through Add/Remove Programs.
     appVersion: app.getVersion(),
+    sim: getActiveSim(),
   }));
+
+  // The active sim, for the chooser (which one to preselect) and the panel's
+  // sim chip. The panel itself also has it synchronously from `?sim=`.
+  ipcMain.handle('sim:get', () => {
+    const s = loadSettings();
+    return { sim: simOf(s), remember: !!s.simRemember, chosen: simChosenThisRun };
+  });
+  ipcMain.handle('sim:choose', (_evt, req) => chooseSim(req));
 
   ipcMain.handle('settings:update', async (_evt, partial) => {
     const current = loadSettings();
@@ -6086,6 +6267,8 @@ function registerIpc() {
       // VR's actions only where VR itself is (the beta channel): a binding row
       // for a feature the driver cannot see is a question nobody can answer.
       .filter((a) => vrHere || a.group !== 'VR')
+      // LMU's pit actions only in LMU mode (actions.js `sims`).
+      .filter((a) => actionOnThisSim(a, simOf(settings)))
       .map((a) => ({
         ...a,
         binding: settings.actionBindings[a.id] || '',
@@ -6438,8 +6621,12 @@ function registerIpc() {
       void lapUpload.sync({ reason: 'sign-in' });
       teamCloud.onAuthChanged();
       discordCloud.onAuthChanged();
-      resultsHarvest.onAuthChanged();
-      scheduleCloud.onAuthChanged();
+      // LMU only; when they are not running yet, choosing LMU starts them
+      // with a first look of their own.
+      if (lmuServicesOn) {
+        resultsHarvest.onAuthChanged();
+        scheduleCloud.onAuthChanged();
+      }
     }
     return res;
   });
@@ -6533,9 +6720,17 @@ function registerIpc() {
   ipcMain.handle('auth:enterApp', async () => {
     const snap = await billingService.refresh({ maxAgeMs: 5000 });
     if (snap.entitled) {
-      loadPage('panel');
-      // The server only auto-starts for entitled accounts; catch up now.
-      void startServer();
+      // Through the gate — to the sim chooser first unless the driver ticked
+      // "Remember my choice"; it starts the server once a sim is picked.
+      if (needsSimChoice()) {
+        loadPage('sim');
+      } else {
+        simChosenThisRun = true;
+        syncLmuServices();
+        loadPage('panel');
+        // The server only auto-starts for entitled accounts; catch up now.
+        void startServer();
+      }
     }
     return { ...authStateForUi(), entitled: !!snap.entitled, billing: snap };
   });
@@ -7211,7 +7406,18 @@ function rememberEmail(email) {
  * ways. The old "continue offline" free path is gone with the free app.
  */
 function initialPage() {
-  return authService.stateForUi().signedIn && billingService.entitledNow() ? 'panel' : 'auth';
+  if (!(authService.stateForUi().signedIn && billingService.entitledNow())) return 'auth';
+  return needsSimChoice() ? 'sim' : 'panel';
+}
+
+/**
+ * Whether the sim chooser stands between the account gate and the panel. It
+ * opens on every launch (Carl: "as you open the app, you should have a box
+ * where you select either LMU or iRacing") unless "Remember my choice" was
+ * ticked — and never twice in one run.
+ */
+function needsSimChoice() {
+  return !simChosenThisRun && !loadSettings().simRemember;
 }
 
 /**
@@ -7223,18 +7429,82 @@ function initialPage() {
 function enforceEntitlement(snap) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (snap && snap.entitled) return;
-  const onPanel = /index\.html(?:[?#].*)?$/.test(mainWindow.webContents.getURL() || '');
+  // The sim chooser is past the gate too, so it is walked back the same way.
+  const onPanel = /(?:index|sim-select)\.html(?:[?#].*)?$/.test(
+    mainWindow.webContents.getURL() || '',
+  );
   if (onPanel) {
     void stopServer();
     loadPage('auth');
   }
 }
 
-/** Swap the window between the account screens and the control panel. */
+/**
+ * Swap the window between the account screens, the sim chooser and the
+ * control panel. The panel gets the active sim as `?sim=`, which it stamps on
+ * `<html data-sim>` before first paint (control-panel/sim-boot.js) — so it
+ * never paints an LMU tab it is about to hide.
+ */
 function loadPage(page) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const file = page === 'auth' ? 'auth.html' : 'index.html';
-  void mainWindow.loadFile(path.join(__dirname, 'control-panel', file));
+  const dir = path.join(__dirname, 'control-panel');
+  if (page === 'auth') void mainWindow.loadFile(path.join(dir, 'auth.html'));
+  else if (page === 'sim') void mainWindow.loadFile(path.join(dir, 'sim-select.html'));
+  else void mainWindow.loadFile(path.join(dir, 'index.html'), { query: { sim: getActiveSim() } });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  LMU-only background services                                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The official-results harvest (RaceOS via the running game) and the shared
+ * schedule sweep (SimGrid's LMU league + LMU's daily races + LMU track maps)
+ * have nothing to do in iRacing mode. They need a live session to start, so
+ * the auth restore chain marks them ready; after that they follow the sim —
+ * started for LMU once a sim is chosen for this run, stopped for iRacing.
+ */
+let lmuServicesReady = false;
+let lmuServicesOn = false;
+
+function startLmuServices() {
+  if (!lmuServicesReady || lmuServicesOn) return;
+  lmuServicesOn = true;
+  // Official race results. Nothing happens unless LMU is running (the
+  // Steam ticket is bought from the game itself) and nothing has been
+  // driven, so on a machine sitting at the desktop this costs one failed
+  // loopback connection every quarter of an hour.
+  resultsHarvest.init({
+    auth: authService,
+    userDataDir: app.getPath('userData'),
+    lmuApiPort: (() => {
+      const n = loadSettings().lmuApiPort;
+      return Number.isFinite(n) ? n : 6397;
+    })(),
+    loadClient: () =>
+      require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceosResults.js'))
+        .RaceosResultsClient,
+  });
+  // The Schedule tab's calendars, shared with the web pit wall. One RPC
+  // every half hour asks how old the shared copies are; only a stale one
+  // is re-read (the same reads the tab makes) and published.
+  scheduleCloud.init({
+    auth: authService,
+    readers: { league: readLeagueSchedule, dailies: readDailySchedule },
+  });
+}
+
+function stopLmuServices() {
+  if (!lmuServicesOn) return;
+  lmuServicesOn = false;
+  resultsHarvest.stop();
+  scheduleCloud.stop();
+}
+
+/** Start or stop the LMU-only services to match the active sim. */
+function syncLmuServices() {
+  if (simChosenThisRun && getActiveSim() === 'lmu') startLmuServices();
+  else stopLmuServices();
 }
 
 /**
@@ -7675,28 +7945,11 @@ app.whenReady().then(async () => {
           }
         },
       });
-      // Official race results. Nothing happens unless LMU is running (the
-      // Steam ticket is bought from the game itself) and nothing has been
-      // driven, so on a machine sitting at the desktop this costs one failed
-      // loopback connection every quarter of an hour.
-      resultsHarvest.init({
-        auth: authService,
-        userDataDir: app.getPath('userData'),
-        lmuApiPort: (() => {
-          const n = loadSettings().lmuApiPort;
-          return Number.isFinite(n) ? n : 6397;
-        })(),
-        loadClient: () =>
-          require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceosResults.js'))
-            .RaceosResultsClient,
-      });
-      // The Schedule tab's calendars, shared with the web pit wall. One RPC
-      // every half hour asks how old the shared copies are; only a stale one
-      // is re-read (the same reads the tab makes) and published.
-      scheduleCloud.init({
-        auth: authService,
-        readers: { league: readLeagueSchedule, dailies: readDailySchedule },
-      });
+      // Official race results and the shared schedule sweep — LMU only, so
+      // they start here only if LMU is already the chosen sim; otherwise the
+      // sim chooser starts them (see startLmuServices).
+      lmuServicesReady = true;
+      syncLmuServices();
       // Start the usage heartbeat from inside the same chain, for the same
       // reason: its first beat wants a live token, so firing it before the
       // refresh lands would waste one signed-out attempt every launch.
@@ -7722,7 +7975,15 @@ app.whenReady().then(async () => {
   // served over HTTP to OBS, so an unentitled install must not get them by
   // simply never signing in. enterApp starts it for everyone else the moment
   // they are through the gate.
-  if (initialPage() === 'panel') await startServer();
+  //
+  // Not while the sim chooser is up, either: which provider to start (and
+  // whether to go looking for LMU at all) is exactly what it is asking.
+  // sim:choose starts the server once a sim is picked.
+  if (initialPage() === 'panel') {
+    simChosenThisRun = true;
+    syncLmuServices();
+    await startServer();
+  }
 
   // Streaming chat: link state persists across launches, so bring it back up now
   // and forward the operator's sources to the just-started server. The YouTube

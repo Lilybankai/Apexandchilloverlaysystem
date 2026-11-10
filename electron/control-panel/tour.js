@@ -754,6 +754,9 @@
   function usableSteps(list) {
     if (typeof document === 'undefined') return list;
     return list.filter((s) => {
+      // A step on something the active sim does not have (an LMU-only tab or
+      // card in iRacing mode, tagged `data-sims`) is not part of the tour.
+      if (simHidden(s.view ? `[data-view="${s.view}"]` : null) || simHidden(s.anchor)) return false;
       if (!s.optional || !s.anchor) return true;
       try {
         if (!document.querySelector(s.anchor)) return false;
@@ -771,6 +774,20 @@
         return false;
       }
     });
+  }
+
+  /** Whether `selector`'s element sits under a `data-sims` tag that excludes the active sim. */
+  function simHidden(selector) {
+    if (!selector) return false;
+    try {
+      const root = document.documentElement;
+      const sim = (root && root.dataset && root.dataset.sim) || 'lmu';
+      const el = document.querySelector(selector);
+      const tagged = el && typeof el.closest === 'function' ? el.closest('[data-sims]') : null;
+      return !!tagged && !tagged.dataset.sims.split(/\s+/).includes(sim);
+    } catch {
+      return false;
+    }
   }
 
   function seenKey(id) {
