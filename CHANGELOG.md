@@ -5,6 +5,48 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.3 — 2026-11-10
+
+iRacing support. Pick your sim when Apex opens, and iRacing gets the same
+overlays as LMU, with iRating in the standings and its own leaderboards.
+
+### Added
+
+- **Choose your sim.** When Apex opens it asks which sim you are driving:
+  Le Mans Ultimate or iRacing. Tick **Remember my choice** to skip the
+  question next time. Switch at any time from the sim chip beside the logo
+  at the top of the app.
+
+- **iRacing overlays.** Standings, relative, track map, radar, fuel, delta,
+  pedals, speedo, tyres and weather all run on iRacing and look exactly as
+  they do in LMU.
+
+- **iRating in the standings.** Every driver's iRating and licence, and in
+  races what each driver would gain or lose if the race finished in the
+  current order, worked out per class the way iRacing does it. The
+  relative shows iRating and licence too. Each can be switched off on the
+  standings and relative cards in **Overlays**.
+
+- **iRacing leaderboards.** A Leaderboard tab of its own for iRacing: the
+  league's best clean iRacing laps per track, class and conditions, kept
+  completely apart from the LMU boards.
+
+### Good to know
+
+- **The iRacing track map draws after your first clean lap.** iRacing does
+  not publish where cars are on the circuit, so Apex learns the shape from
+  your own lap and remembers it for next time.
+
+- **The iRacing radar** shows cars alongside from iRacing's own spotter, so
+  it is less detailed than LMU's.
+
+- **iRacing tyre temperatures and wear** only update when you are in the
+  pits, because that is when iRacing publishes them.
+
+- **LMU-only features are hidden in iRacing mode** for now: the engineer,
+  setups, fuel planner, training, practice, schedule and the LMU-only
+  overlays. The Team pit wall does not carry iRacing cars yet.
+
 ## 1.3.16-beta.2 — 2026-11-04
 
 The live coach works on several corners at once, tells you about each one
