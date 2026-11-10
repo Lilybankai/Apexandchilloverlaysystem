@@ -5,6 +5,34 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.7 — 2026-11-10
+
+An iRacing demo, and the iRacing Pit panel when you need it.
+
+### Added
+
+- **The demo looks like iRacing in iRacing mode.** Demo mode (and iRacing
+  mode while iRacing isn't running) now shows the iRacing overlays: GTP,
+  LMP2, LMP3 and GT3 classes, iRatings, licences and the projected iRating
+  change, incidents on the Incidents panel, and iRacing's damage and pit
+  panels. The LMU demo is unchanged.
+
+- **The iRacing Pit panel comes up by itself in the pits.** By default it
+  stays out of the way on track and appears on pit road, in your pit box and
+  through the stop. Choose **Always shown** on its card in **Overlays** to
+  keep it up.
+
+- **New iRacing pit bindings** in **Settings → Controls**: **Show / hide
+  iRacing Pit panel** (brings it up anywhere, press again to go back to
+  automatic), each tyre on or off, and tyre pressures up or down by 1 psi,
+  all four or one at a time. The pit command bindings need **iRacing pit
+  commands (beta)** switched on in Settings; the show / hide binding does not.
+
+### Fixed
+
+- **The Track Limits / Incidents panel in OBS** no longer has a red block
+  stuck over it. The in-game overlay was not affected.
+
 ## 1.3.16-beta.6 — 2026-11-10
 
 The race engineer, lap telemetry, the pit wall and the race log come to
