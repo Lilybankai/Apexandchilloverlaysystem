@@ -42,7 +42,7 @@ export const UNKNOWN_VALUE = -1 as const;
 /* -------------------------------------------------------------------------- */
 
 /** Which producer generated a frame. */
-export type TelemetrySource = 'simulator' | 'rf2' | 'lmu';
+export type TelemetrySource = 'simulator' | 'rf2' | 'lmu' | 'iracing';
 
 /** High-level session category. */
 export type SessionType =
@@ -1470,6 +1470,25 @@ export interface StandingEntry {
    * (Linear THE-34).
    */
   teammateDriving?: boolean;
+
+  /**
+   * **iRacing only.** The driver's iRating for this car's category, from the
+   * session-info YAML (`DriverInfo.Drivers[].IRating`). Omitted for LMU/rF2 and
+   * when the sim reports 0 (AI, hosted sessions that hide it).
+   */
+  iRating?: number;
+  /**
+   * **iRacing only.** Projected iRating change if the race finished in the
+   * current order, rounded to an integer: community formula, computed per class
+   * by `telemetry/iracing/irating.ts`. Omitted outside race sessions and when
+   * the class has fewer than two rated drivers.
+   */
+  iRatingDelta?: number;
+  /**
+   * **iRacing only.** Licence + safety rating string as iRacing shows it
+   * (`"A 3.45"`), and its colour as `#rrggbb` (`LicColor`). Omitted elsewhere.
+   */
+  license?: { text: string; color?: string };
 }
 
 /**
@@ -1558,6 +1577,25 @@ export interface RelativeEntry {
   penaltyKind?: 'drive-through' | 'stop-go';
   /** `true` for the player's own row. */
   isPlayer: boolean;
+
+  /**
+   * **iRacing only.** The driver's iRating for this car's category, from the
+   * session-info YAML (`DriverInfo.Drivers[].IRating`). Omitted for LMU/rF2 and
+   * when the sim reports 0 (AI, hosted sessions that hide it).
+   */
+  iRating?: number;
+  /**
+   * **iRacing only.** Projected iRating change if the race finished in the
+   * current order, rounded to an integer: community formula, computed per class
+   * by `telemetry/iracing/irating.ts`. Omitted outside race sessions and when
+   * the class has fewer than two rated drivers.
+   */
+  iRatingDelta?: number;
+  /**
+   * **iRacing only.** Licence + safety rating string as iRacing shows it
+   * (`"A 3.45"`), and its colour as `#rrggbb` (`LicColor`). Omitted elsewhere.
+   */
+  license?: { text: string; color?: string };
 }
 
 /* -------------------------------------------------------------------------- */

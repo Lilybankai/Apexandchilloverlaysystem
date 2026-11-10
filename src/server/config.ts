@@ -46,7 +46,7 @@ export interface ServerConfig {
    * - `simulator` — always synthetic demo data.
    * {@link forceSimulator} overrides this to `simulator`.
    */
-  provider: 'lmu' | 'rf2' | 'simulator';
+  provider: 'lmu' | 'rf2' | 'iracing' | 'simulator';
   /** Localhost port of the LMU REST API (used when `provider` is `lmu`). */
   lmuApiPort: number;
   /**
@@ -204,7 +204,7 @@ function envStr(name: string, fallback: string): string {
 /** Parses the provider selector env var, falling back on any unknown value. */
 function envProvider(name: string, fallback: ServerConfig['provider']): ServerConfig['provider'] {
   const raw = (process.env[name] ?? '').trim().toLowerCase();
-  if (raw === 'lmu' || raw === 'rf2' || raw === 'simulator') return raw;
+  if (raw === 'lmu' || raw === 'rf2' || raw === 'iracing' || raw === 'simulator') return raw;
   return fallback;
 }
 
