@@ -118,6 +118,7 @@
     "test:damage": "node scripts/test-damage.js",
     "test:weather-sky": "node scripts/test-weather-sky.js",
     "test:radar": "node scripts/test-radar.js",
+    "test:iracing-mapradar": "node scripts/test-iracing-mapradar.js",
     "test:refpace": "node scripts/test-referencepace.js",
     "test:session-headline": "node scripts/test-session-headline.js",
     "test:session-clock": "node scripts/test-session-clock.js",
