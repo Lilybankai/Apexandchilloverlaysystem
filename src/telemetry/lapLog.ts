@@ -171,7 +171,7 @@ export interface LapRecord {
   id?: string;
   /** Wall-clock completion time, ISO 8601. */
   at: string;
-  /** Which sim produced it (`"lmu"`, `"rf2"`, `"simulator"`). */
+  /** Which sim produced it (`"lmu"`, `"iracing"`, `"rf2"`, `"simulator"`). */
   sim: string;
   /** Track name exactly as the sim gave it. */
   track: string;
@@ -1014,13 +1014,27 @@ export interface LapBest {
 }
 
 /**
+ * Whether a lap belongs to the sim the panel is showing.
+ *
+ * `sim` undefined means "every sim" — the callers that predate iRacing (and
+ * the tests) keep exactly what they had. A record with no `sim` is an LMU lap:
+ * every lap written before iRacing support came from the LMU provider, and the
+ * upload plan files it under `'lmu'` for the same reason (`rec.sim || 'lmu'`),
+ * as does the race log.
+ */
+export function lapInSim(rec: { sim?: string } | null | undefined, sim: string | undefined): boolean {
+  if (!sim) return true;
+  return ((rec && rec.sim) || 'lmu') === sim;
+}
+
+/**
  * Summarise the last `days` UTC days, inclusive of today.
  *
  * Seven days is the league's rolling week. It is a *rolling* window rather than
  * Monday-to-Sunday on purpose: it needs no timezone policy to be meaningful,
  * and the per-day files below support a calendar week later without a migration.
  */
-export function summarize(nowMs: number, days = 7, dir = lapDir()): LapSummary {
+export function summarize(nowMs: number, days = 7, dir = lapDir(), sim?: string): LapSummary {
   const stamps: string[] = [];
   for (let i = days - 1; i >= 0; i--) stamps.push(dayStamp(nowMs - i * 86_400_000));
 
@@ -1045,6 +1059,9 @@ export function summarize(nowMs: number, days = 7, dir = lapDir()): LapSummary {
     const day = stamps[i]!;
     const bucket = summary.byDay[i]!;
     for (const rec of readDay(day, dir)) {
+      // One sim's week at a time: the panel shows LMU's laps in LMU mode and
+      // iRacing's in iRacing mode, never a total of the two.
+      if (!lapInSim(rec, sim)) continue;
       summary.laps++;
       bucket.laps++;
       summary.distanceM += rec.distanceM || 0;

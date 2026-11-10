@@ -51,6 +51,8 @@
 
   const $ = (sel) => document.querySelector(sel);
   const dash = '—';
+  /** The sim the panel is in (`<html data-sim>`); absent means LMU. */
+  const activeSim = () => (document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu');
 
   /** What the painters print with, so the chart and the sheet cannot disagree. */
   const FMT = { fmtLap: null, dayLabel: null };
@@ -1710,12 +1712,14 @@
    */
   async function ensureBoard(session) {
     if (!session || !session.trackKey || !session.carClass) return;
-    const key = `${session.trackKey}|${session.carClass}`;
+    const sim = session.sim === 'iracing' ? 'iracing' : 'lmu';
+    const key = `${sim}|${session.trackKey}|${session.carClass}`;
     if (board.key === key && board.state !== 'idle' && board.state !== 'error') return;
     board = { key, state: 'loading', rows: [], error: '' };
     let res = null;
     try {
-      res = await window.apex.reviewBoard({ trackKey: session.trackKey, carClass: session.carClass });
+      // The session's own sim's board: each sim has its own (migration 0047).
+      res = await window.apex.reviewBoard({ trackKey: session.trackKey, carClass: session.carClass, sim });
     } catch {
       res = null;
     }
@@ -3354,9 +3358,12 @@
     const keep = currentId;
     // The races alongside, from main's cache of the results files (after the
     // first visit, a directory listing). No game call rides on it.
-    const racesRead = RL ? RL.load().catch(() => []) : Promise.resolve([]);
+    // The race log is LMU's own results files, so it has nothing to say in
+    // iRacing mode — and the sessions are the active sim's only.
+    const sim = activeSim();
+    const racesRead = RL && sim === 'lmu' ? RL.load().catch(() => []) : Promise.resolve([]);
     try {
-      const res = await window.apex.reviewSessions();
+      const res = await window.apex.reviewSessions(sim);
       summaries = (res && Array.isArray(res.sessions)) ? res.sessions : [];
       outlines = res && res.outlines && typeof res.outlines === 'object' ? res.outlines : {};
       career = (res && res.career) || null;

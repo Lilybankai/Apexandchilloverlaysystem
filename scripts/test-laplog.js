@@ -519,5 +519,35 @@ console.log('\ntrack conditions\n');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+{
+  // One sim at a time (2026-11-10): the panel asks for LMU's week in LMU mode
+  // and iRacing's in iRacing mode. A record with no sim is LMU's — every lap
+  // before iRacing support came from the LMU provider.
+  const { lapInSim } = require('../dist/telemetry/lapLog');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-laps-sim-'));
+  const now = Date.now();
+  const base = {
+    v: 7, at: new Date(now).toISOString(), track: 'Spa', trackLengthM: 7004,
+    car: 'Car', carClass: 'GT3', distanceM: 7004, sessionType: 'practice',
+    clean: true, dirty: [],
+  };
+  appendLap({ ...base, sim: 'lmu', trackKey: 'spa_7004', lapMs: 139_000 }, dir);
+  const legacy = { ...base, trackKey: 'spa_7004', lapMs: 140_000 };
+  delete legacy.sim;
+  appendLap(legacy, dir);
+  appendLap({ ...base, sim: 'iracing', trackKey: 'ir-163', lapMs: 138_000 }, dir);
+
+  const all = summarize(now, 7, dir);
+  const lmu = summarize(now, 7, dir, 'lmu');
+  const ir = summarize(now, 7, dir, 'iracing');
+  check('no sim asked for = every lap, as before', all.laps === 3, all.laps);
+  check('LMU mode counts LMU laps and sim-less ones', lmu.laps === 2, lmu.laps);
+  check('…and never an iRacing best', lmu.bests.every((b) => b.trackKey !== 'ir-163'));
+  check('iRacing mode counts only iRacing laps', ir.laps === 1 && ir.bests.length === 1 && ir.bests[0].trackKey === 'ir-163');
+  check('lapInSim: missing sim is LMU', lapInSim({}, 'lmu') && !lapInSim({}, 'iracing'));
+  check('lapInSim: no sim asked for passes everything', lapInSim({ sim: 'iracing' }, undefined));
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

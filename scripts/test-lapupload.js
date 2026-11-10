@@ -270,6 +270,37 @@ console.log('\nthe reference pace on the Discord embed (0034)\n');
     'an unrated track sends no pace, not a guess',
     paceFor({ ...best, trackName: 'Nowhere Raceway', trackLengthM: 1234 }) === null,
   );
+  // Ohne Speed's sheet is LMU's: an iRacing lap at "Spa" of the same length
+  // must never be graded against it, even though every other input matches.
+  check('an LMU best (explicit sim) still carries a pace', !!paceFor({ ...best, sim: 'lmu' }));
+  check('an iRacing best at the same circuit carries none', paceFor({ ...best, sim: 'iracing' }) === null);
+}
+
+console.log('\niRacing laps upload to their own boards (0047)\n');
+
+{
+  // The iRacing provider writes sim 'iracing' and the track key ir-<TrackID>;
+  // the plan must carry both through untouched so submit_lap resolves an
+  // iRacing tracks row (never LMU's Spa) named after the sim's display name.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-laps-ir-'));
+  const at = new Date().toISOString();
+  const base = {
+    v: 7, at, track: 'Circuit de Spa-Francorchamps', trackLengthM: 7004,
+    car: 'Porsche 911 GT3 R (992)', carClass: 'GT3', distanceM: 7004,
+    sessionType: 'practice', clean: true, dirty: [], condition: 'dry', wetness: 0,
+  };
+  appendLap({ ...base, id: 'l', sim: 'lmu', trackKey: 'circuit-de-spa-francorchamps_7004', lapMs: 139_000 }, dir);
+  appendLap({ ...base, id: 'i', sim: 'iracing', trackKey: 'ir-163', track: 'Circuit de Spa-Francorchamps · Grand Prix Pits', lapMs: 138_500 }, dir);
+  const plan = buildUploadPlan(dir);
+  const ir = plan.bests.find((b) => b.sim === 'iracing');
+  const lmu = plan.bests.find((b) => b.sim === 'lmu');
+  check('two bests, one per sim — never merged', plan.bests.length === 2, plan.bests.length);
+  check('the iRacing best keeps its ir-<TrackID> key', ir && ir.trackKey === 'ir-163', ir && ir.trackKey);
+  check('…and the display name the board will show', ir && ir.trackName === 'Circuit de Spa-Francorchamps · Grand Prix Pits');
+  check('the LMU best is untouched', lmu && lmu.trackKey === 'circuit-de-spa-francorchamps_7004' && lmu.lapMs === 139_000);
+  check('the sync keys are sim-scoped', bestKey(ir).startsWith('iracing|') && bestKey(lmu).startsWith('lmu|'));
+  check('the iRacing activity row is filed under iracing too', plan.activity.some((a) => a.sim === 'iracing' && a.trackKey === 'ir-163'));
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 /*

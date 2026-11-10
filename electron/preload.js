@@ -235,8 +235,10 @@ contextBridge.exposeInMainWorld('apex', {
    *
    * Local-only for now — no account needed and no network involved, so it works
    * offline and before the driver has ever signed in.
+   *
+   * `sim` (`'lmu'` | `'iracing'`, default LMU) counts that sim's laps only.
    */
-  lapsWeek: () => ipcRenderer.invoke('laps:week'),
+  lapsWeek: (sim) => ipcRenderer.invoke('laps:week', sim),
 
   /**
    * Your best clean laps scored against the class reference:
@@ -244,8 +246,11 @@ contextBridge.exposeInMainWorld('apex', {
    *
    * `credit` is Ohne Speed's attribution for the reference times, and it comes
    * down with the data on purpose — the panel cannot show a score without it.
+   *
+   * `sim` defaults to LMU; any other sim answers with no rows, because the
+   * reference times are LMU's.
    */
-  lapsPace: () => ipcRenderer.invoke('laps:pace'),
+  lapsPace: (sim) => ipcRenderer.invoke('laps:pace', sim),
 
   /**
    * Score laps the renderer already holds: `[{ track, trackLengthM, carClass,
@@ -254,7 +259,8 @@ contextBridge.exposeInMainWorld('apex', {
    *
    * For the two lists `lapsPace()` cannot answer for — the Dashboard's laps
    * from THIS WEEK (it reads all-time bests) and another driver's lap clicked
-   * on a league board (not a local lap at all).
+   * on a league board (not a local lap at all). A lap carrying a `sim` other
+   * than LMU comes back unscored (`reason: 'other-sim'`).
    */
   lapsScore: (laps) => ipcRenderer.invoke('laps:score', laps),
 
@@ -318,10 +324,16 @@ contextBridge.exposeInMainWorld('apex', {
    * That is a state, not an error: laps keep recording either way.
    */
 
-  /** Track/class/car combinations that have laps: `{ ok, rows[], error? }`. */
-  leaderboardFilters: () => ipcRenderer.invoke('leaderboard:filters'),
+  /**
+   * Track/class/car combinations that have laps: `{ ok, rows[], error? }`.
+   * `sim` is `'lmu'` (the default) or `'iracing'` — each sim has its own boards.
+   */
+  leaderboardFilters: (sim) => ipcRenderer.invoke('leaderboard:filters', sim),
 
-  /** One ranked board: `{ trackId, carClass, car }` → `{ ok, rows[], error? }`. */
+  /**
+   * One ranked board: `{ trackId, carClass, car, condition, sim? }` →
+   * `{ ok, rows[], error? }`. `sim` defaults to LMU.
+   */
   leaderboardRows: (query) => ipcRenderer.invoke('leaderboard:rows', query),
 
   /** Where the uploader has got to: `{ status, lastOkAt, pending, sent, error }`. */
@@ -342,9 +354,10 @@ contextBridge.exposeInMainWorld('apex', {
    *
    * Summaries only, plus the driver's whole-history totals — both out of one
    * read of the log, so the strip across the top of the tab can never disagree
-   * with the list underneath it.
+   * with the list underneath it. `sim` (default LMU) lists that sim's
+   * sessions only.
    */
-  reviewSessions: () => ipcRenderer.invoke('review:sessions'),
+  reviewSessions: (sim) => ipcRenderer.invoke('review:sessions', sim),
 
   /** One session in full — stints, laps and its trend line: `{ ok, session }`. */
   reviewSession: (id) => ipcRenderer.invoke('review:session', id),
@@ -373,7 +386,7 @@ contextBridge.exposeInMainWorld('apex', {
   reviewLap: (req) => ipcRenderer.invoke('review:lap', req),
 
   /**
-   * The league board a lap belongs on: `{ trackKey, carClass }` →
+   * The league board a lap belongs on: `{ trackKey, carClass, sim? }` →
    * `{ ok, rows[], signedOut?, error? }`. Rows are the leaderboard's, plus
    * `track_id`, `has_trace` and `has_line`. Empty when the league has never
    * seen the circuit.
@@ -381,7 +394,7 @@ contextBridge.exposeInMainWorld('apex', {
   reviewBoard: (req) => ipcRenderer.invoke('review:board', req),
 
   /**
-   * Your own quickest clean, traced lap for a board row: `{ trackId, carClass }`
+   * Your own quickest clean, traced lap for a board row: `{ trackId, carClass, sim? }`
    * → `{ ok, lap: { sessionId, id, at, lapNo, lapMs } | null }`. What the
    * Leaderboard tab opens in Review when a row is compared against.
    */

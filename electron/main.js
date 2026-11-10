@@ -3897,6 +3897,18 @@ function trainingStatusForUi() {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The sim a board or lap-list request is about, from the renderer.
+ *
+ * A whitelist rather than a pass-through: the league's boards exist for LMU and
+ * iRacing only (migration 0047), and anything else — absent, misspelt, a value
+ * from a newer renderer — is LMU, which is what every call meant before iRacing
+ * support and what an installed client still sends.
+ */
+function boardSim(value) {
+  return value === 'iracing' ? 'iracing' : 'lmu';
+}
+
+/**
  * Score one lap against the reference table and shape it for the renderer.
  *
  * Extracted because three surfaces now score laps — the Leaderboard's own-bests
@@ -4508,10 +4520,11 @@ function registerIpc() {
    * an unbuilt or broken `dist/` must degrade this card to zeroes rather than
    * take down the whole panel, which is the one screen that can start the server.
    */
-  ipcMain.handle('laps:week', () => {
+  ipcMain.handle('laps:week', (_evt, sim) => {
     try {
       const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
-      return lapLog.summarize(Date.now(), 7);
+      // The active sim's week only: LMU laps in LMU mode, iRacing's in iRacing.
+      return lapLog.summarize(Date.now(), 7, undefined, boardSim(sim));
     } catch (err) {
       console.error('[app] lap summary unavailable:', err.message);
       return { days: [], laps: 0, cleanLaps: 0, distanceM: 0, drivingMs: 0, tracks: 0, bests: [] };
@@ -4532,7 +4545,11 @@ function registerIpc() {
    * renderer, so the panel physically cannot render a score without having
    * Ohne Speed's credit to hand.
    */
-  ipcMain.handle('laps:pace', () => {
+  ipcMain.handle('laps:pace', (_evt, sim) => {
+    // Ohne Speed's sheet is LMU lap times at LMU layouts. An iRacing Monza of a
+    // similar length would score against LMU's Monza and look authoritative,
+    // so outside LMU there is no pace card at all rather than a wrong one.
+    if (boardSim(sim) !== 'lmu') return { rows: [], best: null, credit: null, sheetUpdated: '' };
     try {
       const lapLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'lapLog.js'));
       const ref = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
@@ -4545,7 +4562,7 @@ function registerIpc() {
       // wet bests are not lost; they are on their own boards, where the only
       // thing they are compared with is other wet laps.
       const rows = plan.bests
-        .filter((best) => (best.condition || 'dry') === 'dry')
+        .filter((best) => (best.condition || 'dry') === 'dry' && (best.sim || 'lmu') === 'lmu')
         .map((best) =>
           paceRowFor(ref, {
             track: best.trackName,
@@ -4594,15 +4611,19 @@ function registerIpc() {
     try {
       const ref = require(path.join(__dirname, '..', 'dist', 'telemetry', 'referencePace.js'));
       return laps.slice(0, 250).map((lap) =>
-        paceRowFor(ref, {
-          track: String((lap && lap.track) || ''),
-          trackConfig: lap && lap.trackConfig ? String(lap.trackConfig) : undefined,
-          simTrackName: lap && lap.simTrackName ? String(lap.simTrackName) : undefined,
-          trackLengthM: Number((lap && lap.trackLengthM) || 0),
-          carClass: String((lap && lap.carClass) || ''),
-          car: String((lap && lap.car) || ''),
-          lapMs: Number((lap && lap.lapMs) || 0),
-        }),
+        // LMU laps only: the reference times are LMU's (see `laps:pace`). A lap
+        // that says it came from another sim is refused, not guessed at.
+        lap && lap.sim && boardSim(lap.sim) !== 'lmu'
+          ? { ok: false, reason: 'other-sim', detail: 'Reference pace covers LMU laps only.' }
+          : paceRowFor(ref, {
+              track: String((lap && lap.track) || ''),
+              trackConfig: lap && lap.trackConfig ? String(lap.trackConfig) : undefined,
+              simTrackName: lap && lap.simTrackName ? String(lap.simTrackName) : undefined,
+              trackLengthM: Number((lap && lap.trackLengthM) || 0),
+              carClass: String((lap && lap.carClass) || ''),
+              car: String((lap && lap.car) || ''),
+              lapMs: Number((lap && lap.lapMs) || 0),
+            }),
       );
     } catch (err) {
       // Same degradation as the pace card: an unbuilt `dist/` costs the scores,
@@ -4934,8 +4955,10 @@ function registerIpc() {
    */
 
   /** Track/class/car combinations that actually have laps on them. */
-  ipcMain.handle('leaderboard:filters', async () => {
-    const res = await authService.rpc('leaderboard_filters', { p_sim: 'lmu' });
+  ipcMain.handle('leaderboard:filters', async (_evt, sim) => {
+    // Per sim: each sim has its own tracks rows (tracks is unique on sim+slug),
+    // so the iRacing tab and the LMU tab never offer each other's circuits.
+    const res = await authService.rpc('leaderboard_filters', { p_sim: boardSim(sim) });
     if (!res.ok) {
       return {
         ok: false,
@@ -4961,7 +4984,7 @@ function registerIpc() {
   ipcMain.handle('leaderboard:rows', async (_evt, query) => {
     const q = query || {};
     const res = await authService.rpc('leaderboard', {
-      p_sim: 'lmu',
+      p_sim: boardSim(q.sim),
       p_track_id: q.trackId || null,
       p_car_class: q.carClass || null,
       p_car: q.car || null,
@@ -5123,13 +5146,14 @@ function registerIpc() {
   // The AI driving coach: practice:coach / coachAi / coachLap, review:coach, coach:ai.
   coachIpcApi = require('./coach-ipc').register(ipcMain, { authService, reviewDir: practiceReviewsDir, targetOpts: practiceTargetOpts, userDataDir: () => app.getPath('userData'), practiceAllowed: () => practiceOnThisChannel(loadSettings()) });
 
-  ipcMain.handle('review:sessions', () => {
+  ipcMain.handle('review:sessions', (_evt, sim) => {
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
       // Both out of ONE read of the log: the career totals are a fold over the
       // same records the sessions are grouped from, so asking separately would
-      // read every lap file twice to answer one screen.
-      const { sessions, ...rest } = review.listSessionsWithCareer();
+      // read every lap file twice to answer one screen. The active sim's laps
+      // only — iRacing sessions never list in LMU mode, nor the reverse.
+      const { sessions, ...rest } = review.listSessionsWithCareer(undefined, undefined, boardSim(sim));
       // Each session's circuit outline, as the Race log's cards have them.
       return { ok: true, ...rest, ...racelogOutlines.decorateSessions(sessions) };
     } catch (err) {
@@ -5285,7 +5309,9 @@ function registerIpc() {
     const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
     if (!trackKey || !carClass) return { ok: false, rows: [], error: 'no lap' };
     const res = await authService.rpc('board_for_lap', {
-      p_sim: 'lmu',
+      // The lap's own sim: its trackKey only means something in that sim's
+      // alias table. A lap written before iRacing support has none — LMU.
+      p_sim: boardSim(req.sim),
       p_track_key: trackKey,
       p_car_class: carClass,
       p_limit: 200,
@@ -5336,7 +5362,8 @@ function registerIpc() {
     const trackId = req && typeof req.trackId === 'string' ? req.trackId : '';
     const carClass = req && typeof req.carClass === 'string' ? req.carClass : '';
     if (!trackId || !carClass) return { ok: false, lap: null, error: 'no board row' };
-    const res = await authService.rpc('track_keys', { p_sim: 'lmu', p_track_id: trackId });
+    const sim = boardSim(req.sim);
+    const res = await authService.rpc('track_keys', { p_sim: sim, p_track_id: trackId });
     if (!res.ok) {
       return {
         ok: false,
@@ -5348,7 +5375,9 @@ function registerIpc() {
     const keys = Array.isArray(res.body) ? res.body.filter((k) => typeof k === 'string') : [];
     try {
       const review = require(path.join(__dirname, '..', 'dist', 'telemetry', 'stintReview.js'));
-      return { ok: true, lap: review.bestTracedLap(keys, carClass) };
+      // Searched in the board's sim only. The keys are already disjoint (iRacing's
+      // are `ir-<TrackID>`), so this is belt and braces, not the separation.
+      return { ok: true, lap: review.bestTracedLap(keys, carClass, undefined, sim) };
     } catch (err) {
       console.error('[app] best lap lookup unavailable:', err.message);
       return { ok: false, lap: null, error: err.message };
