@@ -473,6 +473,8 @@ export interface TraceFile {
   s1Ms?: number;
   s2Ms?: number;
   s3Ms?: number;
+  /** Every sector split, ms, on a circuit that is not three sectors — `LapRecord.sectorsMs`. */
+  sectorsMs?: number[];
   trace: CompletedTrace;
 }
 

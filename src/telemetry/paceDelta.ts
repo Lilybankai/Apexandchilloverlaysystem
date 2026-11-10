@@ -649,6 +649,27 @@ export class LocalPaceDeltaTracker {
   }
 
   /**
+   * Forget the lap in progress — but not the reference laps — because the
+   * caller saw something this engine cannot: the car was teleported (a tow, a
+   * reset to the pits) or stopped being driven. A teleport across the line
+   * looks exactly like a crossing here, so without this a lap that ended in a
+   * tow from the last corner could be timed short and adopted as a best. The
+   * next real line crossing starts a lap again, exactly as after start-up.
+   * (Used by the iRacing provider; LMU never calls it.)
+   */
+  public abandonLap(): void {
+    this.prevD = -1;
+    this.prevElapsed = -1;
+    this.lapStartElapsed = -1;
+    this.fromLine = false;
+    this.samples = [];
+    this.resetFilters();
+    this.lastOut = EMPTY_PACE_DELTAS;
+    this.lastAt = null;
+    this.startLapValidity();
+  }
+
+  /**
    * Where this engine's clock and road position stand, at full precision, or
    * `null` before a start/finish crossing has been seen.
    *

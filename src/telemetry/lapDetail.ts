@@ -132,9 +132,21 @@ export interface LapDetailResult {
  * `referencePace.ts` documents, and not one this function can fix.
  */
 export function mapKeyForLap(
-  lap: Pick<LapRecord, 'track' | 'trackConfig' | 'trackLengthM'>,
+  lap: Pick<LapRecord, 'track' | 'trackConfig' | 'trackLengthM'> & { sim?: string },
 ): string {
-  return trackKey(lap.track || '', lap.trackConfig, Number(lap.trackLengthM) || 0);
+  const len = Number(lap.trackLengthM) || 0;
+  if (lap.sim === 'iracing') {
+    // The iRacing provider learns its map under `iracing-<display name>` plus
+    // the layout (so it can never collide with an LMU circuit of the same
+    // name), while the lap's `track` is `<display name> - <layout>`. Rebuild
+    // the map's own key from those parts.
+    const cfg = lap.trackConfig || '';
+    const name = lap.track || '';
+    const suffix = cfg ? ` - ${cfg}` : '';
+    const venue = suffix && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
+    return trackKey(`iracing-${venue}`, cfg || undefined, len);
+  }
+  return trackKey(lap.track || '', lap.trackConfig, len);
 }
 
 /**
