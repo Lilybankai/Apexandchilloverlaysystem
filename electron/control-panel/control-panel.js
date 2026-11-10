@@ -2774,7 +2774,8 @@
    * Absent means LMU: every install before iRacing support, and the default.
    */
   function activeSim() {
-    return document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
+    const root = document.documentElement;
+    return root && root.dataset && root.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
   }
 
   /** Each sim's leaderboard tab. One is hidden at a time (`data-sims`). */
@@ -7307,7 +7308,7 @@
   // When the sim changes, the lap views follow it: the Dashboard's week and
   // pace are re-read for the new sim, and a Leaderboard tab that is open moves
   // to the new sim's board rather than staying on one the rail just hid.
-  if (typeof MutationObserver === 'function') {
+  if (typeof MutationObserver === 'function' && document.documentElement) {
     let shownSim = activeSim();
     new MutationObserver(() => {
       const sim = activeSim();

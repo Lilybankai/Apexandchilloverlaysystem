@@ -52,7 +52,10 @@
   const $ = (sel) => document.querySelector(sel);
   const dash = '—';
   /** The sim the panel is in (`<html data-sim>`); absent means LMU. */
-  const activeSim = () => (document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu');
+  const activeSim = () => {
+    const root = document.documentElement;
+    return root && root.dataset && root.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
+  };
 
   /** What the painters print with, so the chart and the sheet cannot disagree. */
   const FMT = { fmtLap: null, dayLabel: null };
