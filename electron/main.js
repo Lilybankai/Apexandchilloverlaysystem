@@ -215,7 +215,9 @@ const OVERLAY_CATALOG = [
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
-  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)", sims: ['lmu'] },
+  // iRacing publishes no per-component damage: there the panel carries its repair
+  // flags, meatball, fast repairs, tow clock and the live pit service instead.
+  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU); repairs needed, fast repairs, tow and pit service (iRacing)" },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
   {
     id: 'trackmap',
@@ -232,8 +234,7 @@ const OVERLAY_CATALOG = [
   {
     id: 'racecontrol',
     label: 'Race Control',
-    description: 'Start lights, green flag, sector yellows, and the pit-limiter prompts (LMU only)',
-    sims: ['lmu'],
+    description: 'Start lights, green flag, yellows, blue / black / meatball flags, and the pit-limiter prompts',
   },
   // A clickable control page, not a HUD graphic: it belongs in a browser tab
   // (or an OBS source as a readout), never the locked, click-through in-game

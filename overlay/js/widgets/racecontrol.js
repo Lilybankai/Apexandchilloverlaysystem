@@ -227,6 +227,9 @@
     var s = frame.session || {};
     var player = frame.player || {};
     var pit = player.pit || {};
+    // The flags bit by bit, where the sim publishes them that way (iRacing,
+    // `player.flags`). Absent on LMU, which keeps every branch below as it was.
+    var fl = player.flags || null;
     var phase = s.phase;
     var lights = s.startLights;
     var now = Date.now();
@@ -296,7 +299,31 @@
       state = "checkered";
       msg = "CHEQUERED FLAG";
       sub = finishedLine(frame, player, ctx);
-    } else if (s.finalLap === true) {
+    } else if (fl && fl.disqualified) {
+      state = "black";
+      msg = "DISQUALIFIED";
+      sub = "BLACK FLAG — RETURN TO THE PITS";
+    } else if (fl && fl.black) {
+      // iRacing's black flag: a penalty to serve in the pit lane. The sim does
+      // not publish which one, so the banner names the flag, not a reason.
+      state = "black";
+      msg = "BLACK FLAG";
+      sub = "SERVE YOUR PENALTY IN THE PIT LANE";
+    } else if (fl && fl.meatball) {
+      state = "meatball";
+      msg = "MEATBALL FLAG";
+      sub = "MANDATORY REPAIR — PIT NOW";
+    } else if (fl && fl.furled) {
+      state = "black";
+      msg = "BLACK FLAG WARNING";
+      sub = "WARNING FROM RACE CONTROL";
+    } else if (fl && fl.checkered && player.finished !== true) {
+      // iRacing: the chequered bit is out and we are still running — this lap
+      // is the last, whatever `session.finalLap` is mapped to.
+      state = "finallap";
+      msg = "FINAL LAP";
+      sub = "CHEQUERED FLAG IS OUT";
+    } else if (!fl && s.finalLap === true) {
       // The chequered flag is OUT and we are still running — whatever lap we
       // are on is the last one. Not `phase === "checkered"`, which LMU only
       // reaches when the LEADER crosses: in the race this was probed against,
@@ -306,7 +333,9 @@
       state = "finallap";
       msg = "FINAL LAP";
       sub = "CHEQUERED FLAG IS OUT";
-    } else if (s.flag === "yellow" && phase !== "formation") {
+    } else if (fl ? fl.caution : s.flag === "yellow" && phase !== "formation") {
+      // With bits, only a real caution is full-course: iRacing's yellow bit is
+      // a LOCAL yellow and gets its own, quieter banner below.
       // The FCY channel. Sector yellows have their own rail; this banner is
       // for the whole circuit being under caution.
       state = "fcy";
@@ -363,6 +392,22 @@
       // half the field before turn one of an out-lap.
       state = "limiter";
       msg = "LIMITER ON";
+    } else if (fl && fl.localYellow) {
+      state = "yellow";
+      msg = "YELLOW FLAG";
+      sub = "LOCAL — NO OVERTAKING";
+    } else if (fl && fl.blue) {
+      state = "blue";
+      msg = "BLUE FLAG";
+      sub = "LET THE FASTER CAR BY";
+    } else if (fl && fl.white) {
+      state = "finallap";
+      msg = "WHITE FLAG";
+      sub = "LAST LAP";
+    } else if (fl && fl.debris) {
+      state = "yellow";
+      msg = "DEBRIS";
+      sub = "DEBRIS ON TRACK";
     } else if (cancelUntil > now) {
       // Ranked under the limiter warning on purpose: four seconds of
       // confirmation must never sit over "you are driving at 60".
