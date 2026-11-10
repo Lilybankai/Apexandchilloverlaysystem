@@ -80,6 +80,9 @@ import { iRatingDeltasByClass, type IRatingEntry } from './irating';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { TrackMapBuilder } from '../trackMap';
+import { writeTrace, type TraceFile } from '../lapTrace';
+import { refKeyOf } from '../paceDelta';
+import { IracingLapCapture, sectorBoundaries, sectorOf } from './irLapTrace';
 
 /* -------------------------------------------------------------------------- */
 /*  Constants and enums                                                       */
@@ -327,6 +330,17 @@ export interface IRacingProviderOptions {
    * `null` disables lap logging.
    */
   lapSink?: ((rec: LapRecord) => void) | null;
+  /**
+   * Where each lap's driving trace goes. Defaults to {@link writeTrace} (the
+   * local trace store) when `lapSink` is defaulted too, else `null` — a test
+   * that captures laps must not write traces into the driver's home.
+   */
+  traceSink?: ((file: TraceFile) => void) | null;
+  /**
+   * Persist the pace delta's all-time best under `~/.apex-overlay/pb`.
+   * Defaults to on only when `lapSink` is defaulted, for the same reason.
+   */
+  persistReferences?: boolean;
 }
 
 /** One standings row plus the raw readings the later blocks need. */
@@ -356,6 +370,10 @@ export class IRacingProvider implements TelemetryProvider {
   private readonly pitStops = new PitStopCounter();
   private readonly lapRecorder = new LapRecorder();
   private readonly lapSink: ((rec: LapRecord) => void) | null;
+  private readonly traceSink: ((file: TraceFile) => void) | null;
+  private readonly persistRefs: boolean;
+  /** Lap traces, the pace-delta lap clock and sector splits; see irLapTrace.ts. */
+  private readonly capture = new IracingLapCapture();
   private readonly verbose: boolean;
   private live = false;
   private wasConnected = false;
@@ -409,6 +427,9 @@ export class IRacingProvider implements TelemetryProvider {
     this.verbose = config.verbose;
     this.source = opts.source ?? new LiveIrsdkSource();
     this.lapSink = opts.lapSink === undefined ? appendLap : opts.lapSink;
+    const live = opts.lapSink === undefined;
+    this.traceSink = opts.traceSink === undefined ? (live ? writeTrace : null) : opts.traceSink;
+    this.persistRefs = opts.persistReferences ?? live;
   }
 
   public start(): void {
@@ -676,6 +697,7 @@ export class IRacingProvider implements TelemetryProvider {
 
   private resetSession(key: string): void {
     this.sessionKey = key;
+    this.capture.resetSession();
     this.integrator.reset();
     this.integratorRev = -1;
     this.prevSessionTime = NaN;
@@ -1022,6 +1044,49 @@ export class IRacingProvider implements TelemetryProvider {
     const delta = f.num('LapDeltaToBestLap');
     const finish = this.finishLatch.get(focusIdx);
 
+    /* --- lap trace + pace deltas (the car driven on this PC) -------------- */
+    const paceDeltas = this.capture.update({
+      wallMs: nowMs,
+      sessionTime: or(f.num('SessionTime'), NaN),
+      pct: or(ownPct, -1),
+      driving:
+        ownIsFocus && isOnTrack && !replay && !f.bool('IsReplayPlaying') && playerSurface !== TRK.NotInWorld &&
+        or(f.num('PlayerCarTowTime'), 0) === 0,
+      trackLengthM,
+      // Keyed by iRacing's TrackID (one per layout), never the display name, so
+      // an iRacing PB can never share a file with an LMU one of the same car.
+      refKey:
+        this.persistRefs && ownDriver
+          ? refKeyOf(`ir-${info.trackId}`, trackLengthM, ownDriver.carScreenName, ownDriver.carClassShortName)
+          : '',
+      bestLapSec: or(best, -1),
+      inPit: onPitRoad || inStall || playerSurface === TRK.InPitStall,
+      surface: playerSurface,
+      incidents: f.num('PlayerCarMyIncidentCount'),
+      speedMps: or(speed, 0),
+      velX: f.num('VelocityX'),
+      velY: f.num('VelocityY'),
+      yaw: f.num('Yaw'),
+      channels: {
+        throttle: pedals.throttle,
+        brake: pedals.brake,
+        steer: pedals.steer,
+        gear: or(f.num('Gear'), 0),
+        speedKph: fin(speed) ? Math.abs(speed) * 3.6 : 0,
+        latG: motion ? motion.latG : 0,
+        lonG: motion ? motion.lonG : 0,
+        tc: 0,
+        abs: pedals.abs ?? 0,
+        ...(pedals.steerRangeDeg ? { steerRangeDeg: pedals.steerRangeDeg } : {}),
+      },
+    });
+    // Sector in progress — only where iRacing's sectors ARE the contract's
+    // three; a fourth sector has no honest 1..3 number.
+    const sectorNow =
+      ownIsFocus && sectorBoundaries(info.sectorStartPcts).length === 2
+        ? sectorOf(or(ownPct, -1), info.sectorStartPcts)
+        : UNKNOWN_VALUE;
+
     /* --- lap log --------------------------------------------------------- */
     if (ownIsFocus && isOnTrack && !replay && ownDriver) {
       this.recordLap(f, info, ownDriver, sessionType, trackName, fuelLevel, capacity, tyres, wetness, precip, trackTemp, airTemp, onPitRoad, inStall, playerSurface, nowMs);
@@ -1105,8 +1170,16 @@ export class IRacingProvider implements TelemetryProvider {
               current: fin(cur) && cur > 0 ? round3(cur) : UNKNOWN_VALUE,
               last: posOrUnknown(lastLap),
               best: posOrUnknown(best),
-              delta: f.bool('LapDeltaToBestLap_OK') && fin(delta) ? round3(delta) : UNKNOWN_VALUE,
-              sector: UNKNOWN_VALUE,
+              // iRacing's own delta to best while it is valid; the pace engine's
+              // session-best Delta T otherwise, so the bar is never blank on a
+              // lap the engine can judge.
+              delta:
+                f.bool('LapDeltaToBestLap_OK') && fin(delta)
+                  ? round3(delta)
+                  : paceDeltas && paceDeltas.tSession !== UNKNOWN_VALUE
+                    ? round3(paceDeltas.tSession)
+                    : UNKNOWN_VALUE,
+              sector: sectorNow,
             }
           : {
               current: UNKNOWN_VALUE,
@@ -1116,6 +1189,7 @@ export class IRacingProvider implements TelemetryProvider {
               sector: UNKNOWN_VALUE,
             },
         tyres,
+        ...(paceDeltas ? { paceDeltas } : {}),
         finished: finish !== undefined,
         ...(finish ? { finishPosition: finish.pos } : {}),
         ...(finish && finish.cls !== undefined ? { finishClassPosition: finish.cls } : {}),
@@ -1409,8 +1483,13 @@ export class IRacingProvider implements TelemetryProvider {
     // A stretch we never saw whole AND the sim never timed (pit exit or grid to
     // the first line crossing) is not a lap in any sense worth a record.
     if (rec && !(rec.lapMs <= 0 && rec.dirty.includes('partial'))) {
+      // Pair it with its trace first: the record gains its measured sector
+      // splits, and the trace file is written under the record's id, with the
+      // record's lap time — the exact `lap_ms` the board compares against.
+      const { record, file } = this.capture.attach(rec, this.trackMap.path, info.sectorStartPcts);
       try {
-        this.lapSink(rec);
+        this.lapSink(record);
+        if (file && this.traceSink) this.traceSink(file);
       } catch {
         /* a lap that cannot be written must not take the frame down */
       }
