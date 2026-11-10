@@ -46,7 +46,8 @@
    * a driver sitting next to you with the tab open.
    */
   /** iRacing mode (`<html data-sim>`): the launch step and the game's name differ, and the MFD is LMU's. */
-  const IR = document.documentElement.dataset.sim === 'iracing';
+  const IR = typeof document !== 'undefined' && !!document.documentElement
+    && document.documentElement.dataset.sim === 'iracing';
   const GAME = IR ? 'iRacing' : 'LMU';
 
   const ALL_STEPS = [
