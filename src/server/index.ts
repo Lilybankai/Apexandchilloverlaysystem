@@ -27,6 +27,7 @@ import { StreamBot, insertYouTubeChatMessage, type StreamBotConfig } from './str
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
+import { IRacingProvider } from '../telemetry/iracing/iracingProvider';
 import { LmuRestProvider, type LapAtLine } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
@@ -77,6 +78,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
  *   and falling back to the simulator when the game/API is not up.
  * - `rf2` — {@link RF2Provider}, reading rF2/LMU shared memory (physics for the
  *   locally-driven car), also falling back to the simulator.
+ * - `iracing` — {@link IRacingProvider}, reading iRacing's SDK shared memory,
+ *   also falling back to the simulator.
  * - `simulator` — always synthetic demo data.
  *
  * Every provider degrades to the simulator internally, so the server always has
@@ -88,6 +91,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 export function selectProvider(config: ServerConfig): TelemetryProvider {
   if (config.forceSimulator || config.provider === 'simulator') return new SimulatorProvider();
   if (config.provider === 'rf2') return new RF2Provider(config);
+  if (config.provider === 'iracing') return new IRacingProvider(config);
   return new LmuRestProvider(config);
 }
 
@@ -1058,7 +1062,8 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // Those rows read LMU's keyboard.json, which is found via Steam's registry
   // entry. Ask for it now, off the thread, so the first rebuild never spawns
   // reg.exe on the main thread itself — see steamRootsFromRegistry.
-  void primeSteamRoots();
+  // LMU-only, so not under iRacing: there are no LMU keybinds to find.
+  if (config.provider !== 'iracing') void primeSteamRoots();
 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.
@@ -1199,7 +1204,9 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   // "no delta / no radar" tester reports. Runs after the bind so a failed port
   // never leaks the retry timer; keeps retrying while the game is up, because
   // LMU only reads its plugin list at launch and rewrites config on exit.
-  const cancelPluginInstall = ensureSharedMemoryPluginOnStartup();
+  // The plugin is an LMU/rF2 concern; iRacing publishes its own shared memory.
+  const cancelPluginInstall =
+    config.provider === 'iracing' ? (): void => undefined : ensureSharedMemoryPluginOnStartup();
 
   // The race log's live recorder (docs/RACE-LOG-PLAN.md phase 2). Here, beside
   // the provider, so a race is written down whether or not the engineer or any
