@@ -72,7 +72,7 @@ const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
-const { normalizeVr, mergeVr } = require('./vr/placement');
+const { normalizeVr, mergeVr, vrForSim } = require('./vr/placement');
 /**
  * Never let Windows' occlusion tracking decide the in-game layer is hidden.
  *
@@ -2917,7 +2917,12 @@ function syncVr(settings) {
   vrOverlay.sync({
     enabled: status.running && s.vr.enabled && vrOnThisChannel(s),
     baseUrl: baseUrl(),
-    vr: s.vr,
+    // Only the widgets this sim offers (the catalog's `sims`): an MFD switched
+    // on in LMU must not float in an iRacing headset.
+    vr: vrForSim(s.vr, (id) => {
+      const o = OVERLAY_CATALOG.find((c) => c.id === id);
+      return !o || overlayOnThisChannel(s, o);
+    }),
   });
   // Same rule as the desktop layer, including auto show/hide on the sim's
   // menus: a panel floating in the garage is as unwanted in VR as on screen.

@@ -45,7 +45,11 @@
    * the sentence that would do on its own; the points are what you would tell
    * a driver sitting next to you with the tab open.
    */
-  const STEPS = [
+  /** iRacing mode (`<html data-sim>`): the launch step and the game's name differ, and the MFD is LMU's. */
+  const IR = document.documentElement.dataset.sim === 'iracing';
+  const GAME = IR ? 'iRacing' : 'LMU';
+
+  const ALL_STEPS = [
     {
       id: 'what',
       icon: 'vr-headset',
@@ -53,7 +57,7 @@
       lead: 'This tab puts your widgets on panels in VR — the speedo, the relative, standings, fuel and the rest — each one fixed in the cockpit exactly where you put it.',
       points: [
         'Every widget is its own panel. Put the relative by the left mirror and the speedo under the dash; each stays where it is while you look around.',
-        'The panels are drawn by SteamVR from outside the game, the same way fpsVR draws its panels. Nothing is injected into Le Mans Ultimate, so anti-cheat has nothing to see.',
+        `The panels are drawn by SteamVR from outside the game, the same way fpsVR draws its panels. Nothing is injected into ${IR ? 'iRacing' : 'Le Mans Ultimate'}, so anti-cheat has nothing to see.`,
         'It is a beta. It should work with any headset that runs through SteamVR. So far it has been tested on a PSVR2.',
       ],
     },
@@ -64,9 +68,11 @@
       lead: 'Three things have to be true, and none of them are on this page.',
       points: [
         'SteamVR is installed. It is free on Steam. If it is missing, the line under the switch says so.',
-        'Le Mans Ultimate is started with the SteamVR launch option. When you press Play in Steam, pick the SteamVR option. Started any other way, LMU runs through a different VR runtime and no SteamVR panel can appear, however the settings here are set.',
+        IR
+          ? 'iRacing runs in VR through SteamVR: OpenVR, or OpenXR with SteamVR set as the OpenXR runtime. Started on the Oculus runtime, or OpenXR on another runtime, no SteamVR panel can appear, however the settings here are set.'
+          : 'Le Mans Ultimate is started with the SteamVR launch option. When you press Play in Steam, pick the SteamVR option. Started any other way, LMU runs through a different VR runtime and no SteamVR panel can appear, however the settings here are set.',
         'Apex is running, with the server started. The panels come from this app, so they go when it closes.',
-        'Quest over Link or Virtual Desktop: the same rule applies, and it matters more. Both use their own VR runtime by default, so LMU has to be launched with the SteamVR option or the panels will not show.',
+        `Quest over Link or Virtual Desktop: the same rule applies, and it matters more. Both use their own VR runtime by default, so ${IR ? 'iRacing has to run on SteamVR' : 'LMU has to be launched with the SteamVR option'} or the panels will not show.`,
       ],
     },
     {
@@ -75,7 +81,7 @@
       title: 'Switch it on',
       lead: 'Turn on Show in VR headset. The line under the switch tells you what is happening from then on.',
       points: [
-        '“Waiting for SteamVR” means Apex is ready and SteamVR is not running yet. Start LMU in VR and the panels appear on their own. Apex never starts SteamVR for you.',
+        `“Waiting for SteamVR” means Apex is ready and SteamVR is not running yet. Start ${GAME} in VR and the panels appear on their own. Apex never starts SteamVR for you.`,
         '“In your headset” means the panels are up. It also shows how often they are updating.',
         'You can switch it on before the game, or with the game already running. If SteamVR closes, Apex waits and reconnects when it comes back.',
         'The speedo and the relative are switched on to begin with. Use the widget chips to add or remove panels. Each one you turn on appears in the headset straight away.',
@@ -88,7 +94,7 @@
       lead: 'Pick a widget under Adjust, then move it with the sliders. Changes show up in the headset as you drag, so the easiest way is to set it up with the headset on.',
       points: [
         'Distance is how far in front of you it sits. Height is up or down from your eyes, and a minus number means below them. Left / right is sideways, and a minus number means left. All three are in centimetres.',
-        'All three are measured from where your head was at the last recentre. Recentre in LMU and the panels move with the cockpit, so they stay where you put them.',
+        `All three are measured from where your head was at the last recentre. Recentre in ${GAME} and the panels move with the cockpit, so they stay where you put them.`,
         'Size is the panel’s width in centimetres. Its height follows the widget’s own shape.',
         'Each panel turns to face you wherever you put it. Tilt leans the top edge away from you, Turn swings the right edge away, and Roll rotates it clockwise.',
         'The − and + buttons beside each slider move it one step: 1 cm, 1 degree, or 5% opacity. Use them for the small adjustments that are hard to make by dragging.',
@@ -120,6 +126,9 @@
       ],
     },
   ];
+
+  // The MFD is LMU's pit menu: there is no headset MFD in iRacing.
+  const STEPS = IR ? ALL_STEPS.filter((st) => st.id !== 'mfd') : ALL_STEPS;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
