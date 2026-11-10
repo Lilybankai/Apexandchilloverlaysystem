@@ -884,6 +884,17 @@
     wrap.appendChild(nmHead);
     wrap.appendChild(avgHead);
     wrap.appendChild(penHead);
+    // iRacing columns, tagged so they only appear in iRacing mode (hub.css).
+    wrap.appendChild(irOnOffRow('IRATING', 'standings-ir', v.ir, 'Shown',
+      'Each driver’s iRating, from the session. iRacing only',
+      (val) => void send({ ir: val })));
+    wrap.appendChild(irOnOffRow('IR ±', 'standings-irdelta', v.irdelta, 'Shown in races',
+      'What each driver would gain or lose in iRating if the race finished in ' +
+      'the current order (community formula, per class). Races only',
+      (val) => void send({ irdelta: val })));
+    wrap.appendChild(irOnOffRow('LICENCE', 'standings-lic', v.lic, 'Shown',
+      'The licence class and safety rating chip (e.g. A 3.45), in iRacing’s colours',
+      (val) => void send({ lic: val })));
     wrap.appendChild(flHead);
     wrap.appendChild(posHead);
     return wrap;
@@ -931,7 +942,41 @@
     penHead.appendChild(penLabel);
     penHead.appendChild(pen);
     wrap.appendChild(penHead);
+    wrap.appendChild(irOnOffRow('IRATING', 'relative-ir', v.ir, 'Shown',
+      'Each nearby driver’s iRating (1.6k style). iRacing only',
+      (val) => void window.apex.updateSettings({ relative: { ir: val } })));
+    wrap.appendChild(irOnOffRow('LICENCE', 'relative-lic', v.lic, 'Shown',
+      'The licence class and safety rating chip, in iRacing’s colours',
+      (val) => void window.apex.updateSettings({ relative: { lic: val } })));
     return wrap;
+  }
+
+  /**
+   * One on/off view row for an iRacing-only column, in the same shape as the
+   * PENALTY row. Tagged `data-sims="iracing"` so LMU mode never shows it.
+   */
+  function irOnOffRow(labelText, id, current, onText, title, onChange) {
+    const label = document.createElement('span');
+    label.className = 'ovcard__bg-label';
+    label.textContent = labelText;
+    const sel = document.createElement('select');
+    sel.className = 'field__input field__input--inline';
+    sel.id = id;
+    for (const [value, text] of [['on', onText], ['off', 'Hidden']]) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = text;
+      sel.appendChild(opt);
+    }
+    sel.value = current === 'off' ? 'off' : 'on';
+    sel.title = title;
+    sel.addEventListener('change', () => onChange(sel.value));
+    const head = document.createElement('div');
+    head.className = 'ovcard__view-head';
+    head.dataset.sims = 'iracing';
+    head.appendChild(label);
+    head.appendChild(sel);
+    return head;
   }
 
   /**

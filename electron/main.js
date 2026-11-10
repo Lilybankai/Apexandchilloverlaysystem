@@ -737,6 +737,12 @@ function defaultSettings() {
       // costs no column, and a car ahead that still owes a stop is race
       // information. 'off' for a plain timing tower.
       pen: 'on', // 'on' | 'off'
+      // iRacing columns (2026-11-10): iRating, projected iRating change and the
+      // licence chip. Only drawn when the frame carries the data, so an LMU
+      // tower is unaffected whatever these say.
+      ir: 'on', // 'on' | 'off'
+      irdelta: 'on', // 'on' | 'off'
+      lic: 'on', // 'on' | 'off'
     },
     /*
      * The relative panel's one view setting: the outstanding-penalty badge,
@@ -747,6 +753,8 @@ function defaultSettings() {
      */
     relative: {
       pen: 'on', // 'on' | 'off'
+      ir: 'on', // 'on' | 'off' (iRacing only, as standings.ir)
+      lic: 'on', // 'on' | 'off' (iRacing only, as standings.lic)
     },
     // Wheel/controller bindings:
     //   { [actionId]: { inc?: {device, button}, dec?: {device, button} } }
@@ -1101,6 +1109,9 @@ function normalizeStandings(stored) {
     names: from.names === 'surname' || from.names === 'forename' ? from.names : d.names,
     avg: from.avg === 'on' ? 'on' : d.avg,
     pen: from.pen === 'off' ? 'off' : d.pen,
+    ir: from.ir === 'off' ? 'off' : d.ir,
+    irdelta: from.irdelta === 'off' ? 'off' : d.irdelta,
+    lic: from.lic === 'off' ? 'off' : d.lic,
   };
 }
 
@@ -1110,6 +1121,8 @@ function normalizeRelative(stored) {
   const from = stored && typeof stored.relative === 'object' && stored.relative ? stored.relative : {};
   return {
     pen: from.pen === 'off' ? 'off' : d.pen,
+    ir: from.ir === 'off' ? 'off' : d.ir,
+    lic: from.lic === 'off' ? 'off' : d.lic,
   };
 }
 

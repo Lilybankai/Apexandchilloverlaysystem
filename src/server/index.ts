@@ -253,12 +253,22 @@ export interface StandingsView {
    * (the default) or `'off'` for a plain timing tower.
    */
   pen: 'on' | 'off';
+  /** iRacing only: the IR (iRating) column. Drawn only when rows carry `iRating`. */
+  ir: 'on' | 'off';
+  /** iRacing only: the IR± projected-change column (race sessions only). */
+  irdelta: 'on' | 'off';
+  /** iRacing only: the licence chip after the class dot. */
+  lic: 'on' | 'off';
 }
 
 /** @see Appearance.relative */
 export interface RelativeView {
   /** The outstanding-penalty badge, as the tower's {@link StandingsView.pen}. */
   pen: 'on' | 'off';
+  /** iRacing only: the iRating cell, as StandingsView.ir. */
+  ir: 'on' | 'off';
+  /** iRacing only: the licence chip, as StandingsView.lic. */
+  lic: 'on' | 'off';
 }
 
 /** URL the overlays read their appearance from. */
@@ -295,8 +305,11 @@ const appearance: Appearance = {
     names: 'full',
     avg: 'off',
     pen: 'on',
+    ir: 'on',
+    irdelta: 'on',
+    lic: 'on',
   },
-  relative: { pen: 'on' },
+  relative: { pen: 'on', ir: 'on', lic: 'on' },
   speedUnit: 'kph',
   tempUnit: 'c',
 };
@@ -420,12 +433,17 @@ export function setAppearance(next: Partial<Appearance>): Appearance {
       // added, dropped here until now) and the penalty badge.
       avg: v.avg === 'on' || v.avg === 'off' ? v.avg : appearance.standings.avg,
       pen: v.pen === 'on' || v.pen === 'off' ? v.pen : appearance.standings.pen,
+      ir: v.ir === 'on' || v.ir === 'off' ? v.ir : appearance.standings.ir,
+      irdelta: v.irdelta === 'on' || v.irdelta === 'off' ? v.irdelta : appearance.standings.irdelta,
+      lic: v.lic === 'on' || v.lic === 'off' ? v.lic : appearance.standings.lic,
     };
   }
   if (next?.relative && typeof next.relative === 'object') {
     const r = next.relative as Partial<RelativeView>;
     appearance.relative = {
       pen: r.pen === 'on' || r.pen === 'off' ? r.pen : appearance.relative.pen,
+      ir: r.ir === 'on' || r.ir === 'off' ? r.ir : appearance.relative.ir,
+      lic: r.lic === 'on' || r.lic === 'off' ? r.lic : appearance.relative.lic,
     };
   }
   return getAppearance();
