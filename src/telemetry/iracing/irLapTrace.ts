@@ -70,8 +70,13 @@ const SECTOR_LAP_TOLERANCE_MS = 250;
 const PENDING_MAX_AGE_MS = 120_000;
 /** A driven line whose fit onto the map leaves more RMS residual than this is dropped. */
 export const LINE_MAX_RMS_M = 4;
-/** …or whose worst point is further than this from the map's line at that fraction. */
-export const LINE_MAX_POINT_M = 15;
+/**
+ * …or whose worst point is further than this from the map's line at that
+ * fraction. Generous on purpose: a lap with an off in it really was 20 m wide
+ * of the line for a moment (measured at Winton, RMS still 2.7 m), and that lap
+ * is the one worth studying. Integration faults show up in the RMS, not here.
+ */
+export const LINE_MAX_POINT_M = 35;
 /** A fit needing more rotation than this is not the same circuit frame. */
 const LINE_MAX_ROTATION_RAD = (15 * Math.PI) / 180;
 
