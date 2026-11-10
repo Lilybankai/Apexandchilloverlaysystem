@@ -59,6 +59,13 @@ const MAX_INTEGRATE_DT_S = 0.25;
 const PAIR_WINDOW_MS = 5000;
 /** …and only when the sim's lap time and the trace's measured one agree this well. */
 const PAIR_LAP_TOLERANCE_MS = 2000;
+/**
+ * Sector splits are measured on the trace's clock and scaled onto the sim's
+ * lap time; past this disagreement the two do not describe the same stretch
+ * (iRacing times a race's first lap from the start, not from the line), and
+ * scaling would smear the difference over every sector.
+ */
+const SECTOR_LAP_TOLERANCE_MS = 250;
 /** Pending traces older than this are never paired. */
 const PENDING_MAX_AGE_MS = 120_000;
 /** A driven line whose fit onto the map leaves more RMS residual than this is dropped. */
@@ -356,11 +363,16 @@ export class IracingLapCapture {
   private offTrackCount = 0;
   private wasOff = false;
 
-  /** A new session: the session-best and last references go too. */
+  /**
+   * A new session: the session-best and last references go too. Pending traces
+   * do NOT: the lap log holds a record ~40 s for its verdict and flushes it on
+   * the stint change, i.e. AFTER the session has moved on — the last lap of a
+   * qualifying session lands in the race session. Pairing is by wall clock and
+   * lap time, so a trace kept across the boundary cannot pair with the wrong lap.
+   */
   public resetSession(): void {
     this.trace.reset();
     this.pace = new LocalPaceDeltaTracker();
-    this.pending = [];
     this.wasDriving = false;
     this.prevSt = NaN;
     this.prevPct = -1;
@@ -508,7 +520,10 @@ export class IracingLapCapture {
 
     // Sectors: three fill the named fields; any other count only `sectorsMs`.
     let record = rec;
-    const splits = rec.lapMs > 0 ? sectorSplitsFromTrace(p.trace, sectorStartPcts, rec.lapMs) : null;
+    const splits =
+      rec.lapMs > 0 && Math.abs(p.trace.lapSec * 1000 - rec.lapMs) <= SECTOR_LAP_TOLERANCE_MS
+        ? sectorSplitsFromTrace(p.trace, sectorStartPcts, rec.lapMs)
+        : null;
     if (splits && rec.s1Ms === undefined) {
       record =
         splits.length === 3

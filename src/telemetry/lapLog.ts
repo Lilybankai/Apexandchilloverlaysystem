@@ -246,13 +246,13 @@ export interface LapRecord {
   s3Ms?: number;
   /**
    * Every sector split in whole milliseconds, in order, when the sim divides
-   * the lap into a number of sectors OTHER than three — iRacing publishes
+   * the lap into a number of sectors OTHER than three â€” iRacing publishes
    * its own count per circuit (`SplitTimeInfo`; Winton has four). Squeezing
    * four sectors into {@link s1Ms}..{@link s3Ms} would put two sectors under
    * one name, so those stay absent and this carries the honest set. Sums to
    * {@link lapMs}. Absent on LMU laps and on three-sector circuits (where the
    * three named fields say it all). Measured by the provider from the lap's
-   * own trace — see `iracing/irLapTrace.ts`.
+   * own trace â€” see `iracing/irLapTrace.ts`.
    */
   sectorsMs?: number[];
   /**

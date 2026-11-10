@@ -332,7 +332,7 @@ export interface IRacingProviderOptions {
   lapSink?: ((rec: LapRecord) => void) | null;
   /**
    * Where each lap's driving trace goes. Defaults to {@link writeTrace} (the
-   * local trace store) when `lapSink` is defaulted too, else `null` — a test
+   * local trace store) when `lapSink` is defaulted too, else `null` â€” a test
    * that captures laps must not write traces into the driver's home.
    */
   traceSink?: ((file: TraceFile) => void) | null;
@@ -1080,7 +1080,7 @@ export class IRacingProvider implements TelemetryProvider {
         ...(pedals.steerRangeDeg ? { steerRangeDeg: pedals.steerRangeDeg } : {}),
       },
     });
-    // Sector in progress — only where iRacing's sectors ARE the contract's
+    // Sector in progress â€” only where iRacing's sectors ARE the contract's
     // three; a fourth sector has no honest 1..3 number.
     const sectorNow =
       ownIsFocus && sectorBoundaries(info.sectorStartPcts).length === 2
@@ -1485,7 +1485,7 @@ export class IRacingProvider implements TelemetryProvider {
     if (rec && !(rec.lapMs <= 0 && rec.dirty.includes('partial'))) {
       // Pair it with its trace first: the record gains its measured sector
       // splits, and the trace file is written under the record's id, with the
-      // record's lap time — the exact `lap_ms` the board compares against.
+      // record's lap time â€” the exact `lap_ms` the board compares against.
       const { record, file } = this.capture.attach(rec, this.trackMap.path, info.sectorStartPcts);
       try {
         this.lapSink(record);
