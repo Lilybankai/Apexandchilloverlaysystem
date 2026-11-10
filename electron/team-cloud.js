@@ -38,6 +38,7 @@
 'use strict';
 
 const stall = require('./stall-watch');
+const { relaySim, drivingHere } = require('./sim-gates');
 
 /** Publish cadence — Carl moved it to 1 s (2026-08-26; was 3 s at launch). */
 const PUBLISH_MS = 1000;
@@ -103,15 +104,15 @@ function eligibleToPublish(frame, snapshot) {
   // A replay is a recording being watched, never the car being driven here.
   if (frame.session && frame.session.replay === true) return false;
   if (frame.session && frame.session.onTrack === false) return false;
-  // On LMU the payload's car identity (number, class, DRIVER) comes off the
-  // watched row, so the watched row must be the car driven here. Otherwise a
-  // PC parked in its stall with the camera on a teammate would publish its
-  // own parked car's tyres under the teammate's name — exactly the identity
-  // the readers' gate (teammateRelay.ts) trusts.
-  if (frame.source === 'lmu' && Array.isArray(frame.standings)) {
-    const focus = frame.standings.find((r) => r && r.isPlayer);
-    if (!focus || focus.isOwn !== true) return false;
-  }
+  // On the relay sims (LMU, iRacing) the payload's car identity (number,
+  // class, DRIVER) comes off the watched row, so the watched row must be the
+  // car driven here. Otherwise a PC parked in its stall with the camera on a
+  // teammate would publish its own parked car's tyres under the teammate's
+  // name — exactly the identity the readers' gate (teammateRelay.ts) trusts.
+  // The same sims list as the read end (sim-gates.js), so the two agree: an
+  // iRacing crew member who is not driving publishes nothing, and iRacing's
+  // pit-stall-only tyre wear never stands in for "I am the driving PC".
+  if (relaySim(frame.source) && !drivingHere(frame)) return false;
   if (!snapshot || !snapshot.car) return false;
   const t = snapshot.car.tyres;
   if (!t || !t.frontLeft || typeof t.frontLeft.wear !== 'number') return false;

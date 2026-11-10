@@ -42,6 +42,8 @@ export interface IrDriver {
   carIdx: number;
   userName: string;
   userId: number;
+  /** `TeamID`: 0 in a solo event, the team's id in a team event (constant across swaps). */
+  teamId: number;
   teamName: string;
   /** Kept as a string: `"001"` and `"1"` are different numbers. */
   carNumber: string;
@@ -78,6 +80,24 @@ export interface IrResult {
   lastTime: number;
   reasonOutId: number;
   reasonOutStr: string;
+  /** `LapsLed`. */
+  lapsLed: number;
+  /** `FastestLap`, the lap number of the car's best; -1 when none. */
+  fastestLap: number;
+  /**
+   * `Incidents`. **0 for everyone, us included, while a race is live**; real
+   * counts appear once the session is official (see {@link IrSession.resultsOfficial}).
+   */
+  incidents: number;
+}
+
+/** One `QualifyResultsInfo.Results[]` entry: the grid. Positions 1-based here
+ *  (the YAML's Position and ClassPosition are both 0-based). */
+export interface IrQualifyResult {
+  carIdx: number;
+  position: number;
+  classPosition: number;
+  fastestTime: number;
 }
 
 /** One `SessionInfo.Sessions[]` entry, reduced. */
@@ -91,6 +111,8 @@ export interface IrSession {
   /** Scheduled length in seconds, `-1` when unlimited. */
   timeSec: number;
   results: IrResult[];
+  /** `ResultsOfficial: 1` — the classification (and everyone's incidents) is final. */
+  resultsOfficial: boolean;
 }
 
 /** The reduced session info the provider works from. */
@@ -110,6 +132,8 @@ export interface IrSessionInfo {
   teamRacing: boolean;
   subSessionId: number;
   driverCarIdx: number;
+  /** `DriverInfo.DriverUserID`: the iRacing member at THIS PC (0 when absent). */
+  driverUserId: number;
   paceCarIdx: number;
   driverCarFuelMaxLtr: number;
   driverCarMaxFuelPct: number;
@@ -128,6 +152,8 @@ export interface IrSessionInfo {
    * has none (`unlimited`, practice, or absent).
    */
   incidentLimit: number;
+  /** `QualifyResultsInfo.Results[]`, the grid order; empty when absent. */
+  qualifyResults: IrQualifyResult[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -279,6 +305,7 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
       carIdx: num(d.CarIdx, -1),
       userName: str(d.UserName),
       userId: num(d.UserID),
+      teamId: num(d.TeamID),
       teamName: str(d.TeamName),
       carNumber: str(d.CarNumber),
       carId: num(d.CarID),
@@ -319,8 +346,12 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
           lastTime: num(r.LastTime, -1),
           reasonOutId: num(r.ReasonOutId),
           reasonOutStr: str(r.ReasonOutStr),
+          lapsLed: num(r.LapsLed),
+          fastestLap: num(r.FastestLap, -1),
+          incidents: num(r.Incidents),
         };
       }),
+      resultsOfficial: num(s.ResultsOfficial) === 1,
     };
   });
 
@@ -342,6 +373,7 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
     teamRacing: num(wi.TeamRacing) === 1,
     subSessionId: num(wi.SubSessionID),
     driverCarIdx: num(di.DriverCarIdx, -1),
+    driverUserId: num(di.DriverUserID),
     paceCarIdx: num(di.PaceCarIdx, -1),
     driverCarFuelMaxLtr: num(di.DriverCarFuelMaxLtr),
     driverCarMaxFuelPct: num(di.DriverCarMaxFuelPct, 1),
@@ -352,6 +384,16 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
     sessions,
     currentSessionNum: num(si.CurrentSessionNum, 0),
     sectorStartPcts: sectors,
+    qualifyResults: arr(obj(doc.QualifyResultsInfo).Results).map((rr) => {
+      const r = obj(rr);
+      return {
+        carIdx: num(r.CarIdx, -1),
+        // Both 0-based in the YAML (pole = 0).
+        position: num(r.Position, -1) + 1,
+        classPosition: num(r.ClassPosition, -1) + 1,
+        fastestTime: num(r.FastestTime, -1),
+      };
+    }),
   };
 }
 

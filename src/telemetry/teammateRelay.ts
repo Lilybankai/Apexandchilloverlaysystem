@@ -48,6 +48,16 @@
  * Speed, gear, pedals and everything else stay local — they are live for the
  * spectated car already, and a second-old copy would be strictly worse.
  *
+ * ## iRacing (2026-11-10, untested on a real team race)
+ *   The same rules, on the iRacing provider's `teammateDriving`
+ *   (telemetry/iracing/teamIdentity.ts: a team event, our team car, its
+ *   current `UserID` not ours). Two checks are STRICTER than LMU's because
+ *   iRacing gives a real session id: the relayed row must come from an iRacing
+ *   frame, and its `sessionId` (`ir-<SubSessionID>-<SessionNum>`) must equal
+ *   ours — both REQUIRED, so a row from a build that predates it (1.3.16-beta.5
+ *   published iRacing rows with none) never passes. No team-race capture
+ *   exists yet; scripts/test-teammate-relay.js drives it with synthetic frames.
+ *
  * Pure — no IO, no clock — so scripts/test-teammate-relay.js can drive it.
  */
 
@@ -233,10 +243,23 @@ function normDriver(v: unknown): string {
  */
 type RowVerdict = 'ok' | 'session' | 'car' | 'driver';
 
-function rowVerdict(snapshot: any, focus: any, session: any): RowVerdict {
+/** Sims whose provider says which car is ours and who drives it (electron/sim-gates.js RELAY_SIMS). */
+const RELAY_SOURCES: readonly string[] = ['lmu', 'iracing'];
+
+function rowVerdict(snapshot: any, focus: any, session: any, source?: string): RowVerdict {
   const car = snapshot && snapshot.car;
   const theirs = (snapshot && snapshot.session) || {};
   const ours = session || {};
+  // One sim's row never describes another sim's car. Older payloads carry no
+  // source; on iRacing it is required (every iRacing publisher sends one).
+  const thereSource = snapshot && typeof snapshot.source === 'string' ? snapshot.source : '';
+  if (thereSource && source && thereSource !== source) return 'session';
+  if (source === 'iracing') {
+    if (thereSource !== 'iracing') return 'session';
+    const hereId = norm(ours.sessionId);
+    const thereId = norm(theirs.sessionId);
+    if (!hereId || !thereId || hereId !== thereId) return 'session';
+  }
   // Session identity. Track and type are REQUIRED on both sides: a row that
   // cannot say which session it came from is never assumed to be ours.
   const hereTrack = norm(ours.track);
@@ -317,8 +340,8 @@ function decide(
   if (!relay || !Array.isArray(relay.sources) || !frame || frame.connected === false) {
     return drop(STATUS_IDLE_WAITING);
   }
-  // Only LMU says which car is ours and who is in it; never guess elsewhere.
-  if (frame.source !== 'lmu') return drop(STATUS_IDLE_WAITING);
+  // Only LMU and iRacing say which car is ours and who is in it; never guess elsewhere.
+  if (!RELAY_SOURCES.includes(frame.source)) return drop(STATUS_IDLE_WAITING);
   // A replay's car is a recording; a teammate's live tyres are not its tyres (THE-35).
   if (frame.session && frame.session.replay === true) return drop(STATUS_IDLE_WAITING);
   const focus = focusRow(frame);
@@ -350,7 +373,7 @@ function decide(
     if (!pool.length) {
       return drop({ state: 'no-data', text: `${pinName} isn't sending telemetry right now.` });
     }
-    const verdicts = pool.map((c) => rowVerdict(c.source.snapshot, focus, frame.session));
+    const verdicts = pool.map((c) => rowVerdict(c.source.snapshot, focus, frame.session, frame.source));
     if (!verdicts.includes('ok')) {
       return drop(
         verdicts.includes('driver') || verdicts.includes('car')
@@ -360,7 +383,7 @@ function decide(
     }
   }
 
-  const passing = pool.filter((c) => rowVerdict(c.source.snapshot, focus, frame.session) === 'ok');
+  const passing = pool.filter((c) => rowVerdict(c.source.snapshot, focus, frame.session, frame.source) === 'ok');
   // Riding out a missing flag: only the source already on screen may continue.
   const eligible = holding ? passing.filter((c) => keyOf(c.source) === lock.key) : passing;
   if (!eligible.length) {

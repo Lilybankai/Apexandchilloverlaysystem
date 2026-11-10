@@ -174,6 +174,13 @@ export interface SessionState {
   /** Optional server / lobby name. */
   serverName?: string;
   /**
+   * A sim-issued id unique to this session, when the sim has one: iRacing's
+   * `ir-<SubSessionID>-<SessionNum>`. The team relay requires it to match on
+   * iRacing (telemetry/teammateRelay.ts), the way it compares `serverName` on
+   * LMU. Never shown to the driver.
+   */
+  sessionId?: string;
+  /**
    * `true` before the session has actually gone green — sitting in the garage,
    * on the grid, on a formation lap or in the countdown.
    *

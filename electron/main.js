@@ -73,6 +73,7 @@ const { migrateTrainingSettings } = require('./trainingSettings');
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
 const { normalizeVr, mergeVr, vrForSim } = require('./vr/placement');
+const { watchingAnotherCar, scoresReferencePace } = require('./sim-gates');
 /**
  * Never let Windows' occlusion tracking decide the in-game layer is hidden.
  *
@@ -1902,14 +1903,7 @@ function dialStatusFeed() {
  * where no teammate had our car at all (THE-34). The relayed rows themselves
  * are gated again, per frame, in telemetry/teammateRelay.ts.
  */
-function watchingAnotherCar(frame) {
-  if (!frame || frame.connected === false || frame.source !== 'lmu') return false;
-  // A replay's car is a recording — no teammate's live relay belongs on it.
-  if (frame.session && frame.session.replay === true) return false;
-  if (!Array.isArray(frame.standings)) return false;
-  const focus = frame.standings.find((row) => row && row.isPlayer);
-  return !!focus && focus.isOwn !== true && focus.teammateDriving === true;
-}
+// watchingAnotherCar lives in sim-gates.js (LMU + iRacing, the publish end's list).
 
 /**
  * On at once, off only after it has stayed off for OVERLAY_WANT_OFF_MS. Turning
@@ -4095,6 +4089,9 @@ function paceRowFor(ref, input) {
  */
 function sessionPaceFor(ref, session) {
   if (!session || !session.stats) return null;
+  // Ohne Speed's sheet is LMU lap times: an iRacing session at a circuit whose
+  // name and length match an LMU layout must not be scored against it.
+  if (!scoresReferencePace(session)) return null;
   const wet = session.stints.some((st) => st.laps.some((l) => l.wet));
   if (wet) return { wet: true, average: null, best: null, stints: [] };
   const known = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
