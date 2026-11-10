@@ -226,7 +226,10 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   // Read again out here: the block above runs inside a try, so its \`q\` is not
   // in scope for the stub object below, which also wants query flags.
   const q = new URLSearchParams(location.search);
-  const RL_FIX = RACELOG_FIXTURE;
+  // ?sim=iracing: the iRacing race log (telemetry/iracing/irRaceLog.ts) built
+  // from the anonymised fixture, instead of LMU's results files.
+  const IR_SHOT = q.get('sim') === 'iracing';
+  const RL_FIX = IR_SHOT ? IRLOG_FIX_JSON : RACELOG_FIXTURE;
 
   // ?racelog=picker|<results file> clicks that race on the rail (first is the
   // panel's own default, the newest). Then ?rlpick=<slot> picks a car in the
@@ -303,7 +306,12 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
       standings: { on: false, distance: 0.9, height: 0.05, side: -0.55, width: 0.34, tilt: 0, turn: 0, roll: 0, opacity: 1 },
       radar: { on: false, distance: 0.8, height: -0.12, side: -0.42, width: 0.2, tilt: 0, turn: 0, roll: 0, opacity: 1 },
       fuel: { on: false, distance: 0.85, height: 0.1, side: 0.45, width: 0.24, tilt: 0, turn: 0, roll: 0, opacity: 1 },
-      tyres: { on: false, distance: 0.8, height: -0.32, side: 0.42, width: 0.18, tilt: 0, turn: 0, roll: 0, opacity: 1 } } } };
+      tyres: { on: false, distance: 0.8, height: -0.32, side: 0.42, width: 0.18, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      // LMU-only, switched on: an iRacing shot must not list them (vrOffered).
+      damage: { on: true, distance: 0.8, height: -0.32, side: -0.42, width: 0.16, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      limits: { on: false, distance: 0.85, height: 0.12, side: 0.2, width: 0.2, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      racecontrol: { on: false, distance: 0.85, height: 0.18, side: 0, width: 0.2, tilt: 0, turn: 0, roll: 0, opacity: 1 },
+      mfd: { on: true, distance: 0.7, height: -0.15, side: 0.3, width: 0.22, tilt: 0, turn: 0, roll: 0, opacity: 1 } } } };
 
   /*
    * The overlay catalog, as main hands it over. The Overlays GRID is not shot
@@ -329,7 +337,8 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
   ].map(([id, label]) => ({ id, label, enabled: true, url: '' }));
   // The LMU-only widgets (\`sims: ['lmu']\` in main.js), which main leaves out
   // of the list in iRacing mode — as this does under ?sim=iracing.
-  const LMU_ONLY = ['refpace', 'fuelplan', 'damage', 'limits', 'racecontrol', 'mfd'];
+  // (limits runs on iRacing as incident points since 1.3.16-beta.5.)
+  const LMU_ONLY = ['refpace', 'fuelplan', 'damage', 'racecontrol', 'mfd'];
   for (const o of overlayCatalog) if (LMU_ONLY.includes(o.id)) o.sims = ['lmu'];
   const streamingOverlays = [{ id: 'chat', label: 'Stream Chat', enabled: true, url: '', group: 'streaming' }];
   const trainingOverlays = [{ id: 'ghosthud', label: 'Ghost HUD', enabled: true, ingame: true,
@@ -893,7 +902,9 @@ const STUB = `// __shot-stub.js — fake window.apex so the panel renders in a p
     // The Review tab. The fixture below is real output from the compiled
     // stintReview module fed a synthetic lap log, rather than hand-written
     // JSON — so the harness cannot drift from what the tab actually receives.
-    reviewSessions: P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
+    // An iRacing race-log shot lists its races alone (no LMU sessions beside them).
+    reviewSessions: IR_SHOT && q.get('racelog') ? P({ ok: true, sessions: [], career: null })
+      : P({ ok: true, sessions: REVIEW.summaries, career: REVIEW.career }),
     reviewSession: (id) => Promise.resolve({ ok: true, session: REVIEW.byId[id] || null }),
     // The practice debrief (docs/PRACTICE-REVIEW-PLAN.md): a synthetic review
     // of the Spa practice above, built by practiceFixture() below.
@@ -1379,6 +1390,85 @@ function raceLogFixture() {
   }
 }
 
+/**
+ * The iRacing race log, as main serves it in iRacing mode: the compiled
+ * raceResults + irRaceLog modules over the committed anonymised fixture
+ * (scripts/fixtures/iracing-cap1, a race two laps in), made finished and
+ * official, joined to a live recording the REAL recorder made from
+ * iRacing-shaped frames. Same construction as scripts/test-iracing-racelog.js.
+ */
+function irRaceLogFixture() {
+  const none = { races: [], logs: {}, picks: {} };
+  let SI, RR, IRL, REC;
+  try {
+    SI = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'sessionInfo.js'));
+    RR = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'raceResults.js'));
+    IRL = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'irRaceLog.js'));
+    REC = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLogRecorder.js'));
+  } catch {
+    return none;
+  }
+  const zlib = require('node:zlib');
+  const os = require('node:os');
+  const FIX = path.join(__dirname, 'fixtures', 'iracing-cap1');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-shot-irlog-'));
+  try {
+    let yaml = zlib.gunzipSync(fs.readFileSync(path.join(FIX, 'session-145.yaml.gz'))).toString('latin1');
+    const lines = zlib.gunzipSync(fs.readFileSync(path.join(FIX, 'frames.ndjson.gz'))).toString('utf8').trim().split('\n');
+    const row = JSON.parse(lines[lines.length - 1]);
+    const own = row.PlayerCarIdx;
+    // Finished, official, with incident counts and one DQ.
+    const i = yaml.indexOf('SessionType: Race');
+    let race = yaml.slice(i).replace(/ResultsOfficial: 0/, 'ResultsOfficial: 1');
+    let n = 0;
+    race = race.replace(/Incidents: 0/g, () => `Incidents: ${[0, 2, 6, 1, 4, 0, 8, 3, 0, 5, 2][n++ % 11]}`);
+    const end = race.indexOf('ResultsAverageLapTime');
+    const at = race.lastIndexOf('ReasonOutId: 0', end);
+    race = race.slice(0, at) + race.slice(at).replace(/^ReasonOutId: 0(\r?\n\s+ReasonOutStr: )Running/, 'ReasonOutId: 29$1DQ');
+    yaml = yaml.slice(0, i) + race;
+    const info = SI.parseSessionInfo(yaml);
+    const track = info.trackDisplayName;
+    const tele = { sessionNum: 2, sessionTimeSec: row.SessionTime, sessionState: 6, track, ourIncidents: 7, replay: false };
+    const snap = RR.buildRaceSnapshot(info, tele, null, row._t);
+    const stateDir = path.join(tmp, 'racelog');
+    const irDir = path.join(stateDir, 'iracing');
+    fs.mkdirSync(irDir, { recursive: true });
+    fs.writeFileSync(path.join(irDir, snap.id + '.json'), JSON.stringify(snap));
+    const me = snap.cars.find((c) => c.carIdx === own);
+    const rec = new REC.RaceLogRecorder();
+    const out = [];
+    const start = snap.sessionStartMs;
+    const feed = (et, o) => {
+      const r = { slotId: own, position: o.pos, classPosition: o.pos, isOwn: true, isPlayer: true,
+        lapsCompleted: o.laps, lastLapSec: o.last ?? -1, inPit: !!o.pit, driverName: me.driver,
+        carNumber: me.carNumber, carClass: me.carClass };
+      out.push(...rec.update({ schemaVersion: 1, source: 'iracing', connected: true, timestamp: start + et * 1000,
+        session: { type: 'race', phase: o.phase || 'green', flag: 'green', track, elapsedSec: et,
+          notStarted: o.phase === 'countdown', finalLap: false, onTrack: true },
+        player: { trackLimits: { points: o.inc ?? 0, pointsLimit: 17, penalties: o.black ? 1 : 0 } },
+        standings: [r] }, start + et * 1000));
+    };
+    feed(100, { phase: 'countdown', pos: 2, laps: 0 });
+    feed(101, { pos: 2, laps: 0 });
+    feed(140, { pos: 2, laps: 0, inc: 1 });
+    feed(196, { pos: 3, laps: 1, last: 95.597, inc: 1 });
+    feed(205, { pos: 3, laps: 1, last: 95.597, inc: 3 });
+    feed(262, { pos: 3, laps: 1, last: 95.597, inc: 7 });
+    feed(291, { pos: 3, laps: 2, last: 94.89, inc: 7 });
+    fs.writeFileSync(REC.liveFileFor(start, stateDir), out.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const opts = { dir: irDir, liveDir: stateDir, now: start + 600000 };
+    const races = IRL.listIrRaceLogs(opts);
+    const logs = {};
+    for (const r of races) logs[r.id] = IRL.loadIrRaceLog(r.id, opts);
+    return { races, logs, picks: {} };
+  } catch (err) {
+    console.error('  iRacing racelog fixture failed:', err.message);
+    return none;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const marker = '<script src="icons.js"></script>';
 if (!html.includes(marker)) {
@@ -1395,6 +1485,8 @@ if (!html.includes(marker)) {
   }
   const { lap, lapVs } = reviewLapFixture();
   const raceLogs = raceLogFixture();
+  const irRaceLogs = irRaceLogFixture();
+  console.log(`  iRacing racelog: ${irRaceLogs.races.length} race(s)`);
   const practice = practiceFixture(fixture.byId);
   const practiceLap = practiceLapFixture(lapVs);
   // The trend: five invented earlier sessions at the same track, then the
@@ -1425,7 +1517,8 @@ if (!html.includes(marker)) {
     path.join(DIR, '__shot-stub.js'),
     // A function replacement: JSON can hold a '$', which a string replacement
     // would read as a pattern.
-    STUB.replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
+    STUB.replace('IRLOG_FIX_JSON', () => JSON.stringify(irRaceLogs))
+        .replace('RACELOG_FIXTURE', () => JSON.stringify(raceLogs))
         .replace('PRACTICE_FIXTURE', () => JSON.stringify(practice.byId))
         .replace('PRACTICE_LAP_FIXTURE', () => JSON.stringify(practiceLap))
         .replace('PRACTICE_TREND_FIXTURE', () => JSON.stringify(practiceTrend))

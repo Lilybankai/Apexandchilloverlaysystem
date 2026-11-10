@@ -466,7 +466,7 @@
     const c = facts.count;
     return `
         <div class="rl-tile rl-tile--counts">
-          <span class="rl-tile__label">Incidents${pts === null ? '' : ` · ${pts}x${lim ? ` of ${lim}x` : ''}`}</span>
+          <span class="rl-tile__label">Incident points${pts === null ? '' : ` · ${pts}${lim ? ` / ${lim}` : ''}`}</span>
           <span class="rl-counts">
             ${countHtml(c.contact, c.contact === 1 ? 'contact' : 'contacts', 'bad', 'contacts')}
             ${countHtml(c.limits, c.limits === 1 ? 'off / spin' : 'offs / spins', 'warn', 'penalties')}
@@ -478,7 +478,8 @@
   function tilesHtml(l) {
     const cls = className(l.carClass);
     const c = facts.count;
-    const best = facts.bestMs || (isIr(l) && known(l.bestLapMs) ? l.bestLapMs : null);
+    // iRacing: the results' own best, which counts laps the live log missed.
+    const best = isIr(l) && known(l.bestLapMs) && l.bestLapMs > 0 ? l.bestLapMs : facts.bestMs;
     return `
       <div class="rl-tiles">
         ${placeTile(l.multiclass ? 'Overall' : 'Position', l.gridPosition, l.finishPosition)}
