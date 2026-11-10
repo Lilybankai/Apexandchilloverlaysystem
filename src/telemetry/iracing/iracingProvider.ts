@@ -58,6 +58,9 @@ import {
   type FuelState,
   type MotionState,
   type PitState,
+  type RadarBlip,
+  type TrackMapCar,
+  type TrackMapState,
   type PitPhase,
   type RelativeEntry,
   type SessionPhase,
@@ -73,6 +76,9 @@ import type { ServerConfig } from '../../server/config';
 import { LiveIrsdkSource, type IrsdkFrame, type IrsdkSource } from './irsdk';
 import { SessionInfoCache, warmSessionInfoParser, type IrDriver, type IrResult, type IrSessionInfo } from './sessionInfo';
 import { iRatingDeltasByClass, type IRatingEntry } from './irating';
+import { IracingPositionIntegrator } from './positionIntegrator';
+import { buildIracingRadar } from './radar';
+import { TrackMapBuilder } from '../trackMap';
 
 /* -------------------------------------------------------------------------- */
 /*  Constants and enums                                                       */
@@ -331,6 +337,17 @@ export class IRacingProvider implements TelemetryProvider {
   /** Bumped on every (re)connect; see {@link IrTickSnapshot.epoch}. */
   private epoch = 0;
   private snap: IrTickSnapshot | null = null;
+  /**
+   * Track map: iRacing publishes no world position for ANY car, so the driven
+   * car's position is dead-reckoned from body velocity + yaw, one clean lap is
+   * recorded as the outline, and every car is placed on it by lap fraction.
+   */
+  private readonly integrator = new IracingPositionIntegrator();
+  private readonly trackMap = new TrackMapBuilder();
+  private integratorRev = -1;
+  private integratorEpoch = -1;
+  private prevSessionTime = NaN;
+  private lastRadar: RadarBlip[] | null = null;
 
   /* --- per-session state; cleared by resetSession() ------------------------ */
   private sessionKey = '';
@@ -429,8 +446,130 @@ export class IRacingProvider implements TelemetryProvider {
 
   /* ------------------------------------------------------------------------ */
 
+  /**
+   * Feeds the dead-reckoning integrator and the shared {@link TrackMapBuilder}
+   * from this tick's snapshot, and builds the radar from lap-distance gaps plus
+   * iRacing's own CarLeftRight spotter signal. Both blocks are omitted (not
+   * empty) when there is nothing truthful to send.
+   */
+  private buildMapAndRadar(
+    s: IrTickSnapshot,
+    replayPlaying: boolean,
+    towTimeS: number,
+    speedMs: number,
+    standings: StandingEntry[],
+  ): { trackMap?: TrackMapState; radar?: RadarBlip[] } {
+    const L = s.trackLengthM;
+    if (!(L > 0)) return {};
+    if (s.epoch !== this.integratorEpoch) {
+      this.integratorEpoch = s.epoch;
+      this.integrator.reset();
+      this.integratorRev = -1;
+      this.prevSessionTime = NaN;
+    }
+    const dtS = Number.isFinite(this.prevSessionTime) ? s.sessionTime - this.prevSessionTime : 0;
+    this.prevSessionTime = s.sessionTime;
+    const driving = s.isOnTrack && !s.onPitRoad && !replayPlaying && towTimeS === 0;
+    const pos =
+      dtS > 0 && dtS < 0.5
+        ? this.integrator.step({
+            velX: s.velocityX,
+            velY: s.velocityY,
+            yaw: s.yaw,
+            dtS,
+            lapDistPct: s.lapDistPct,
+            onTrack: driving,
+            clean: s.playerTrackSurface !== TRK.OffTrack,
+            trackLengthM: L,
+          })
+        : null;
+    const base = {
+      trackName: `iracing-${s.trackName}`,
+      ...(s.trackConfig ? { trackConfig: s.trackConfig } : {}),
+      lengthM: L,
+    };
+    // A freshly closed reference lap: hand the whole outline to the builder so
+    // the map appears right after lap one rather than filling in over a lap.
+    if (this.integrator.revision !== this.integratorRev) {
+      this.integratorRev = this.integrator.revision;
+      const outline = this.integrator.outline();
+      if (outline) {
+        for (const p of outline) {
+          this.trackMap.update({ ...base, lapDistM: p.lapDistPct * L, pos: { x: p.x, y: p.y, z: p.z }, inPit: false });
+        }
+      }
+    }
+    const status = this.trackMap.update({
+      ...base,
+      lapDistM: s.lapDistPct >= 0 ? s.lapDistPct * L : -1,
+      pos,
+      inPit: s.onPitRoad,
+    });
+
+    const entrants = new Set(s.entrants);
+    const mapCars: TrackMapCar[] = [];
+    for (const idx of s.entrants) {
+      const pct = s.carIdxLapDistPct[idx] ?? -1;
+      if (!(pct >= 0 && pct <= 1)) continue;
+      mapCars.push({
+        slotId: idx,
+        lapFraction: Math.round(pct * 10000) / 10000,
+        inPit: s.carIdxOnPitRoad[idx] === true || s.carIdxTrackSurface[idx] === TRK.InPitStall,
+        isPlayer: idx === s.playerCarIdx,
+      });
+    }
+    let trackMap: TrackMapState | undefined;
+    if (mapCars.length || status.ready) {
+      const progress = status.ready ? 1 : Math.max(status.progress, this.integrator.recordingProgress);
+      trackMap = {
+        key: status.key,
+        revision: status.revision,
+        ready: status.ready,
+        progress: Math.round(progress * 1000) / 1000,
+        ...(status.relearning ? { relearning: true } : {}),
+        cars: mapCars,
+      };
+    }
+
+    // Radar: only for the car actually driven on this PC (CarLeftRight is the
+    // player's spotter), and never while spectating another car.
+    let radar: RadarBlip[] | undefined;
+    if (s.focusCarIdx === s.playerCarIdx && s.isOnTrack && !replayPlaying) {
+      const bySlot = new Map(standings.map((e) => [e.slotId, e]));
+      const blips = buildIracingRadar({
+        carLeftRight: s.carLeftRight,
+        playerSlotId: s.playerCarIdx,
+        playerPct: s.lapDistPct,
+        trackLengthM: L,
+        playerSpeedMs: speedMs,
+        previous: this.lastRadar,
+        cars: s.entrants
+          .filter((i) => entrants.has(i) && (s.carIdxLapDistPct[i] ?? -1) >= 0)
+          .map((i) => {
+            const e = bySlot.get(i);
+            return {
+              slotId: i,
+              pct: s.carIdxLapDistPct[i] ?? -1,
+              onPitRoad: s.carIdxOnPitRoad[i] === true,
+              ...(e?.carClass ? { carClass: e.carClass } : {}),
+              ...(e?.carNumber ? { carNumber: e.carNumber } : {}),
+            };
+          }),
+      });
+      this.lastRadar = blips;
+      if (blips) radar = blips;
+    } else {
+      this.lastRadar = null;
+    }
+    return { ...(trackMap ? { trackMap } : {}), ...(radar ? { radar } : {}) };
+  }
+
   private resetSession(key: string): void {
     this.sessionKey = key;
+    this.integrator.reset();
+    this.integratorRev = -1;
+    this.prevSessionTime = NaN;
+    this.lastRadar = null;
     this.gates.clear();
     this.playerGate = new LapGate();
     this.seenInWorld.clear();
@@ -767,10 +906,14 @@ export class IRacingProvider implements TelemetryProvider {
       entrants: entrants.map((d) => d.carIdx),
     };
 
-    // TODO(integration): trackMap + radar — feed this.snap to
-    // positionIntegrator.ts (TrackMapPath + per-car lapFraction) and radar.ts
-    // (pct + CarLeftRight blips), then spread `trackMap` / `radar` into the
-    // frame below. Until then both are omitted (absent = "no data").
+    /* --- track map + radar ----------------------------------------------- */
+    const { trackMap, radar } = this.buildMapAndRadar(
+      this.snap,
+      f.bool('IsReplayPlaying') || replay,
+      or(f.num('PlayerCarTowTime'), 0),
+      or(speed, 0),
+      standings,
+    );
 
     return {
       schemaVersion: TELEMETRY_SCHEMA_VERSION,
@@ -830,6 +973,8 @@ export class IRacingProvider implements TelemetryProvider {
       },
       standings,
       relative,
+      ...(radar ? { radar } : {}),
+      ...(trackMap ? { trackMap } : {}),
       weather: {
         trackTempC: round1(trackTemp),
         ambientTempC: round1(airTemp),
