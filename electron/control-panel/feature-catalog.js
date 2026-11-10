@@ -66,6 +66,8 @@
     { id: 'vr', label: 'VR headset', gated: 'beta' },
     { id: 'streamers', label: 'Streamers' },
     { id: 'leaderboard', label: 'Leaderboard' },
+    // iRacing's boards: the same board, its own tab (shown in iRacing mode).
+    { id: 'iracingboard', label: 'Leaderboard (iRacing)' },
     { id: 'schedule', label: 'Schedule' },
     { id: 'suggestions', label: 'Suggestions' },
     { id: 'settings', label: 'Settings' },
@@ -156,6 +158,8 @@
     // Leaderboard.
     { slug: 'action:board.filter', tab: 'leaderboard', label: 'Filtered the board' },
     { slug: 'action:board.compare', tab: 'leaderboard', label: "Opened someone else's lap" },
+    { slug: 'action:irboard.filter', tab: 'iracingboard', label: 'Filtered the iRacing board' },
+    { slug: 'action:irboard.compare', tab: 'iracingboard', label: "Opened someone else's iRacing lap" },
 
     // Streamers.
     { slug: 'action:stream.bot', tab: 'streamers', label: 'Turned the chat bot on' },

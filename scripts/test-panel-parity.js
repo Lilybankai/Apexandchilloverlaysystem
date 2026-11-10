@@ -231,6 +231,21 @@ const PANEL_CONTRACT = {
   'board-refnote': 'p',
   'board-hint': 'p',
 
+  // iRacing's boards (2026-11-10) — the same board code (createLeaderboard),
+  // its own markup. No refnote/hint: it has no reference pace to explain.
+  'irboard-track': 'select',
+  'irboard-classes': 'div',
+  'irboard-cond-field': 'div',
+  'irboard-conditions': 'div',
+  'irboard-car': 'select',
+  'irboard-title': 'h2',
+  'irboard-count': 'span',
+  'irboard-head': 'div',
+  'irboard-list': 'ul',
+  'irboard-empty': 'p',
+  'irboard-cmpnote': 'p',
+  'irboard-welcome': 'div',
+
   // The kit's RankBar, twice — Dashboard (`rank-*`) and Leaderboard (`lb-*`).
   // Contracted separately because they are the same component at two ids, and
   // losing one silently would leave the other looking perfectly fine.

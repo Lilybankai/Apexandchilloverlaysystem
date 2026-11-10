@@ -1476,6 +1476,10 @@
    */
   function scoreWeekBests() {
     if (!weekBests.length) return;
+    // The reference times are LMU's. Outside LMU the week's bests are listed
+    // unscored — no percentage column to read as "no reference found" on every
+    // row, because there is no reference to find.
+    if (activeSim() !== 'lmu') return;
     const ticket = ++weekScoreRequest;
     const laps = weekBests.map(({ best: b }) => ({
       track: b.track,
@@ -1626,7 +1630,7 @@
 
   /** Pull a fresh summary. Cheap, and always current when the card is shown. */
   function refreshWeek() {
-    window.apex.lapsWeek().then(renderWeek).catch(() => renderWeek(null));
+    window.apex.lapsWeek(activeSim()).then(renderWeek).catch(() => renderWeek(null));
   }
 
   // --- Pace vs reference ---------------------------------------------------
@@ -1994,7 +1998,7 @@
    * later wondering when you got quick at Sebring.
    */
   function renderLbRank() {
-    const focus = boardFocus || { row: selectedPaceRow(lastPaceData), who: null };
+    const focus = lmuBoard.focus() || { row: selectedPaceRow(lastPaceData), who: null };
     setText('#lb-rank-title', focus.who ? `${focus.who}'s pace` : 'Your pace');
     renderRankCard(
       {
@@ -2030,7 +2034,7 @@
   }
 
   function refreshPace() {
-    window.apex.lapsPace().then(renderPace).catch(() => renderPace(null));
+    window.apex.lapsPace(activeSim()).then(renderPace).catch(() => renderPace(null));
   }
 
   // --- League leaderboard --------------------------------------------------
@@ -2044,12 +2048,17 @@
    * (`leaderboard_filters`), never from a hardcoded track list. Offering a
    * dropdown of 31 circuits when three have laps on them is the fastest way to
    * make a working feature look broken.
+   *
+   * ONE implementation, one instance per sim (2026-11-10). LMU and iRacing each
+   * have their own tab and their own boards — every board key runs through a
+   * `tracks` row, and `tracks` is unique on (sim, slug), so the two can never
+   * share a row — but they are the same board: the same sidebar, the same
+   * columns, the same Compare. `createLeaderboard` is that board, handed the
+   * sim it asks the league about and the ids of the markup it paints into.
+   * The only real difference is the reference pace: Ohne Speed's sheet is LMU
+   * lap times at LMU layouts, so the iRacing board has no Pace column and no
+   * click-to-score (`scoring: false`).
    */
-
-  /** Every (track, class, car, condition) combination with laps, from the RPC. */
-  let boardFilters = [];
-  /** The current selection. `car` empty means "All cars". */
-  let boardPick = { trackId: '', carClass: '', car: '', condition: 'dry' };
 
   /*
    * The three surfaces, in the order they are offered — driest first, because
@@ -2072,574 +2081,704 @@
     return found ? found.label : 'Dry';
   }
 
-  /**
-   * The wetness marker for one board row, or null when the row needs none.
-   *
-   * Two different things wear the same chip, and the difference is the `?`:
-   *
-   *  - On a damp or wet board it is the MEASURED peak wetness, so two laps on
-   *    the same board can be told apart — 22% and 71% are both "wet" and are
-   *    not the same afternoon.
-   *  - On the dry board it can only be a lap from before this build, which
-   *    recorded that it was wet and not how wet. Those sit on the dry board
-   *    because their band is unknowable (see migration 0021), and the chip is
-   *    there so a time nobody can beat is at least explained rather than
-   *    silently ranked as a dry lap.
-   */
-  function boardWetChip(row) {
-    if (row.legacy_wet) {
-      return {
-        text: 'WET?',
-        title:
-          'Set in the wet. This lap is from a build that recorded only THAT it was wet, not how wet, so it cannot be placed on the wet board and is ranked here.',
-      };
-    }
-    if (boardPick.condition === 'dry') return null;
-    if (typeof row.wetness !== 'number' || !Number.isFinite(row.wetness)) return null;
-    return {
-      text: `${Math.round(row.wetness * 100)}%`,
-      title: 'The wettest point on the circuit at any time during this lap.',
-    };
-  }
-  /** Guards against an older request overwriting a newer one. */
-  let boardRequest = 0;
-
   function uniqueBy(rows, key) {
     const seen = new Map();
     for (const r of rows) if (!seen.has(r[key])) seen.set(r[key], r);
     return [...seen.values()];
   }
 
-  /** Rebuild the three controls from `boardFilters`, preserving the selection. */
-  function renderBoardFilters() {
-    const trackSel = $('#board-track');
-    const clsWrap = $('#board-classes');
-    const carSel = $('#board-car');
-    if (!trackSel || !clsWrap || !carSel) return;
+  /**
+   * One league board view.
+   *
+   * `cfg`:
+   *   - `sim`      — `'lmu'` | `'iracing'`, passed on every league read.
+   *   - `ids`      — the selectors of this instance's markup. Written out as
+   *                  literal `'#…'` strings at each call site, so the panel
+   *                  parity test sees (and protects) every one of them.
+   *   - `scoring`  — grade rows against the reference pace (LMU only).
+   *   - `notes`    — the usage-catalog slugs for a filter change and a Compare.
+   *   - `onFocus`  — called when the scored-row selection changes (LMU's card).
+   *   - `emptyText`— the line under an empty board when the sim has no laps on
+   *                  ANY board yet; `ids.welcome` is shown instead when given.
+   */
+  function createLeaderboard(cfg) {
+    const ids = cfg.ids;
+    const sim = cfg.sim === 'iracing' ? 'iracing' : 'lmu';
+    const scoring = !!cfg.scoring;
+    const notes = cfg.notes || {};
 
-    // --- Track ---
-    const tracks = uniqueBy(boardFilters, 'track_id').sort((a, b) =>
-      String(a.track_name).localeCompare(String(b.track_name)),
-    );
-    if (!tracks.some((t) => t.track_id === boardPick.trackId)) {
-      boardPick.trackId = tracks.length ? tracks[0].track_id : '';
-    }
-    trackSel.textContent = '';
-    for (const t of tracks) {
-      const opt = document.createElement('option');
-      opt.value = t.track_id;
-      opt.textContent = t.track_name;
-      opt.selected = t.track_id === boardPick.trackId;
-      trackSel.append(opt);
-    }
-    trackSel.disabled = tracks.length === 0;
+    /** Every (track, class, car, condition) combination with laps, from the RPC. */
+    let filters = [];
+    /** Whether `filters` came from a successful read (an empty board vs no board). */
+    let filtersOk = false;
+    /** The current selection. `car` empty means "All cars". */
+    const pick = { trackId: '', carClass: '', car: '', condition: 'dry' };
+    /** Guards against an older request overwriting a newer one. */
+    let request = 0;
 
-    // --- Class: only the classes that have laps AT the chosen track ---
-    const atTrack = boardFilters.filter((f) => f.track_id === boardPick.trackId);
-    const classes = [...new Set(atTrack.map((f) => f.car_class))].sort();
-    if (!classes.includes(boardPick.carClass)) boardPick.carClass = classes[0] || '';
-    clsWrap.textContent = '';
-    for (const cls of classes) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'clschip';
-      btn.textContent = classLabel(cls);
-      btn.setAttribute('data-active', String(cls === boardPick.carClass));
-      btn.addEventListener('click', () => {
-        boardPick.carClass = cls;
-        // The car list belongs to the class, so a class change invalidates it.
-        boardPick.car = '';
-        renderBoardFilters();
-        refreshBoard();
-      });
-      clsWrap.append(btn);
+    /**
+     * The wetness marker for one board row, or null when the row needs none.
+     *
+     * Two different things wear the same chip, and the difference is the `?`:
+     *
+     *  - On a damp or wet board it is the MEASURED peak wetness, so two laps on
+     *    the same board can be told apart — 22% and 71% are both "wet" and are
+     *    not the same afternoon.
+     *  - On the dry board it can only be a lap from before this build, which
+     *    recorded that it was wet and not how wet. Those sit on the dry board
+     *    because their band is unknowable (see migration 0021), and the chip is
+     *    there so a time nobody can beat is at least explained rather than
+     *    silently ranked as a dry lap.
+     */
+    function wetChip(row) {
+      if (row.legacy_wet) {
+        return {
+          text: 'WET?',
+          title:
+            'Set in the wet. This lap is from a build that recorded only THAT it was wet, not how wet, so it cannot be placed on the wet board and is ranked here.',
+        };
+      }
+      if (pick.condition === 'dry') return null;
+      if (typeof row.wetness !== 'number' || !Number.isFinite(row.wetness)) return null;
+      return {
+        text: `${Math.round(row.wetness * 100)}%`,
+        title: 'The wettest point on the circuit at any time during this lap.',
+      };
     }
 
-    // --- Conditions: the surfaces this track and class hold laps on ---
-    //
-    // A filter row rather than a fourth column, because these are separate
-    // boards and not a sort: P1 in the wet and P1 in the dry are two different
-    // laps by two possibly different drivers, and a single ranked list would
-    // put every wet time below every dry one and call that an order.
-    const atClass = atTrack.filter((f) => f.car_class === boardPick.carClass);
-    const held = new Set(atClass.map((f) => f.condition || 'dry'));
-    const conditions = BOARD_CONDITIONS.filter((c) => c.id === 'dry' || held.has(c.id));
-    if (!conditions.some((c) => c.id === boardPick.condition)) boardPick.condition = 'dry';
-    const condField = $('#board-cond-field');
-    const condWrap = $('#board-conditions');
-    if (condWrap) {
-      condWrap.textContent = '';
-      for (const cond of conditions) {
+    /** Rebuild the three controls from `filters`, preserving the selection. */
+    function renderFilters() {
+      const trackSel = $(ids.track);
+      const clsWrap = $(ids.classes);
+      const carSel = $(ids.car);
+      if (!trackSel || !clsWrap || !carSel) return;
+
+      // --- Track ---
+      const tracks = uniqueBy(filters, 'track_id').sort((a, b) =>
+        String(a.track_name).localeCompare(String(b.track_name)),
+      );
+      if (!tracks.some((t) => t.track_id === pick.trackId)) {
+        pick.trackId = tracks.length ? tracks[0].track_id : '';
+      }
+      trackSel.textContent = '';
+      for (const t of tracks) {
+        const opt = document.createElement('option');
+        opt.value = t.track_id;
+        opt.textContent = t.track_name;
+        opt.selected = t.track_id === pick.trackId;
+        trackSel.append(opt);
+      }
+      // A disabled select with nothing in it is a blank bar. On a sim whose
+      // boards are still empty it says so, in the control itself.
+      if (!tracks.length && cfg.noTracksLabel) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = cfg.noTracksLabel;
+        trackSel.append(opt);
+      }
+      trackSel.disabled = tracks.length === 0;
+
+      // --- Class: only the classes that have laps AT the chosen track ---
+      const atTrack = filters.filter((f) => f.track_id === pick.trackId);
+      const classes = [...new Set(atTrack.map((f) => f.car_class))].sort();
+      if (!classes.includes(pick.carClass)) pick.carClass = classes[0] || '';
+      clsWrap.textContent = '';
+      for (const cls of classes) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'clschip';
-        btn.textContent = cond.label;
-        btn.title = cond.hint;
-        btn.setAttribute('data-active', String(cond.id === boardPick.condition));
+        btn.textContent = classLabel(cls);
+        btn.setAttribute('data-active', String(cls === pick.carClass));
         btn.addEventListener('click', () => {
-          boardPick.condition = cond.id;
-          renderBoardFilters();
-          refreshBoard();
+          pick.carClass = cls;
+          // The car list belongs to the class, so a class change invalidates it.
+          pick.car = '';
+          renderFilters();
+          refresh();
         });
-        condWrap.append(btn);
+        clsWrap.append(btn);
       }
-    }
-    // One surface and no alternative is not a choice — and on most circuits,
-    // most of the time, that surface is dry. Hiding the row keeps the sidebar
-    // the length it has always been until the league actually races in the rain.
-    if (condField) condField.hidden = conditions.length < 2;
-
-    // --- Car: only cars that have laps in the chosen track, class AND surface ---
-    const cars = [
-      ...new Set(
-        atClass
-          .filter((f) => (f.condition || 'dry') === boardPick.condition)
-          .map((f) => f.car),
-      ),
-    ]
-      .filter(Boolean)
-      .sort();
-    if (boardPick.car && !cars.includes(boardPick.car)) boardPick.car = '';
-    carSel.textContent = '';
-    const all = document.createElement('option');
-    all.value = '';
-    all.textContent = 'All cars';
-    all.selected = !boardPick.car;
-    carSel.append(all);
-    for (const car of cars) {
-      const opt = document.createElement('option');
-      opt.value = car;
-      opt.textContent = car;
-      opt.selected = car === boardPick.car;
-      carSel.append(opt);
-    }
-    // One car and no alternative is not a choice; leave it visible but inert
-    // rather than offering a filter that cannot change anything.
-    carSel.disabled = cars.length < 2;
-  }
-
-  /* ---- Scoring a board ----
-   *
-   * A board ranks its drivers against each other. Clicking one ranks that lap
-   * against the reference instead — the same spreadsheet, the same bands, the
-   * same ladder the pace cards use for your own laps. That turns "P4, 1.4s off"
-   * into "P4, and the whole board is inside 101%", which is a different fact
-   * about the same afternoon and the one that says whether the gap is worth
-   * chasing.
-   */
-
-  /** The board's rows, with their reference scores once those arrive. */
-  let boardEntries = [];
-  /** The driver whose lap the Leaderboard's RankBar card is showing, if not you. */
-  let boardFocus = null;
-  /** Guards a slow scoring reply from painting over a newer board. */
-  let boardScoreRequest = 0;
-
-  /**
-   * Identity of one board entry, for the selection.
-   *
-   * Name plus lap time rather than the rank: a refresh that adds a quicker
-   * driver renumbers everyone below them, and a selection keyed on rank would
-   * slide onto the next driver down without appearing to move.
-   */
-  function boardKeyOf(row) {
-    return row ? `${row.display_name || ''}|${row.lap_ms}` : '';
-  }
-
-  function selectBoardRow(entry) {
-    if (!entry.scored || !entry.scored.ok) return;
-    const key = boardKeyOf(entry.row);
-    // Clicking the selected driver again hands the card back to you.
-    boardFocus =
-      boardFocus && boardFocus.key === key
-        ? null
-        : {
-            key,
-            row: entry.scored,
-            // Your own row hands the card back too, rather than titling it
-            // "You's pace". It is still worth clicking: it is how you compare
-            // one board entry against another without leaving the tab.
-            who: entry.row.is_you ? null : entry.row.display_name || 'Driver',
-          };
-    renderBoardList();
-    renderLbRank();
-  }
-
-  function renderBoard(result) {
-    const rows = (result && result.rows) || [];
-    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
-    // The surface is named in the title only when it is not the dry board. Dry
-    // is the one everyone means by "the leaderboard", and a "· Dry" on every
-    // title all season would be a word that only ever says "normal".
-    const surface =
-      boardPick.condition && boardPick.condition !== 'dry'
-        ? ` · ${conditionLabel(boardPick.condition)}`
-        : '';
-    setText(
-      '#board-title',
-      boardPick.carClass && track
-        ? `${classLabel(boardPick.carClass)} · ${track.track_name}${surface}`
-        : 'Leaderboard',
-    );
-    setText(
-      '#board-count',
-      rows.length ? `${rows.length} driver${rows.length === 1 ? '' : 's'}` : '',
-    );
-
-    const empty = $('#board-empty');
-    if (empty) {
-      if (!result || !result.ok) {
-        empty.hidden = false;
-        empty.textContent =
-          (result && result.error) || 'The league boards could not be reached.';
-      } else if (!rows.length) {
-        empty.hidden = false;
-        // Which board is empty, not just that one is. On a circuit whose damp
-        // chip is showing, "no laps yet" without the surface reads as the whole
-        // leaderboard having lost its times.
-        empty.textContent = surface
-          ? `No ${conditionLabel(boardPick.condition).toLowerCase()} laps here yet. Drive a clean one in these conditions and it will appear.`
-          : 'No laps on this board yet. Drive a clean lap here and it will appear.';
-      } else {
-        empty.hidden = true;
-      }
-    }
-
-    boardEntries = (result && result.ok ? rows : []).map((row) => ({ row, scored: null }));
-    renderBoardList();
-    scoreBoardRows();
-  }
-
-  /**
-   * Ask the main process to score every lap on the board.
-   *
-   * The whole board at once rather than on each click: scoring is a table lookup
-   * and a division, so a board costs less than the round trip that fetched it,
-   * and doing it up front is what lets a row know whether it is clickable BEFORE
-   * anyone clicks it. A row that accepts a click and then reports there is no
-   * reference for it would have wasted the only click a driver gives it.
-   */
-  function scoreBoardRows() {
-    if (!boardEntries.length) return;
-    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
-    if (!track) return;
-    // The reference times are DRY laps — Ohne Speed's, set on a dry circuit
-    // (see referencePace.ts). Dividing a wet lap by one of them produces a
-    // number, and the number is meaningless: it grades a driver's rain pace
-    // against a benchmark nobody set in the rain. A percentage that looks
-    // authoritative and measures nothing is worse than no percentage, so the
-    // wet boards say so instead — the same refusal the scorer already makes
-    // when it cannot tell two layouts of a circuit apart.
-    if (boardPick.condition && boardPick.condition !== 'dry') {
-      boardEntries.forEach((entry) => {
-        entry.scored = {
-          ok: false,
-          detail: `they were set on a ${boardPick.condition} track, and every reference time is a dry lap.`,
-        };
-      });
-      renderBoardList();
-      return;
-    }
-    const ticket = ++boardScoreRequest;
-    // The sim's measured lap distance, from the filter row. It is the only thing
-    // that can tell one layout of a circuit from another here — a board row
-    // carries no track metadata, because `leaderboard` returns a ranking rather
-    // than the laps' identity. Null on a track recorded before the length was
-    // known, which the scorer reads as "no hint" and answers `ambiguous-layout`
-    // for rather than guessing between layouts.
-    const trackLengthM = Number(track.track_length_m) || 0;
-    const laps = boardEntries.map(({ row }) => ({
-      track: track.track_name,
-      trackLengthM,
-      // The board's class, not the row's: boards are keyed on (track, class) and
-      // the car is metadata that travelled with the time.
-      carClass: boardPick.carClass,
-      car: row.car || '',
-      lapMs: row.lap_ms,
-    }));
-    window.apex
-      .lapsScore(laps)
-      .then((scored) => {
-        if (ticket !== boardScoreRequest) return;
-        if (!Array.isArray(scored) || scored.length !== boardEntries.length) return;
-        boardEntries.forEach((entry, i) => {
-          entry.scored = scored[i];
-        });
-        renderBoardList();
-      })
-      .catch(() => {});
-  }
-
-  /**
-   * Open the Review tab with your best lap here laid over this board row's.
-   *
-   * Your lap is found first, before leaving this tab: a comparison needs two
-   * traces, and a driver with no clean traced lap at this circuit in this
-   * class has nothing to lay theirs under. That case is said here, under the
-   * board, rather than on an empty Review screen the driver did not ask for.
-   */
-  async function compareBoardRow(row, btn) {
-    CATALOG?.note('action:board.compare');
-    const note = $('#board-cmpnote');
-    const track = boardFilters.find((f) => f.track_id === boardPick.trackId);
-    const trackId = row.track_id || boardPick.trackId;
-    const carClass = boardPick.carClass;
-    if (!trackId || !carClass) return;
-    const say = (text) => {
-      if (!note) return;
-      note.hidden = !text;
-      note.textContent = text || '';
-    };
-    say('');
-    if (btn) btn.disabled = true;
-    let res = null;
-    try {
-      res = await window.apex.reviewBestLap({ trackId, carClass });
-    } catch {
-      res = null;
-    }
-    if (btn) btn.disabled = false;
-    if (!res || !res.ok) {
-      say((res && res.error) || 'The league could not be reached.');
-      return;
-    }
-    if (!res.lap) {
-      const where = track ? `${track.track_name} in ${carClass}` : `this circuit in ${carClass}`;
-      say(`No clean lap of yours with telemetry at ${where} yet — drive one with Apex running and it can be compared with ${row.display_name || 'this driver'}'s.`);
-      return;
-    }
-    if (!window.apexReview || typeof window.apexReview.compareWithBoard !== 'function') return;
-    const opened = await window.apexReview.compareWithBoard(res.lap, {
-      ...row,
-      track_id: trackId,
-      car_class: carClass,
-    });
-    if (!opened) say('That lap could not be opened in Review.');
-  }
-
-  function renderBoardList() {
-    const list = $('#board-list');
-    if (!list) return;
-    list.textContent = '';
-    const cmpNote = $('#board-cmpnote');
-    if (cmpNote) { cmpNote.hidden = true; cmpNote.textContent = ''; }
-
-    const focusKey = boardFocus ? boardFocus.key : '';
-    for (const entry of boardEntries) {
-      const { row, scored } = entry;
-      const li = document.createElement('li');
-      li.className = 'lbrow lbrow--board';
-      // The kit marks your own row rather than only your position card: on a
-      // board of names, finding yourself is the first thing anyone does.
-      li.setAttribute('data-you', String(!!row.is_you));
-      li.setAttribute('data-band', paceBandOf(scored));
-
-      if (scored && scored.ok) {
-        const selected = String(boardKeyOf(row) === focusKey);
-        li.setAttribute('data-pick', 'true');
-        li.setAttribute('data-selected', selected);
-        li.tabIndex = 0;
-        li.setAttribute('role', 'button');
-        li.setAttribute('aria-pressed', selected);
-        li.title = `Score this lap against the reference — ${scored.bandLabel}, ${scored.percent.toFixed(1)}%`;
-        li.addEventListener('click', () => selectBoardRow(entry));
-        li.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            selectBoardRow(entry);
-          }
-        });
-      } else if (scored) {
-        li.title = scored.detail || 'This lap has no reference to score against.';
+      // The same courtesy as the track select: on a sim with no boards yet the
+      // class row says so rather than leaving a heading over nothing.
+      if (!classes.length && cfg.noTracksLabel) {
+        const none = document.createElement('span');
+        none.className = 'field__hint';
+        none.textContent = 'None yet';
+        clsWrap.append(none);
       }
 
-      const pos = document.createElement('span');
-      pos.className = 'lbrow__pos';
-      pos.textContent = String(row.rank);
-
-      const driver = document.createElement('span');
-      driver.className = 'lbrow__driver';
-      // createElement, never innerHTML: display names are user-supplied.
-      driver.textContent = row.is_you ? 'You' : row.display_name || 'Driver';
-      driver.title = row.display_name || '';
-
-      const car = document.createElement('span');
-      car.className = 'lbrow__car';
-      car.textContent = row.car || '';
-      car.title = row.car || '';
-
-      // The surface marker rides in the car cell rather than in a column of its
-      // own: the row is already seven columns wide, and a column that is empty
-      // on every dry board would be six characters of permanent whitespace.
-      const chip = boardWetChip(row);
-      if (chip) {
-        const tag = document.createElement('span');
-        tag.className = 'lbrow__wet';
-        tag.textContent = chip.text;
-        tag.title = chip.title;
-        car.append(' ', tag);
-      }
-
-      const lap = document.createElement('span');
-      lap.className = 'lbrow__time';
-      // P1 gets the kit's purple: it is the quickest in a genuinely comparable
-      // set, which is the one place that highlight means anything.
-      if (row.rank === 1) lap.setAttribute('data-fastest', 'true');
-      lap.textContent = formatLapTime(row.lap_ms);
-      // The conditions it was set in (migration 0043): a session letter
-      // beside the time, and the card on hover/focus. A server without 0043
-      // returns none, and the time is left exactly as it was.
-      window.APEX_BOARD_CONDITIONS?.decorate(lap, row, lap.textContent);
-
-      const gap = document.createElement('span');
-      gap.className = 'lbrow__gap';
-      gap.textContent =
-        typeof row.gap_ms === 'number' ? `+${(row.gap_ms / 1000).toFixed(3)}` : '—';
-
-      // The grade, on the row. It used to be behind a click, which made an
-      // unscorable row indistinguishable from a broken one: you clicked, nothing
-      // happened, and the only explanation was a grey line under the board. A
-      // percentage in its own column answers the question without the click, and
-      // an em dash is visibly "no score" rather than a button that ignored you.
-      const score = document.createElement('span');
-      score.className = 'lbrow__score';
-      if (scored && scored.ok) {
-        score.textContent = `${scored.percent.toFixed(1)}%`;
-        if (scored.assumed) score.textContent += ' ?';
-      } else {
-        score.textContent = scored ? '—' : '';
-      }
-
-      // Compare, on the rows that can be compared with. A board lap carries its
-      // driving trace (has_trace) when it was set on a build that recorded one,
-      // and opens in Review laid under YOUR best lap here — so it is offered on
-      // everyone's row but yours (your board lap IS your best lap). A lap set
-      // before the driven line was captured still compares on every channel
-      // and the delta; only the map is one line, and the title says so.
-      const cmp = document.createElement('span');
-      cmp.className = 'lbrow__cmp';
-      if (row.has_trace && !row.is_you) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'lbrow__cmpbtn';
-        btn.textContent = 'Compare';
-        btn.setAttribute('data-line', String(!!row.has_line));
-        btn.title = row.has_line
-          ? `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review`
-          : `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review — set before Apex recorded the driven line, so the map shows only yours`;
-        btn.addEventListener('click', (e) => {
-          // The button sits inside a row that is itself a button (the score
-          // card). "Compare" must not also mean "select".
-          e.stopPropagation();
-          void compareBoardRow(row, btn);
-        });
-        btn.addEventListener('keydown', (e) => e.stopPropagation());
-        cmp.append(btn);
-      } else if (!row.is_you) {
-        // On a wet board there is never telemetry, and the reason is structural
-        // rather than this lap's bad luck — worth saying differently, so nobody
-        // waits for a Compare button that is never coming.
-        cmp.title =
-          boardPick.condition && boardPick.condition !== 'dry'
-            ? 'Telemetry is kept for the dry board only, so these laps compare on time alone'
-            : 'No telemetry on the board for this lap';
-      }
-
-      li.append(pos, driver, car, lap, gap, score, cmp);
-      list.append(li);
-    }
-
-    // Why a board full of times has no scores, on the one screen where the
-    // question comes up. Every row fails for the same reason when it fails at
-    // all — they share a track and a class — so it is said once, under the
-    // board, rather than as sixteen identical tooltips.
-    const scoredRows = boardEntries.filter((e) => e.scored);
-    const none = scoredRows.length > 0 && !scoredRows.some((e) => e.scored.ok);
-
-    const note = $('#board-refnote');
-    if (note) {
-      note.hidden = !none;
-      if (none) {
-        note.textContent = `These laps can't be scored against the reference: ${
-          scoredRows[0].scored.detail || 'no reference covers this track and class.'
-        }`;
-      }
-    }
-
-    // Do not invite a click the board cannot honour. Telling someone to click a
-    // lap and then doing nothing when they do is what made this read as broken
-    // rather than as a limitation; the note above takes over instead.
-    const hint = $('#board-hint');
-    if (hint) hint.hidden = none || !boardEntries.length;
-  }
-
-  function refreshBoard() {
-    // A new board means the selected driver is no longer on screen, and a card
-    // still headed with their name over a board they are not on is worse than
-    // no selection at all.
-    boardFocus = null;
-    renderLbRank();
-    if (!boardPick.trackId || !boardPick.carClass) {
-      renderBoard({ ok: true, rows: [] });
-      return;
-    }
-    const ticket = ++boardRequest;
-    window.apex
-      .leaderboardRows({ ...boardPick })
-      .then((res) => {
-        // A slow request for a board you have already navigated away from must
-        // not paint over the one you are looking at.
-        if (ticket === boardRequest) renderBoard(res);
-      })
-      .catch(() => {
-        if (ticket === boardRequest) renderBoard(null);
-      });
-  }
-
-  function refreshBoardFilters() {
-    return window.apex
-      .leaderboardFilters()
-      .then((res) => {
-        if (!res || !res.ok) {
-          boardFilters = [];
-          renderBoardFilters();
-          renderBoard(res);
-          return;
+      // --- Conditions: the surfaces this track and class hold laps on ---
+      //
+      // A filter row rather than a fourth column, because these are separate
+      // boards and not a sort: P1 in the wet and P1 in the dry are two different
+      // laps by two possibly different drivers, and a single ranked list would
+      // put every wet time below every dry one and call that an order.
+      const atClass = atTrack.filter((f) => f.car_class === pick.carClass);
+      const held = new Set(atClass.map((f) => f.condition || 'dry'));
+      const conditions = BOARD_CONDITIONS.filter((c) => c.id === 'dry' || held.has(c.id));
+      if (!conditions.some((c) => c.id === pick.condition)) pick.condition = 'dry';
+      const condField = $(ids.condField);
+      const condWrap = $(ids.conditions);
+      if (condWrap) {
+        condWrap.textContent = '';
+        for (const cond of conditions) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'clschip';
+          btn.textContent = cond.label;
+          btn.title = cond.hint;
+          btn.setAttribute('data-active', String(cond.id === pick.condition));
+          btn.addEventListener('click', () => {
+            pick.condition = cond.id;
+            renderFilters();
+            refresh();
+          });
+          condWrap.append(btn);
         }
-        boardFilters = res.rows || [];
-        renderBoardFilters();
-        refreshBoard();
-      })
-      .catch(() => {
-        boardFilters = [];
-        renderBoardFilters();
-        renderBoard(null);
+      }
+      // One surface and no alternative is not a choice — and on most circuits,
+      // most of the time, that surface is dry. Hiding the row keeps the sidebar
+      // the length it has always been until the league actually races in the rain.
+      if (condField) condField.hidden = conditions.length < 2;
+
+      // --- Car: only cars that have laps in the chosen track, class AND surface ---
+      const cars = [
+        ...new Set(
+          atClass
+            .filter((f) => (f.condition || 'dry') === pick.condition)
+            .map((f) => f.car),
+        ),
+      ]
+        .filter(Boolean)
+        .sort();
+      if (pick.car && !cars.includes(pick.car)) pick.car = '';
+      carSel.textContent = '';
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = 'All cars';
+      all.selected = !pick.car;
+      carSel.append(all);
+      for (const car of cars) {
+        const opt = document.createElement('option');
+        opt.value = car;
+        opt.textContent = car;
+        opt.selected = car === pick.car;
+        carSel.append(opt);
+      }
+      // One car and no alternative is not a choice; leave it visible but inert
+      // rather than offering a filter that cannot change anything.
+      carSel.disabled = cars.length < 2;
+    }
+
+    /* ---- Scoring a board ----
+     *
+     * A board ranks its drivers against each other. Clicking one ranks that lap
+     * against the reference instead — the same spreadsheet, the same bands, the
+     * same ladder the pace cards use for your own laps. That turns "P4, 1.4s off"
+     * into "P4, and the whole board is inside 101%", which is a different fact
+     * about the same afternoon and the one that says whether the gap is worth
+     * chasing. LMU only: see the section header.
+     */
+
+    /** The board's rows, with their reference scores once those arrive. */
+    let entries = [];
+    /** The driver whose lap the RankBar card is showing, if not you. */
+    let focus = null;
+    /** Guards a slow scoring reply from painting over a newer board. */
+    let scoreRequest = 0;
+
+    /**
+     * Identity of one board entry, for the selection.
+     *
+     * Name plus lap time rather than the rank: a refresh that adds a quicker
+     * driver renumbers everyone below them, and a selection keyed on rank would
+     * slide onto the next driver down without appearing to move.
+     */
+    function keyOf(row) {
+      return row ? `${row.display_name || ''}|${row.lap_ms}` : '';
+    }
+
+    function selectRow(entry) {
+      if (!entry.scored || !entry.scored.ok) return;
+      const key = keyOf(entry.row);
+      // Clicking the selected driver again hands the card back to you.
+      focus =
+        focus && focus.key === key
+          ? null
+          : {
+              key,
+              row: entry.scored,
+              // Your own row hands the card back too, rather than titling it
+              // "You's pace". It is still worth clicking: it is how you compare
+              // one board entry against another without leaving the tab.
+              who: entry.row.is_you ? null : entry.row.display_name || 'Driver',
+            };
+      renderList();
+      if (cfg.onFocus) cfg.onFocus();
+    }
+
+    function renderBoard(result) {
+      const rows = (result && result.rows) || [];
+      const track = filters.find((f) => f.track_id === pick.trackId);
+      // The surface is named in the title only when it is not the dry board. Dry
+      // is the one everyone means by "the leaderboard", and a "· Dry" on every
+      // title all season would be a word that only ever says "normal".
+      const surface =
+        pick.condition && pick.condition !== 'dry' ? ` · ${conditionLabel(pick.condition)}` : '';
+      setText(
+        ids.title,
+        pick.carClass && track
+          ? `${classLabel(pick.carClass)} · ${track.track_name}${surface}`
+          : cfg.title || 'Leaderboard',
+      );
+      setText(ids.count, rows.length ? `${rows.length} driver${rows.length === 1 ? '' : 's'}` : '');
+
+      // A sim whose league has no laps on any board yet. Not an error and not a
+      // board that lost its times: a first-run state, and it gets a screen that
+      // says what will fill it rather than an empty table under a blank select.
+      const nothingYet = !!(result && result.ok) && filtersOk && filters.length === 0;
+      const welcome = ids.welcome ? $(ids.welcome) : null;
+      if (welcome) welcome.hidden = !nothingYet;
+      const head = ids.head ? $(ids.head) : null;
+      if (head) head.hidden = nothingYet;
+
+      const empty = $(ids.empty);
+      if (empty) {
+        if (!result || !result.ok) {
+          empty.hidden = false;
+          empty.textContent = (result && result.error) || 'The league boards could not be reached.';
+        } else if (nothingYet && welcome) {
+          empty.hidden = true;
+        } else if (!rows.length) {
+          empty.hidden = false;
+          // Which board is empty, not just that one is. On a circuit whose damp
+          // chip is showing, "no laps yet" without the surface reads as the whole
+          // leaderboard having lost its times.
+          empty.textContent = surface
+            ? `No ${conditionLabel(pick.condition).toLowerCase()} laps here yet. Drive a clean one in these conditions and it will appear.`
+            : 'No laps on this board yet. Drive a clean lap here and it will appear.';
+        } else {
+          empty.hidden = true;
+        }
+      }
+
+      entries = (result && result.ok ? rows : []).map((row) => ({ row, scored: null }));
+      renderList();
+      if (scoring) scoreRows();
+    }
+
+    /**
+     * Ask the main process to score every lap on the board.
+     *
+     * The whole board at once rather than on each click: scoring is a table lookup
+     * and a division, so a board costs less than the round trip that fetched it,
+     * and doing it up front is what lets a row know whether it is clickable BEFORE
+     * anyone clicks it. A row that accepts a click and then reports there is no
+     * reference for it would have wasted the only click a driver gives it.
+     */
+    function scoreRows() {
+      if (!entries.length) return;
+      const track = filters.find((f) => f.track_id === pick.trackId);
+      if (!track) return;
+      // The reference times are DRY laps — Ohne Speed's, set on a dry circuit
+      // (see referencePace.ts). Dividing a wet lap by one of them produces a
+      // number, and the number is meaningless: it grades a driver's rain pace
+      // against a benchmark nobody set in the rain. A percentage that looks
+      // authoritative and measures nothing is worse than no percentage, so the
+      // wet boards say so instead — the same refusal the scorer already makes
+      // when it cannot tell two layouts of a circuit apart.
+      if (pick.condition && pick.condition !== 'dry') {
+        entries.forEach((entry) => {
+          entry.scored = {
+            ok: false,
+            detail: `they were set on a ${pick.condition} track, and every reference time is a dry lap.`,
+          };
+        });
+        renderList();
+        return;
+      }
+      const ticket = ++scoreRequest;
+      // The sim's measured lap distance, from the filter row. It is the only thing
+      // that can tell one layout of a circuit from another here — a board row
+      // carries no track metadata, because `leaderboard` returns a ranking rather
+      // than the laps' identity. Null on a track recorded before the length was
+      // known, which the scorer reads as "no hint" and answers `ambiguous-layout`
+      // for rather than guessing between layouts.
+      const trackLengthM = Number(track.track_length_m) || 0;
+      const laps = entries.map(({ row }) => ({
+        sim,
+        track: track.track_name,
+        trackLengthM,
+        // The board's class, not the row's: boards are keyed on (track, class) and
+        // the car is metadata that travelled with the time.
+        carClass: pick.carClass,
+        car: row.car || '',
+        lapMs: row.lap_ms,
+      }));
+      window.apex
+        .lapsScore(laps)
+        .then((scored) => {
+          if (ticket !== scoreRequest) return;
+          if (!Array.isArray(scored) || scored.length !== entries.length) return;
+          entries.forEach((entry, i) => {
+            entry.scored = scored[i];
+          });
+          renderList();
+        })
+        .catch(() => {});
+    }
+
+    /**
+     * Open the Review tab with your best lap here laid over this board row's.
+     *
+     * Your lap is found first, before leaving this tab: a comparison needs two
+     * traces, and a driver with no clean traced lap at this circuit in this
+     * class has nothing to lay theirs under. That case is said here, under the
+     * board, rather than on an empty Review screen the driver did not ask for.
+     */
+    async function compareRow(row, btn) {
+      if (notes.compare) CATALOG?.note(notes.compare);
+      const note = $(ids.cmpnote);
+      const track = filters.find((f) => f.track_id === pick.trackId);
+      const trackId = row.track_id || pick.trackId;
+      const carClass = pick.carClass;
+      if (!trackId || !carClass) return;
+      const say = (text) => {
+        if (!note) return;
+        note.hidden = !text;
+        note.textContent = text || '';
+      };
+      say('');
+      if (btn) btn.disabled = true;
+      let res = null;
+      try {
+        res = await window.apex.reviewBestLap({ trackId, carClass, sim });
+      } catch {
+        res = null;
+      }
+      if (btn) btn.disabled = false;
+      if (!res || !res.ok) {
+        say((res && res.error) || 'The league could not be reached.');
+        return;
+      }
+      if (!res.lap) {
+        const where = track ? `${track.track_name} in ${carClass}` : `this circuit in ${carClass}`;
+        say(
+          `No clean lap of yours with telemetry at ${where} yet — drive one with Apex running and it can be compared with ${row.display_name || 'this driver'}'s.`,
+        );
+        return;
+      }
+      if (!window.apexReview || typeof window.apexReview.compareWithBoard !== 'function') return;
+      const opened = await window.apexReview.compareWithBoard(res.lap, {
+        ...row,
+        track_id: trackId,
+        car_class: carClass,
       });
+      if (!opened) say('That lap could not be opened in Review.');
+    }
+
+    function renderList() {
+      const list = $(ids.list);
+      if (!list) return;
+      list.textContent = '';
+      const cmpNote = $(ids.cmpnote);
+      if (cmpNote) {
+        cmpNote.hidden = true;
+        cmpNote.textContent = '';
+      }
+
+      const focusKey = focus ? focus.key : '';
+      for (const entry of entries) {
+        const { row, scored } = entry;
+        const li = document.createElement('li');
+        li.className = 'lbrow lbrow--board';
+        // The kit marks your own row rather than only your position card: on a
+        // board of names, finding yourself is the first thing anyone does.
+        li.setAttribute('data-you', String(!!row.is_you));
+        li.setAttribute('data-band', paceBandOf(scored));
+
+        if (scored && scored.ok) {
+          const selected = String(keyOf(row) === focusKey);
+          li.setAttribute('data-pick', 'true');
+          li.setAttribute('data-selected', selected);
+          li.tabIndex = 0;
+          li.setAttribute('role', 'button');
+          li.setAttribute('aria-pressed', selected);
+          li.title = `Score this lap against the reference — ${scored.bandLabel}, ${scored.percent.toFixed(1)}%`;
+          li.addEventListener('click', () => selectRow(entry));
+          li.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              selectRow(entry);
+            }
+          });
+        } else if (scored) {
+          li.title = scored.detail || 'This lap has no reference to score against.';
+        }
+
+        const pos = document.createElement('span');
+        pos.className = 'lbrow__pos';
+        pos.textContent = String(row.rank);
+
+        const driver = document.createElement('span');
+        driver.className = 'lbrow__driver';
+        // createElement, never innerHTML: display names are user-supplied.
+        driver.textContent = row.is_you ? 'You' : row.display_name || 'Driver';
+        driver.title = row.display_name || '';
+
+        const car = document.createElement('span');
+        car.className = 'lbrow__car';
+        car.textContent = row.car || '';
+        car.title = row.car || '';
+
+        // The surface marker rides in the car cell rather than in a column of its
+        // own: the row is already seven columns wide, and a column that is empty
+        // on every dry board would be six characters of permanent whitespace.
+        const chip = wetChip(row);
+        if (chip) {
+          const tag = document.createElement('span');
+          tag.className = 'lbrow__wet';
+          tag.textContent = chip.text;
+          tag.title = chip.title;
+          car.append(' ', tag);
+        }
+
+        const lap = document.createElement('span');
+        lap.className = 'lbrow__time';
+        // P1 gets the kit's purple: it is the quickest in a genuinely comparable
+        // set, which is the one place that highlight means anything.
+        if (row.rank === 1) lap.setAttribute('data-fastest', 'true');
+        lap.textContent = formatLapTime(row.lap_ms);
+        // The conditions it was set in (migration 0043): a session letter
+        // beside the time, and the card on hover/focus. A server without 0043
+        // returns none, and the time is left exactly as it was.
+        window.APEX_BOARD_CONDITIONS?.decorate(lap, row, lap.textContent);
+
+        const gap = document.createElement('span');
+        gap.className = 'lbrow__gap';
+        gap.textContent = typeof row.gap_ms === 'number' ? `+${(row.gap_ms / 1000).toFixed(3)}` : '—';
+
+        // The grade, on the row. It used to be behind a click, which made an
+        // unscorable row indistinguishable from a broken one: you clicked, nothing
+        // happened, and the only explanation was a grey line under the board. A
+        // percentage in its own column answers the question without the click, and
+        // an em dash is visibly "no score" rather than a button that ignored you.
+        // Boards without scoring keep the cell (the columns are positional) and
+        // the stylesheet hides it with its heading — see `.lbmain--nopace`.
+        const score = document.createElement('span');
+        score.className = 'lbrow__score';
+        if (scored && scored.ok) {
+          score.textContent = `${scored.percent.toFixed(1)}%`;
+          if (scored.assumed) score.textContent += ' ?';
+        } else {
+          score.textContent = scored ? '—' : '';
+        }
+
+        // Compare, on the rows that can be compared with. A board lap carries its
+        // driving trace (has_trace) when it was set on a build that recorded one,
+        // and opens in Review laid under YOUR best lap here — so it is offered on
+        // everyone's row but yours (your board lap IS your best lap). A lap set
+        // before the driven line was captured still compares on every channel
+        // and the delta; only the map is one line, and the title says so.
+        const cmp = document.createElement('span');
+        cmp.className = 'lbrow__cmp';
+        if (row.has_trace && !row.is_you) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'lbrow__cmpbtn';
+          btn.textContent = 'Compare';
+          btn.setAttribute('data-line', String(!!row.has_line));
+          btn.title = row.has_line
+            ? `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review`
+            : sim === 'lmu'
+              ? `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review — set before Apex recorded the driven line, so the map shows only yours`
+              : `Lay your best lap here over ${row.display_name || 'this driver'}'s in Review — the map shows only yours, because this lap carries no driven line`;
+          btn.addEventListener('click', (e) => {
+            // The button sits inside a row that is itself a button (the score
+            // card). "Compare" must not also mean "select".
+            e.stopPropagation();
+            void compareRow(row, btn);
+          });
+          btn.addEventListener('keydown', (e) => e.stopPropagation());
+          cmp.append(btn);
+        } else if (!row.is_you) {
+          // On a wet board there is never telemetry, and the reason is structural
+          // rather than this lap's bad luck — worth saying differently, so nobody
+          // waits for a Compare button that is never coming.
+          cmp.title =
+            pick.condition && pick.condition !== 'dry'
+              ? 'Telemetry is kept for the dry board only, so these laps compare on time alone'
+              : 'No telemetry on the board for this lap';
+        }
+
+        li.append(pos, driver, car, lap, gap, score, cmp);
+        list.append(li);
+      }
+
+      // Why a board full of times has no scores, on the one screen where the
+      // question comes up. Every row fails for the same reason when it fails at
+      // all — they share a track and a class — so it is said once, under the
+      // board, rather than as sixteen identical tooltips.
+      const scoredRows = entries.filter((e) => e.scored);
+      const none = scoredRows.length > 0 && !scoredRows.some((e) => e.scored.ok);
+
+      const note = ids.refnote ? $(ids.refnote) : null;
+      if (note) {
+        note.hidden = !none;
+        if (none) {
+          note.textContent = `These laps can't be scored against the reference: ${
+            scoredRows[0].scored.detail || 'no reference covers this track and class.'
+          }`;
+        }
+      }
+
+      // Do not invite a click the board cannot honour. Telling someone to click a
+      // lap and then doing nothing when they do is what made this read as broken
+      // rather than as a limitation; the note above takes over instead.
+      const hint = ids.hint ? $(ids.hint) : null;
+      if (hint) hint.hidden = !scoring || none || !entries.length;
+    }
+
+    function refresh() {
+      // A new board means the selected driver is no longer on screen, and a card
+      // still headed with their name over a board they are not on is worse than
+      // no selection at all.
+      focus = null;
+      if (cfg.onFocus) cfg.onFocus();
+      if (!pick.trackId || !pick.carClass) {
+        renderBoard({ ok: true, rows: [] });
+        return;
+      }
+      const ticket = ++request;
+      window.apex
+        .leaderboardRows({ ...pick, sim })
+        .then((res) => {
+          // A slow request for a board you have already navigated away from must
+          // not paint over the one you are looking at.
+          if (ticket === request) renderBoard(res);
+        })
+        .catch(() => {
+          if (ticket === request) renderBoard(null);
+        });
+    }
+
+    function refreshFilters() {
+      return window.apex
+        .leaderboardFilters(sim)
+        .then((res) => {
+          if (!res || !res.ok) {
+            filters = [];
+            filtersOk = false;
+            renderFilters();
+            renderBoard(res);
+            return;
+          }
+          filters = res.rows || [];
+          filtersOk = true;
+          renderFilters();
+          refresh();
+        })
+        .catch(() => {
+          filters = [];
+          filtersOk = false;
+          renderFilters();
+          renderBoard(null);
+        });
+    }
+
+    {
+      const trackSel = $(ids.track);
+      if (trackSel) {
+        trackSel.addEventListener('change', () => {
+          if (notes.filter) CATALOG?.note(notes.filter);
+          pick.trackId = trackSel.value;
+          // Class and car both belong to the track; carrying them across would
+          // ask for a board that has no laps on it.
+          pick.carClass = '';
+          pick.car = '';
+          renderFilters();
+          refresh();
+        });
+      }
+      const carSel = $(ids.car);
+      if (carSel) {
+        carSel.addEventListener('change', () => {
+          if (notes.filter) CATALOG?.note(notes.filter);
+          pick.car = carSel.value;
+          refresh();
+        });
+      }
+    }
+
+    return {
+      sim,
+      refreshFilters,
+      refresh,
+      /** The scored row the RankBar card should describe, or null for "you". */
+      focus: () => focus,
+    };
   }
 
-  {
-    const trackSel = $('#board-track');
-    if (trackSel) {
-      trackSel.addEventListener('change', () => {
-        CATALOG?.note('action:board.filter');
-        boardPick.trackId = trackSel.value;
-        // Class and car both belong to the track; carrying them across would
-        // ask for a board that has no laps on it.
-        boardPick.carClass = '';
-        boardPick.car = '';
-        renderBoardFilters();
-        refreshBoard();
-      });
-    }
-    const carSel = $('#board-car');
-    if (carSel) {
-      carSel.addEventListener('change', () => {
-        CATALOG?.note('action:board.filter');
-        boardPick.car = carSel.value;
-        refreshBoard();
-      });
-    }
+  /** LMU's boards: the original Leaderboard tab, with reference pace. */
+  const lmuBoard = createLeaderboard({
+    sim: 'lmu',
+    scoring: true,
+    title: 'Leaderboard',
+    ids: {
+      track: '#board-track',
+      classes: '#board-classes',
+      condField: '#board-cond-field',
+      conditions: '#board-conditions',
+      car: '#board-car',
+      title: '#board-title',
+      count: '#board-count',
+      list: '#board-list',
+      empty: '#board-empty',
+      refnote: '#board-refnote',
+      cmpnote: '#board-cmpnote',
+      hint: '#board-hint',
+    },
+    notes: { filter: 'action:board.filter', compare: 'action:board.compare' },
+    onFocus: () => renderLbRank(),
+  });
+
+  /**
+   * iRacing's boards: the same board on iRacing's own tracks rows. No
+   * reference pace (Ohne Speed's sheet is LMU's), so no Pace column, no
+   * click-to-score and no RankBar card — everything else is the LMU board.
+   */
+  const iracingBoard = createLeaderboard({
+    sim: 'iracing',
+    scoring: false,
+    title: 'Leaderboard',
+    noTracksLabel: 'No circuits yet',
+    ids: {
+      track: '#irboard-track',
+      classes: '#irboard-classes',
+      condField: '#irboard-cond-field',
+      conditions: '#irboard-conditions',
+      car: '#irboard-car',
+      title: '#irboard-title',
+      count: '#irboard-count',
+      list: '#irboard-list',
+      empty: '#irboard-empty',
+      cmpnote: '#irboard-cmpnote',
+      welcome: '#irboard-welcome',
+      head: '#irboard-head',
+    },
+    notes: { filter: 'action:irboard.filter', compare: 'action:irboard.compare' },
+  });
+
+  /**
+   * The sim the panel is showing — `<html data-sim>`, set by the sim switch.
+   * Absent means LMU: every install before iRacing support, and the default.
+   */
+  function activeSim() {
+    return document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu';
   }
+
+  /** Each sim's leaderboard tab. One is hidden at a time (`data-sims`). */
+  const BOARD_TAB_FOR_SIM = { lmu: 'leaderboard', iracing: 'iracingboard' };
 
   // --- Lap sync ------------------------------------------------------------
   /*
@@ -6964,6 +7103,10 @@
   });
 
   function showView(name) {
+    // Each sim has its own Leaderboard tab and only one is on the rail at a
+    // time. A remembered tab, a tour link or a checklist row that names the
+    // other sim's board lands on this sim's instead of on a hidden view.
+    if (name === 'leaderboard' || name === 'iracingboard') name = BOARD_TAB_FOR_SIM[activeSim()];
     const known = views.some((v) => v.dataset.view === name);
     const target = known ? name : 'dashboard';
     // Before anything moves: the tab being left is owed its seconds.
@@ -6994,8 +7137,9 @@
     }
     if (target === 'leaderboard') {
       refreshPace();
-      refreshBoardFilters();
+      lmuBoard.refreshFilters();
     }
+    if (target === 'iracingboard') iracingBoard.refreshFilters();
     if (target === 'admin') {
       void loadAdmin();
     }
@@ -7159,6 +7303,24 @@
     /* storage disabled */
   }
   showView(restored);
+
+  // When the sim changes, the lap views follow it: the Dashboard's week and
+  // pace are re-read for the new sim, and a Leaderboard tab that is open moves
+  // to the new sim's board rather than staying on one the rail just hid.
+  if (typeof MutationObserver === 'function') {
+    let shownSim = activeSim();
+    new MutationObserver(() => {
+      const sim = activeSim();
+      if (sim === shownSim) return;
+      shownSim = sim;
+      if (lastShownView === 'dashboard') {
+        refreshWeek();
+        refreshPace();
+      } else if (lastShownView === 'leaderboard' || lastShownView === 'iracingboard') {
+        showView(BOARD_TAB_FOR_SIM[sim]);
+      }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-sim'] });
+  }
 
   // --- Subscription (the Settings card) ------------------------------------
   /*
