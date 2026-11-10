@@ -362,7 +362,7 @@ export class RaceLogRecorder {
           emit('flag', 'Yellow flags cleared');
           break;
         case 'finalLap':
-          emit('flag', 'Chequered flag out: final lap');
+          emit('flag', frame.source === 'iracing' ? 'White flag: final lap' : 'Chequered flag out: final lap');
           break;
         case 'checkered':
           break; // the engineer's is the CAMERA car's; ours is the next line crossing (detectRow)
@@ -554,7 +554,7 @@ export class RaceLogRecorder {
     this.startEtPending = fromStart && et === null;
     // Prime every level from the frame we arrive on: an edge needs a before.
     this.storeFlags(frame);
-    this.chequeredOut = s.finalLap === true;
+    this.chequeredOut = chequerShowing(frame);
     if (row) this.detectRow(row, nowMs, () => undefined);
     // Damage is NOT primed here: detectDamage decides whether a first reading
     // is news or was already on the car when a race was joined late.
@@ -610,7 +610,7 @@ export class RaceLogRecorder {
     f.yellowSectors = yellowSectorLevel(frame);
     f.finalLap = s.finalLap === true;
     f.finished = frame.player?.finished === true;
-    if (f.finalLap) this.chequeredOut = true;
+    if (chequerShowing(frame)) this.chequeredOut = true;
   }
 
   private refreshIdentity(frame: TelemetryFrame, nowMs: number): void {
@@ -1080,4 +1080,14 @@ export async function loadLiveLog(opts: { dir?: string; sinceMs?: number } = {})
     }
   }
   return parseLiveLog(texts.join('\n'));
+}
+
+/**
+ * The chequered flag is out, so the next line crossing is the finish. LMU says
+ * it through `session.finalLap`; iRacing raises `finalLap` at the WHITE flag a
+ * lap earlier, so there only the chequered flag itself counts.
+ */
+function chequerShowing(frame: TelemetryFrame): boolean {
+  if (frame.session.finalLap !== true) return false;
+  return frame.source !== 'iracing' || frame.session.flag === 'checkered';
 }

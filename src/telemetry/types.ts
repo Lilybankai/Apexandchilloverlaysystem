@@ -2116,6 +2116,57 @@ export interface TelemetryFrame {
    * session, in menus), so the widget never drives the MFD from stale data.
    */
   mfd?: MfdState;
+  /**
+   * iRacing race control as the race engineer reads it — the player's own
+   * flag bits, the session's lap limit and the player's laps in it. Only the
+   * iRacing provider sets it, and only while the driven car is the focused
+   * car and no replay is playing. See {@link IracingRaceControl}.
+   */
+  iracing?: IracingRaceControl;
+}
+
+/**
+ * The iRacing facts the race engineer needs that no generic block carries
+ * (`telemetry/iracing/irRaceControl.ts` builds it; `telemetry/irEngineerCalls.ts`
+ * and `sessionCalls.ts` read it). Every flag is the PLAYER's own
+ * `SessionFlags` bit — iRacing shows flags per car.
+ */
+export interface IracingRaceControl {
+  /** White flag (`0x2`): the player is on their last lap. */
+  white: boolean;
+  /** Chequered flag showing (`0x1`). */
+  checkered: boolean;
+  /** Full-course caution (`0x4000 | 0x8000`): pace car out. */
+  caution: boolean;
+  /** "One lap to green" (`0x200`) under caution: the pace car comes in this lap. */
+  oneLapToGreen: boolean;
+  /** Local yellow (`0x8 | 0x100`) with no caution: an incident near the player. */
+  localYellow: boolean;
+  /** Black flag (`0x10000`): a penalty to serve in the pit lane. */
+  black: boolean;
+  /** Furled black-and-white (`0x80000`): a warning, no penalty yet. */
+  furled: boolean;
+  /** Meatball / repair flag (`0x100000`): the car must be repaired. */
+  meatball: boolean;
+  /** Disqualified (`0x20000`). */
+  disqualified: boolean;
+  /** `PitsOpen` — pit road may be used (meaningful under caution). */
+  pitsOpen: boolean;
+  /** `SessionLaps` of this session; `0` when it is not lap-limited. */
+  lapLimit: number;
+  /**
+   * The player's laps completed this session, SETTLED: it moves only once
+   * iRacing has published that lap's time (or 3 s have passed), so a lap
+   * summary never reads the previous lap's time. `-1` on an out lap from the
+   * pits (iRacing's own count), {@link UNKNOWN_VALUE} out of the car.
+   */
+  lapsCompleted: number;
+  /** The player has used up a lap-limited non-race session (`lapsCompleted >= lapLimit`). */
+  sessionDone: boolean;
+  /** Incident points that disqualify (`WeekendOptions.IncidentLimit`); `0` = none. */
+  incidentLimit: number;
+  /** Seconds left on a tow to the pits (`PlayerCarTowTime`); `0` when not towing. */
+  towSec: number;
 }
 
 /**

@@ -305,7 +305,8 @@
       // three corners from the line is not a last-lap banner.
       state = "finallap";
       msg = "FINAL LAP";
-      sub = "CHEQUERED FLAG IS OUT";
+      // iRacing shows a real white flag for the last lap (finalLap rises on it).
+      sub = frame.source === "iracing" && s.flag !== "checkered" ? "WHITE FLAG" : "CHEQUERED FLAG IS OUT";
     } else if (s.flag === "yellow" && phase !== "formation") {
       // The FCY channel. Sector yellows have their own rail; this banner is
       // for the whole circuit being under caution.

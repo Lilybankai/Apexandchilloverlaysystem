@@ -79,6 +79,7 @@ import { SessionInfoCache, warmSessionInfoParser, type IrDriver, type IrResult, 
 import { iRatingDeltasByClass, type IRatingEntry } from './irating';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
+import { IrRaceControlReader } from './irRaceControl';
 import { TrackMapBuilder } from '../trackMap';
 
 /* -------------------------------------------------------------------------- */
@@ -384,6 +385,8 @@ export class IRacingProvider implements TelemetryProvider {
   private blackSince = 0;
   private blackServedAt = 0;
   private wasBlack = false;
+  /** The race engineer's block (irRaceControl.ts). */
+  private readonly raceControl = new IrRaceControlReader();
   /** Last tyre temp/wear signature and when it changed (see readingAgeSec). */
   private tyreSig = '';
   private tyreSigAt = 0;
@@ -690,6 +693,7 @@ export class IRacingProvider implements TelemetryProvider {
     this.blackSince = 0;
     this.blackServedAt = 0;
     this.wasBlack = false;
+    this.raceControl.reset();
     this.gates.clear();
     this.playerGate = new LapGate();
     this.seenInWorld.clear();
@@ -1056,6 +1060,10 @@ export class IRacingProvider implements TelemetryProvider {
 
     /* --- incidents → the Track Limits block --------------------------------- */
     const trackLimits = ownIsFocus && !replay ? this.buildIncidents(f, info, flags, nowMs) : undefined;
+    const iracing =
+      ownIsFocus && !replay
+        ? this.raceControl.read(f, flags, session?.laps ?? 0, info.incidentLimit, isRace, nowMs)
+        : undefined;
 
     /* --- track map + radar ----------------------------------------------- */
     const { trackMap, radar } = this.buildMapAndRadar(
@@ -1087,7 +1095,9 @@ export class IRacingProvider implements TelemetryProvider {
         scheduledLengthSec: session && session.timeSec > 0 ? Math.round(session.timeSec) : UNKNOWN_VALUE,
         ...(startLights ? { startLights } : {}),
         ...(trackLengthM > 0 ? { trackLengthM } : {}),
-        finalLap: (flags & FLAG.checkered) !== 0,
+        // The last lap is under way for us once the WHITE flag shows (iRacing's
+        // flags are per car), and stays so under the chequer until we cross.
+        finalLap: (flags & (FLAG.white | FLAG.checkered)) !== 0,
         onTrack: isOnTrack,
         elapsedSec: round2(or(f.num('SessionTime'), 0)),
         ...(replay ? { replay: true as const } : {}),
@@ -1127,6 +1137,7 @@ export class IRacingProvider implements TelemetryProvider {
       relative,
       ...(radar ? { radar } : {}),
       ...(trackMap ? { trackMap } : {}),
+      ...(iracing ? { iracing } : {}),
       weather: {
         trackTempC: round1(trackTemp),
         ambientTempC: round1(airTemp),

@@ -85,6 +85,10 @@ function classPos(f: EngineerTrigger['facts'], at: unknown = f.classPosition): s
 
 function lapPart(t: EngineerTrigger, v: number): string | null {
   const f = t.facts;
+  if (f.verdict === 'deleted' && f.sim === 'iracing') {
+    // iRacing deletes nothing by name: an incident on the lap is what voids it.
+    return pick(v, ["That one won't count — incident on the lap.", "Incident on that lap — it won't count."]);
+  }
   if (f.verdict === 'deleted') {
     return pick(v, ["Lap's deleted — track limits.", "That one's deleted, track limits.", 'Track limits — lap deleted.']);
   }
@@ -185,6 +189,14 @@ function timeLeftPart(t: EngineerTrigger, v: number): string | null {
       return pick(v, ['No time for another after this one.', `${clock ? `${clock} — ` : ''}this is the last lap you'll start.`]);
     case 'tight':
       return pick(v, ["It's tight — the clock runs out around the end of this lap."]);
+    // Lap-limited qualifying (iRacing): the limit, not the clock, ends the run.
+    case 'lastLapLimit':
+      return pick(v, ['Last lap of qualifying — make it count.', "Final timed lap. Let's have it.", 'This is your last lap — everything you have.']);
+    case 'outLap': {
+      const n = num(f.lapLimit);
+      const laps = n === undefined ? 'your timed laps' : n === 1 ? 'one timed lap' : `${SMALL[n] ?? n} timed laps`;
+      return pick(v, [`Out lap. Then ${laps} — get heat in the tyres.`, `Out lap — ${laps} to come. Build the temps.`]);
+    }
     default:
       return null;
   }
@@ -197,6 +209,13 @@ function gridPart(t: EngineerTrigger, short: boolean, v: number): string | null 
   const overall = num(f.position);
   const where =
     f.multiclass === true && overall !== undefined ? `P${cls} in class, P${overall} overall` : `P${cls}`;
+  if (f.lapLimited === true) {
+    // "That's your lap, P4" — a lap-limited run is over when the laps are.
+    if (f.provisional === true) {
+      return short ? `That's your run — provisionally ${where}.` : pick(v, [`That's your lap. Provisionally ${where}.`, `Run's done — provisionally ${where}, others still out.`]);
+    }
+    return short ? `That's your run — you'll start ${where}.` : pick(v, [`That's your lap — ${where}.`, `Run's done. You'll start ${where}.`]);
+  }
   if (f.provisional === true) {
     return short
       ? `That's the flag — provisionally ${where}.`
