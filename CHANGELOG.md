@@ -5,6 +5,22 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.8 — 2026-11-10
+
+Live standings in iRacing races.
+
+### Changed
+
+- **iRacing standings now update the moment a car is passed.** iRacing only
+  re-scores positions and gaps as each car crosses the start/finish line, so
+  a pass mid-lap used to sit unshown until the line. In races the order and
+  gaps now come from where every car is on track, 15 times a second, and the
+  gaps tick live too — class gaps included in multi-class races. The
+  projected iRating change follows the live position. Before the green, under
+  a full-course caution and for cars that have taken the chequered flag,
+  iRacing's official order still applies. Practice and qualifying are
+  unchanged.
+
 ## 1.3.16-beta.7 — 2026-11-10
 
 An iRacing demo, and the iRacing Pit panel when you need it.
