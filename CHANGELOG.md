@@ -5,6 +5,21 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.4 — 2026-11-10
+
+Fixes iRacing mode in 1.3.16-beta.3.
+
+### Fixed
+
+- **Apex no longer closes when you choose iRacing.** In 1.3.16-beta.3 the
+  app shut down as soon as iRacing was picked on the sim chooser. iRacing
+  mode now opens as it should.
+
+- **No iRating ± for Rookie-licence drivers.** iRacing does not change a
+  Rookie's iRating, so the standings no longer show them a projected gain
+  or loss. They still count towards everyone else's numbers, which matched
+  iRacing's real results within a few points in the first race we checked.
+
 ## 1.3.16-beta.3 — 2026-11-10
 
 iRacing support. Pick your sim when Apex opens, and iRacing gets the same
