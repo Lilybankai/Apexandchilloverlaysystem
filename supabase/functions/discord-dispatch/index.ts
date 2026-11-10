@@ -205,6 +205,10 @@ function embedFor(p: Record<string, unknown>) {
   const lap = lapTime(p.lap_ms);
   const holder = clean(p.holder, '');
   const gap = Number(p.gap_ms ?? 0);
+  // iRacing's boards are their own (0047) and a channel only receives them when
+  // it opted in (discord_targets.sims). Said in the title, because "New record —
+  // Spa" means a different board in each sim.
+  const iracing = String(p.sim ?? '') === 'iracing';
 
   const fields: { name: string; value: string; inline: boolean }[] = [
     { name: 'Lap', value: `**${lap}**`, inline: true },
@@ -273,7 +277,7 @@ function embedFor(p: Record<string, unknown>) {
 
   return {
     color: style.colour,
-    title: `${style.title} — ${track}`,
+    title: `${style.title} — ${track}${iracing ? ' · iRacing' : ''}`,
     description:
       kind === 'record_taken'
         ? `**${driver}** takes the ${carClass || 'class'} record from **${holder || 'the board'}**.`
@@ -285,7 +289,11 @@ function embedFor(p: Record<string, unknown>) {
     fields,
     // Ohne Speed's times must be credited wherever a score is shown.
     footer: {
-      text: pace ? "Apex AIO System · reference pace: Ohne Speed's LMU laptimes sheet" : 'Apex AIO System',
+      text: pace
+        ? "Apex AIO System · reference pace: Ohne Speed's LMU laptimes sheet"
+        : iracing
+          ? 'Apex AIO System · iRacing'
+          : 'Apex AIO System',
     },
     timestamp: isoOrNow(p.set_at),
   };
