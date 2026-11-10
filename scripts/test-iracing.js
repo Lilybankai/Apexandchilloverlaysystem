@@ -275,7 +275,15 @@ function replay(dir, laps, isFixture) {
     if (!(pl.pedals.clutch >= 0 && pl.pedals.clutch <= 1 && pl.pedals.steer >= -1 && pl.pedals.steer <= 1)) bad('pedals out of range');
     if (pl.speedKph < 0 || pl.speedKph > 400) bad('speed implausible', pl.speedKph);
     if (typeof pl.finished !== 'boolean') bad('player.finished not published');
-    if (fr.radar !== undefined || fr.trackMap !== undefined) bad('radar/trackMap present before integration');
+    // Map + radar (wired 2026-11-10): every car on the map sits on the outline
+    // by lap fraction (iRacing has no world x/y), and the radar exists only
+    // for the driven car while it is on track.
+    if (fr.trackMap) {
+      for (const c of fr.trackMap.cars) {
+        if (c.x !== undefined || !(c.lapFraction >= 0 && c.lapFraction <= 1)) bad('trackMap car not placed by lapFraction', c);
+      }
+    }
+    if (fr.radar && !fr.session.onTrack) bad('radar while not on track');
     if (fr.session.onTrack && fr.player.slotId === p.snapshot().playerCarIdx && !pl.motion) bad('no motion while on track');
     if (isFixture && fr.session.onTrack && pl.speedKph > 100 && !onTrackFrame) {
       onTrackFrame = JSON.parse(JSON.stringify(src.raw()));
