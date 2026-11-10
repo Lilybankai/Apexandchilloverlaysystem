@@ -5,6 +5,37 @@
      app until it is renamed.
 -->
 
+## 1.3.16-beta.5 — 2026-11-10
+
+iRacing: incident points, auto show/hide, and the standings in Apex colours.
+
+### Added
+
+- **Incidents on iRacing.** The Track Limits overlay now works on iRacing
+  as an incident counter: your incidents against the session's limit (for
+  example 12x / 17x), your recent incidents, and what each was for when it
+  lands (+1x off track, +2x loss of control, +4x contact). A lap with an
+  incident is marked NOT CLEAN. iRacing only publishes your own count, not
+  other drivers'.
+
+### Fixed
+
+- **Auto show/hide works on iRacing.** The overlays now hide when you are
+  out of the car (garage screen, spectating) and come back when you drive.
+  Before, they stayed up whenever you were out of the car.
+
+- **iRacing tyre temperatures are labelled as pit readings.** iRacing only
+  updates tyre temperatures and wear while you are in your pit stall, so the
+  tyres overlay now says "PIT READING" and how long ago, instead of looking
+  frozen.
+
+### Changed
+
+- **iRating and licences in Apex colours.** Licence badges are now dark
+  chips with the licence letter in Apex blue to purple, instead of iRacing's
+  red, orange, yellow, green and blue. The projected iRating change is plain
+  green or red text, like the position change column.
+
 ## 1.3.16-beta.4 — 2026-11-10
 
 Fixes iRacing mode in 1.3.16-beta.3.
