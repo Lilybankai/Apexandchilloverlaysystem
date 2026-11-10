@@ -83,6 +83,8 @@ import { TrackMapBuilder } from '../trackMap';
 import { writeTrace, type TraceFile } from '../lapTrace';
 import { refKeyOf } from '../paceDelta';
 import { IracingLapCapture, sectorBoundaries, sectorOf } from './irLapTrace';
+import { IrPitTracker, readDriverFlags } from './irPit';
+import { IrFuelHistory } from './irFuelData';
 
 /* -------------------------------------------------------------------------- */
 /*  Constants and enums                                                       */
@@ -369,6 +371,10 @@ export class IRacingProvider implements TelemetryProvider {
   private readonly paceAvg = new PaceAverageTracker();
   private readonly pitStops = new PitStopCounter();
   private readonly lapRecorder = new LapRecorder();
+  /** Repairs, the pit service and its progress (irPit.ts). */
+  private readonly irPit = new IrPitTracker();
+  /** iRacing's own fuel history (fueldata.ini), read once per car/track. */
+  private readonly fuelHistory = new IrFuelHistory();
   private readonly lapSink: ((rec: LapRecord) => void) | null;
   private readonly traceSink: ((file: TraceFile) => void) | null;
   private readonly persistRefs: boolean;
@@ -722,6 +728,7 @@ export class IRacingProvider implements TelemetryProvider {
     this.wasOffTrack = false;
     this.pitVisitStopped = false;
     this.pitWorkStartMs = -1;
+    this.irPit.reset();
   }
 
   /** Builds the frame. Public for the replay test; may throw (poll catches). */
@@ -1019,6 +1026,16 @@ export class IRacingProvider implements TelemetryProvider {
       fuel = unknownFuel(capacity);
     }
 
+    // iRacing's own per-lap history for this car here: a prior before the first
+    // timed lap, carried beside (never inside) the measured average.
+    if (ownIsFocus && ownDriver?.carPath) {
+      const hist = this.fuelHistory.lookup(ownDriver.carPath, info.trackInternalName, info.driverCarFuelKgPerLtr ?? 0);
+      if (hist) {
+        fuel.historyPerLapLiters = hist.perLapLiters;
+        fuel.historyLaps = hist.laps;
+      }
+    }
+
     const tyres = ownIsFocus ? readTyres(f, info) : unknownTyres();
     if (ownIsFocus) {
       // iRacing refreshes tyre temps/wear only in the pit stall: track when the
@@ -1037,6 +1054,12 @@ export class IRacingProvider implements TelemetryProvider {
     const pedals = ownIsFocus ? this.readPedals(f, nowMs) : { throttle: 0, brake: 0, clutch: 0, steer: 0 };
     const motion = ownIsFocus && isOnTrack ? readMotion(f) : undefined;
     const pit = ownIsFocus && isOnTrack ? this.readPit(f, onPitRoad, inStall, nowMs) : undefined;
+    // The pit wall (irPit.ts): repair flags, the booked service and its live
+    // progress, and the flags shown to the car on screen, bit by bit.
+    if (ownIsFocus && isOnTrack) this.irPit.noteAccel(f, nowMs);
+    const repair = ownIsFocus && isOnTrack && !replay ? this.irPit.repair(f, flags, nowMs) : undefined;
+    const pitService = ownIsFocus && isOnTrack && !replay ? this.irPit.service(f, onPitRoad || inStall, info.tires) : undefined;
+    const driverFlags = ownIsFocus ? readDriverFlags(flags) : readDriverFlags(flags, or(f.num('CarIdxSessionFlags', focusIdx), 0));
     const speed = f.num('Speed');
     const best = f.num('LapBestLapTime');
     const lastLap = f.num('LapLastLapTime');
@@ -1195,6 +1218,9 @@ export class IRacingProvider implements TelemetryProvider {
         ...(finish && finish.cls !== undefined ? { finishClassPosition: finish.cls } : {}),
         ...(motion ? { motion } : {}),
         ...(pit ? { pit } : {}),
+        ...(repair ? { repair } : {}),
+        ...(pitService ? { pitService } : {}),
+        flags: driverFlags,
         ...(trackLimits ? { trackLimits } : {}),
       },
       standings,

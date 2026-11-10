@@ -47,6 +47,8 @@ export interface IrDriver {
   carNumber: string;
   carId: number;
   carScreenName: string;
+  /** `CarPath` (`mx5 mx52016`) — the key of the car's folders and fueldata.ini. */
+  carPath?: string;
   carClassId: number;
   /** `CarClassShortName` verbatim, e.g. `"GT3 Class"`, `"GTP"`, `"BMW M2 G87"`. */
   carClassShortName: string;
@@ -112,6 +114,8 @@ export interface IrSessionInfo {
   driverCarIdx: number;
   paceCarIdx: number;
   driverCarFuelMaxLtr: number;
+  /** `DriverCarFuelKgPerLtr` (fuel density); 0 when unpublished. */
+  driverCarFuelKgPerLtr?: number;
   driverCarMaxFuelPct: number;
   driverCarRedLine: number;
   driverCarEstLapTime: number;
@@ -283,6 +287,7 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
       carNumber: str(d.CarNumber),
       carId: num(d.CarID),
       carScreenName: str(d.CarScreenName),
+      ...(str(d.CarPath) ? { carPath: str(d.CarPath) } : {}),
       carClassId: num(d.CarClassID),
       carClassShortName: str(d.CarClassShortName),
       ...(color !== undefined ? { carClassColor: color } : {}),
@@ -344,6 +349,7 @@ export function parseSessionInfo(text: string): IrSessionInfo | null {
     driverCarIdx: num(di.DriverCarIdx, -1),
     paceCarIdx: num(di.PaceCarIdx, -1),
     driverCarFuelMaxLtr: num(di.DriverCarFuelMaxLtr),
+    driverCarFuelKgPerLtr: num(di.DriverCarFuelKgPerLtr),
     driverCarMaxFuelPct: num(di.DriverCarMaxFuelPct, 1),
     driverCarRedLine: num(di.DriverCarRedLine),
     driverCarEstLapTime: num(di.DriverCarEstLapTime),

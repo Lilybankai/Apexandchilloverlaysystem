@@ -235,6 +235,7 @@
     limits: 'alert', // the warning triangle; auth.html already ships this id
     racecontrol: 'flag',
     mfd: 'sliders-horizontal',
+    irpit: 'sliders-horizontal',
     chat: 'message-circle',
   };
 })();

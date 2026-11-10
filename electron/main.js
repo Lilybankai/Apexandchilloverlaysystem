@@ -215,7 +215,9 @@ const OVERLAY_CATALOG = [
   { id: 'pedals', label: 'Pedal Inputs', description: 'Throttle / brake / clutch trace' },
   { id: 'pedalsv', label: 'Pedal Inputs (Vertical)', description: 'Rising pedal levels + steering-angle arc' },
   { id: 'motion', label: 'Motion (G / Rotation / Attitude)', description: 'Traction circle, yaw + slip, pitch + roll' },
-  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU only)", sims: ['lmu'] },
+  // iRacing publishes no per-component damage: there the panel carries its repair
+  // flags, meatball, fast repairs, tow clock and the live pit service instead.
+  { id: 'damage', label: 'Damage & Repair', description: "What's broken, and the sim's own repair time (LMU); repairs needed, fast repairs, tow and pit service (iRacing)" },
   { id: 'radar', label: 'Proximity Radar', description: 'Spotter view — cars alongside, ahead and behind' },
   {
     id: 'trackmap',
@@ -232,8 +234,7 @@ const OVERLAY_CATALOG = [
   {
     id: 'racecontrol',
     label: 'Race Control',
-    description: 'Start lights, green flag, sector yellows, and the pit-limiter prompts (LMU only)',
-    sims: ['lmu'],
+    description: 'Start lights, green flag, yellows, blue / black / meatball flags, and the pit-limiter prompts',
   },
   // A clickable control page, not a HUD graphic: it belongs in a browser tab
   // (or an OBS source as a readout), never the locked, click-through in-game
@@ -252,6 +253,18 @@ const OVERLAY_CATALOG = [
       { id: 'stack', label: 'Vertical — sections stacked' },
       { id: 'row', label: 'Horizontal — sections side by side' },
     ],
+  },
+  // iRacing's pit menu, read back from PitSvFlags / PitSvFuel / PitSv*P, with
+  // the stop's live progress. Its buttons send iRacing pit commands only when
+  // Settings → "iRacing pit commands (beta)" is on (server/irPitControl.ts);
+  // off, it is a read-only mirror. Clickable, so out of the in-game set by
+  // default, like the MFD.
+  {
+    id: 'irpit',
+    label: 'iRacing Pit',
+    description: 'Fuel, tyres, pressures, fast repair and tear-off for the next stop, and the stop as it happens (iRacing)',
+    ingameDefault: false,
+    sims: ['iracing'],
   },
   // Stream chat pulls its own feed from the /chat socket, not the telemetry
   // frame. Off in the in-game set by default — it is a deliberate add (a side
@@ -605,6 +618,10 @@ function defaultSettings() {
     // default: a widget that vanishes on its own is a behaviour someone must
     // choose, not discover.
     mfdAutoFade: false,
+    // iRacing pit commands (beta): lets the iRacing Pit panel and the pit
+    // bindings send iRacing's own pit commands (server/irPitControl.ts). OFF by
+    // default — a command sent at the wrong moment costs a real pit stop.
+    iracingPitCommands: false,
     // Radar car-icon size, 30..150 (percent). This is the radar's ZOOM: it sets
     // the display range (100% = the classic 18 m, 50% = 36 m and therefore
     // half-size cars), because the icons are drawn at the cars' real footprint
@@ -1025,6 +1042,7 @@ function loadSettings() {
       typeof stored.changeGlow === 'boolean' ? stored.changeGlow : defaults.changeGlow,
     mfdAutoFade:
       typeof stored.mfdAutoFade === 'boolean' ? stored.mfdAutoFade : defaults.mfdAutoFade,
+    iracingPitCommands: stored.iracingPitCommands === true,
     radarIconScale: clamp(stored.radarIconScale, 30, 150, defaults.radarIconScale),
     audioCues: typeof stored.audioCues === 'boolean' ? stored.audioCues : defaults.audioCues,
     audioVolume: clamp(stored.audioVolume, 0, 100, defaults.audioVolume),
@@ -1297,6 +1315,17 @@ function buildServerConfig(settings) {
   };
 }
 
+/** Push the iRacing pit-commands switch (default OFF) into the running server. */
+function applyIracingPitCommands(settings) {
+  try {
+    if (serverModule && typeof serverModule.setIracingPitCommands === 'function') {
+      serverModule.setIracingPitCommands(settings.iracingPitCommands === true);
+    }
+  } catch {
+    /* a missing switch leaves commands off, which is the safe side */
+  }
+}
+
 /** Require the compiled server, surfacing a clear error if it isn't built. */
 function requireServer() {
   if (serverModule) return serverModule;
@@ -1405,6 +1434,7 @@ async function startServer() {
     // overlay silently rejoined the rest of the set every time the app started
     // or the port changed, until the operator touched a setting.
     applyAppearance(settings);
+    applyIracingPitCommands(settings);
     status.running = true;
     status.port = config.httpPort;
     status.error = null;
@@ -4288,6 +4318,9 @@ function registerIpc() {
       if (typeof partial.mfdAutoFade === 'boolean') {
         next.mfdAutoFade = partial.mfdAutoFade;
       }
+      if (typeof partial.iracingPitCommands === 'boolean') {
+        next.iracingPitCommands = partial.iracingPitCommands;
+      }
       // Per-widget background overrides, merged key by key so a card can send
       // just its own widget. `null` is the documented "hand this one back to the
       // global slider" value — an override has to be removable, and a merge
@@ -4389,6 +4422,7 @@ function registerIpc() {
     // The relay source picker acts at once: Off stops the overlay read, a pin
     // re-words the status line before the next frame.
     if (next.relaySource !== current.relaySource) teamCloud.relaySourceChanged();
+    if (next.iracingPitCommands !== current.iracingPitCommands) applyIracingPitCommands(next);
 
     // Look-and-feel only: applied live to the server and the in-game layer, so
     // these are deliberately NOT part of the restart check below.

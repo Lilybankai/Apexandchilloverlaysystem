@@ -51,7 +51,7 @@ if (!process.versions.electron) {
 }
 
 /* ------------------------------ inside Electron ---------------------------- */
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const logFile = process.env.APEX_IRSDK_TEST_LOG || LOG;
 const log = (m) => fs.appendFileSync(logFile, m + '\n');
 setTimeout(() => {
@@ -68,12 +68,18 @@ const check = (name, cond, detail) => {
   log(`  ${cond ? 'ok  ' : 'FAIL'}  ${name}${cond ? '' : `   [${detail}]`}`);
 };
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
     run();
   } catch (e) {
     failed++;
     log(`  FAIL  threw: ${e && e.stack}`);
+  }
+  try {
+    await runBroadcast();
+  } catch (e) {
+    failed++;
+    log(`  FAIL  broadcast threw: ${e && e.stack}`);
   }
   log(`${passed} passed, ${failed} failed`);
   app.exit(failed ? 1 : 0);
@@ -200,4 +206,52 @@ function run() {
 
   UnmapViewOfFile(view);
   CloseHandle(h);
+}
+
+/**
+ * The pit-command sender (irsdkBroadcast.ts), inside Electron, WITHOUT ever
+ * addressing iRacing: the koffi user32 binding loads, RegisterWindowMessageW
+ * returns the IRSDK_BROADCASTMSG id, and one encoded pit command is sent to
+ * THIS test's own hidden window (never HWND_BROADCAST), where Electron's
+ * hookWindowMessage proves the wParam/lParam arrive exactly as encoded.
+ */
+async function runBroadcast() {
+  log('broadcast (own window only, never HWND_BROADCAST)');
+  const b = dist('iracing/irsdkBroadcast.js');
+  const real = b.createKoffiTransport();
+  check('koffi user32 transport loads in Electron', !!real, 'createKoffiTransport() returned null');
+  if (!real) return;
+  const id = real.register();
+  check('RegisterWindowMessageW("IRSDK_BROADCASTMSG") returns an id', id >= 0xc000 && id <= 0xffff, id);
+  check('the id is stable (same name, same id)', real.register() === id, 'changed');
+
+  const win = new BrowserWindow({ show: false, width: 100, height: 100 });
+  const hwnd = Number(win.getNativeWindowHandle().readBigUInt64LE(0));
+  check('own window handle', hwnd > 0 && hwnd !== b.HWND_BROADCAST, hwnd);
+  const got = [];
+  win.hookWindowMessage(id, (wParam, lParam) => {
+    got.push({ w: wParam.readUInt32LE(0), l: lParam.readInt32LE(0) });
+  });
+  const targets = [];
+  const guarded = {
+    register: () => real.register(),
+    send: (h, m, w, l) => {
+      targets.push(h);
+      if (h !== hwnd) return false; // belt and braces: only our own window
+      return real.send(h, m, w, l);
+    },
+  };
+  const tx = new b.IrsdkBroadcaster({ transport: guarded, target: hwnd });
+  const sent = tx.pit(b.IR_PIT.Fuel, 37);
+  for (let i = 0; i < 20 && !got.length; i++) await new Promise((r) => setTimeout(r, 25));
+  check('SendNotifyMessageW reported success', sent.ok === true, JSON.stringify(sent));
+  check('every send went to our own window', targets.length === 1 && targets[0] === hwnd, JSON.stringify(targets));
+  const want = b.encodePitCommand(b.IR_PIT.Fuel, 37);
+  check(
+    'the window received MAKELONG(9, Fuel) / 37',
+    got.length === 1 && got[0].w === want.wParam && got[0].l === want.lParam && got[0].w === ((2 << 16) | 9),
+    JSON.stringify(got),
+  );
+  win.unhookWindowMessage(id);
+  win.destroy();
 }

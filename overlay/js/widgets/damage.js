@@ -276,6 +276,9 @@
     rowsDmg = [];
     rowsBrake = [];
     planningEls = [];
+    componentEls = [];
+    ir = null;
+    irShown = null;
     planningVisible = true;
     wasWorking = false;
     workEndedAt = 0;
@@ -434,15 +437,23 @@
       // The planning half of the widget, in one list — hidden the moment the
       // car comes to rest and the countdown takes the slot over.
       planningEls = [hero, elRange, elClean, elRepair, elTyre];
+
+      // iRacing's block (see renderIracing): built always, shown only when the
+      // frame carries `player.repair` and no LMU damage block.
+      buildIracing(wrap);
     }
 
     if (modeDmg) {
+      var dmgStart = wrap.children.length;
       if (modeRepair) makeSep(wrap);
       rowsDmg.push(makeRow(wrap, "AERO"));
       for (var i = 0; i < 4; i++) {
         rowsDmg.push(makeRow(wrap, "SUSP " + CORNERS[i]));
       }
     }
+    // The component bars, as elements, so iRacing (no per-component damage)
+    // can hide them rather than draw five empty gauges that read as pristine.
+    componentEls = modeDmg ? Array.prototype.slice.call(wrap.children, dmgStart) : [];
 
     if (modeBrakes) {
       if (modeDmg || modeRepair) makeSep(wrap);
@@ -556,7 +567,7 @@
    * @returns The header text while the countdown owns the widget, or `null` when
    *          the normal repair-estimate presentation should run.
    */
-  function renderStop(pit) {
+  function renderStop(pit, svc) {
     if (!elStop) return null;
 
     var working = !!(pit && pit.working);
@@ -599,7 +610,7 @@
       setText(elStopNum, "stopnum", String(Math.floor(elapsed)));
       setText(elStopTag, "stoptag", "IN THE BOX");
       elStopFill.parentElement.hidden = true;
-      setText(elStopSub, "stopsub", "no booked length published");
+      setText(elStopSub, "stopsub", svc ? serviceLine(svc) : "no booked length published");
       return "BOX " + Math.floor(elapsed) + "s";
     }
 
@@ -644,6 +655,17 @@
     octx = ctx;
     var p = frame.player;
     var d = p && p.damage;
+    var irSvc = p && p.pitService;
+
+    // iRacing: repair flags rather than per-component damage. Its own path,
+    // so nothing below ever reads a zero it was not given.
+    var iracing = !d && !!(p && p.repair);
+    showIracing(iracing);
+    if (iracing) {
+      var irStop = modeRepair ? renderStop(p.pit, irSvc) : null;
+      renderIracing(p.repair, irSvc, irStop);
+      return;
+    }
 
     // The stop is resolved BEFORE the damage block is checked, deliberately: the
     // repair screen can stop answering mid-stop, and a countdown that vanished
@@ -800,6 +822,191 @@
         (hasStop ? "STOP " : "REPAIR ") + heroSec.toFixed(1) + "s",
       );
       setAttr(headerMeta, "metastate", "data-state", d.hasDamage ? "alarm" : "ok");
+    }
+  }
+
+  /* ------------------------------ iRacing ---------------------------------- */
+
+  /**
+   * iRacing publishes no per-component damage — only that a repair is NEEDED
+   * (optional or mandatory, `EngineWarnings`), the meatball, fast repairs and
+   * the tow clock (src/telemetry/iracing/irPit.ts). So on iRacing the AERO /
+   * SUSP bars are hidden rather than drawn empty (an empty bar reads as a
+   * pristine car), and the slot says what the sim actually said.
+   */
+  var componentEls = [];
+  var ir = null;
+  var irShown = null;
+
+  function irLine(parent, key) {
+    var row = document.createElement("div");
+    row.className = "damage__tyre";
+    var k = document.createElement("span");
+    k.className = "damage__tyre-key";
+    k.textContent = key;
+    var note = document.createElement("span");
+    note.className = "damage__tyre-note";
+    var val = document.createElement("span");
+    val.className = "damage__tyre-val";
+    val.textContent = "—";
+    row.appendChild(k);
+    row.appendChild(note);
+    row.appendChild(val);
+    parent.appendChild(row);
+    return { row: row, note: note, val: val };
+  }
+
+  function buildIracing(wrap) {
+    var lines = document.createElement("div");
+    lines.className = "damage__ir";
+    lines.hidden = true;
+    ir = {
+      lines: lines,
+      meatball: irLine(lines, "MEATBALL"),
+      fast: irLine(lines, "FAST REPAIRS"),
+      hit: irLine(lines, "LAST HIT"),
+      svc: document.createElement("div"),
+    };
+    ir.svc.className = "damage__svc";
+    lines.appendChild(ir.svc);
+    wrap.appendChild(lines);
+  }
+
+  function showIracing(on) {
+    if (irShown === on) return;
+    irShown = on;
+    if (ir) ir.lines.hidden = !on;
+    for (var i = 0; i < componentEls.length; i++) componentEls[i].hidden = on;
+    if (!on && elClean) {
+      // Back to LMU's meaning of the slot.
+      var txt = elClean.querySelector(".damage__clean-text");
+      if (txt) txt.textContent = "NO DAMAGE";
+      delete cache.irclean;
+      delete cache.ircleanst;
+      elClean.removeAttribute("data-state");
+    }
+  }
+
+  /** "LR RR to go" / "service done" — the stop's remaining work, in words. */
+  function serviceLine(svc) {
+    var todo = [];
+    var done = 0;
+    var items = (svc && svc.items) || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].state === "requested") todo.push(items[i].id === "fastRepair" ? "FR" : items[i].label);
+      else if (items[i].state === "done") done++;
+    }
+    if (todo.length) return todo.join(" ") + " to go";
+    return done ? "service done — repairs / release" : "nothing booked";
+  }
+
+  /** Service chips: LF RF LR RR FUEL TEAR-OFF FR, each todo / done / off. */
+  function paintService(svc) {
+    var items = (svc && svc.items) || [];
+    var sig = items
+      .map(function (it) {
+        return it.id + ":" + it.state;
+      })
+      .join("|");
+    if (cache.svc === sig) return;
+    cache.svc = sig;
+    ir.svc.textContent = "";
+    ir.svc.hidden = !items.length;
+    for (var i = 0; i < items.length; i++) {
+      var chip = document.createElement("span");
+      chip.className = "damage__svc-chip";
+      chip.setAttribute("data-state", items[i].state);
+      chip.textContent = items[i].id === "fastRepair" ? "FR" : items[i].label;
+      ir.svc.appendChild(chip);
+    }
+  }
+
+  function agoText(ms) {
+    var s = Math.round(ms / 1000);
+    if (s < 60) return s + "s ago";
+    return Math.round(s / 60) + " min ago";
+  }
+
+  function renderIracing(r, svc, stopMeta) {
+    if (!modeRepair || !ir) {
+      setText(headerMeta, "meta", r.required === "none" ? "CLEAN" : "REPAIR");
+      return;
+    }
+    var towing = r.towSec > 0;
+    var secs = towing ? r.towSec : r.required === "mandatory" ? r.repairSec : r.optionalRepairSec;
+    var hasSecs = typeof secs === "number" && secs > 0;
+
+    if (!stopMeta) {
+      // The hero is a number only when the sim published one: the tow clock,
+      // or repair seconds (PitRepairLeft — 0 in every captured frame so far).
+      if (elHeroNum) elHeroNum.parentElement.hidden = !hasSecs;
+      if (hasSecs) {
+        setHeroSeconds(elHeroNum, "hero", towing ? String(Math.ceil(secs)) : secs.toFixed(1), secs);
+        setText(elHeroTag, "herotag", towing ? "TOW TO PITS" : "TO REPAIR");
+      }
+      if (elRange) elRange.hidden = true;
+      if (elRepair) elRepair.hidden = true;
+      if (elTyre) elTyre.hidden = true;
+      if (elClean) {
+        elClean.hidden = false;
+        var txt = elClean.querySelector(".damage__clean-text");
+        setText(
+          txt,
+          "irclean",
+          r.required === "mandatory"
+            ? "MANDATORY REPAIR"
+            : r.required === "optional"
+              ? "OPTIONAL REPAIR"
+              : "NO REPAIRS NEEDED",
+        );
+        setAttr(elClean, "ircleanst", "data-state", r.required);
+      }
+    }
+
+    ir.meatball.row.hidden = !r.meatball;
+    if (r.meatball) {
+      setText(ir.meatball.val, "irmb", "PIT FOR REPAIRS");
+      setAttr(ir.meatball.row, "irmbst", "data-state", "alarm");
+    }
+
+    var left = r.fastRepairsUnlimited
+      ? "unlimited"
+      : typeof r.fastRepairsLeft === "number" && r.fastRepairsLeft >= 0
+        ? r.fastRepairsLeft === 0
+          ? "none left"
+          : r.fastRepairsLeft + " left"
+        : "—";
+    setText(ir.fast.val, "irfr", left);
+    setText(ir.fast.note, "irfrn", r.fastRepairQueued ? "booked" : "");
+
+    var hit = typeof r.lastImpactG === "number";
+    ir.hit.row.hidden = !hit;
+    if (hit) {
+      setText(ir.hit.val, "irhit", r.lastImpactG.toFixed(1) + " g");
+      setText(ir.hit.note, "irhitn", agoText(r.msSinceImpact || 0));
+    }
+
+    paintService(svc);
+
+    if (elSel) {
+      setCritText(elSel, "sel", r.fastRepairQueued ? "Fast repair" : "No fast repair");
+      setAttr(elSel, "selstate", "data-state", r.fastRepairQueued ? "on" : r.required === "none" ? "na" : "off");
+    }
+
+    if (stopMeta) {
+      setText(headerMeta, "meta", stopMeta);
+      setAttr(headerMeta, "metastate", "data-state", stopMeta === "RELEASED" ? "ok" : "alarm");
+    } else if (towing) {
+      var m = Math.floor(r.towSec / 60);
+      var s = Math.floor(r.towSec % 60);
+      setText(headerMeta, "meta", "TOW " + m + ":" + (s < 10 ? "0" : "") + s);
+      setAttr(headerMeta, "metastate", "data-state", "alarm");
+    } else if (r.required === "none") {
+      setText(headerMeta, "meta", "CLEAN");
+      setAttr(headerMeta, "metastate", "data-state", "ok");
+    } else {
+      setText(headerMeta, "meta", r.meatball ? "MEATBALL" : r.required === "mandatory" ? "REPAIR REQ" : "OPT REPAIR");
+      setAttr(headerMeta, "metastate", "data-state", "alarm");
     }
   }
 

@@ -512,6 +512,34 @@ function createActions(deps = {}) {
     );
   }
 
+  /* ---------------------------------------------------------------- */
+  /*  iRacing pit — irsdk broadcast pit commands (beta, default OFF)  */
+  /* ---------------------------------------------------------------- */
+
+  // Same module instance the server uses (it runs in-process), so these go
+  // through the one gate: nothing is sent unless Settings → "iRacing pit
+  // commands (beta)" is on and the driver is in an iRacing car. A press with
+  // the setting off answers with the reason rather than doing nothing.
+  const irPitMod = tryRequire('server/irPitControl.js');
+  if (irPitMod) {
+    const irPit = (id, label, kind, intentFor) =>
+      define({
+        id,
+        label,
+        group: 'iRacing pit',
+        kind,
+        sims: ['iracing'],
+        run: async (dir) => irPitMod.runPitIntent(intentFor(dir)),
+      });
+    irPit('irpit.fuel', 'Fuel to add (± 1 L)', 'delta', (dir) => ({ kind: 'fuelDelta', litres: dir < 0 ? -1 : 1 }));
+    irPit('irpit.fuelToFinish', 'Fuel to finish', 'pulse', () => ({ kind: 'fuelToFinish' }));
+    irPit('irpit.tyresAll', 'Change all four tyres', 'pulse', () => ({ kind: 'tyres', set: 'all' }));
+    irPit('irpit.tyresNone', 'No tyre change', 'pulse', () => ({ kind: 'tyres', set: 'none' }));
+    irPit('irpit.fastRepair', 'Fast repair on / off', 'pulse', () => ({ kind: 'fastRepair' }));
+    irPit('irpit.tearoff', 'Tear-off on / off', 'pulse', () => ({ kind: 'tearoff' }));
+    irPit('irpit.clear', 'Clear all pit service', 'pulse', () => ({ kind: 'clear' }));
+  }
+
   return {
     /** Every registered action, as plain data for the bindings UI. */
     list: () =>

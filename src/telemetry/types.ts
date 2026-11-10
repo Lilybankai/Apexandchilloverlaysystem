@@ -926,6 +926,118 @@ export interface PitState {
   limiterOn?: boolean;
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Repair flags, pit service and per-driver flags (iRacing)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the sim says about repairs when it publishes no per-component damage.
+ *
+ * iRacing (measured 2026-11-10, a 10.8 g crash): `EngineWarnings` gains 0x100
+ * (optional repair) on impact and 0x080 (mandatory) 0.1 s later; the meatball
+ * (`irsdk_repair` 0x100000) is shown 11 s after; all clear when the repair
+ * starts. Nothing here is a severity — iRacing does not publish one.
+ */
+export interface RepairState {
+  /** `mandatory` = the car may not race on unrepaired (meatball territory). */
+  required: 'none' | 'optional' | 'mandatory';
+  /** The meatball flag is being shown to this car. */
+  meatball: boolean;
+  /**
+   * Seconds of mandatory repair left (`PitRepairLeft`), or
+   * {@link UNKNOWN_VALUE} when the sim reports none — it read 0 in every
+   * captured frame, including mid-repair, so 0 is never shown as "0 s".
+   */
+  repairSec: number;
+  /** Seconds of optional repair left (`PitOptRepairLeft`), or unknown. */
+  optionalRepairSec: number;
+  /** Fast repairs left, or {@link UNKNOWN_VALUE} when unpublished. */
+  fastRepairsLeft: number;
+  /** The session allows unlimited fast repairs (iRacing reports 255). */
+  fastRepairsUnlimited?: boolean;
+  /** Fast repairs used this session, or unknown. */
+  fastRepairsUsed: number;
+  /** Fast repair is ticked in the pit menu for the next stop. */
+  fastRepairQueued: boolean;
+  /** Tow countdown, seconds; 0 when not being towed. */
+  towSec: number;
+  /** Peak g of the last hard impact (> 4 g) this session, when there was one. */
+  lastImpactG?: number;
+  /** Milliseconds since that impact. */
+  msSinceImpact?: number;
+}
+
+/** One line of the pit service list. */
+export interface PitServiceItem {
+  id: 'lf' | 'rf' | 'lr' | 'rr' | 'fuel' | 'tearoff' | 'fastRepair';
+  label: string;
+  /**
+   * `requested` = ticked and not yet done; `done` = the crew finished it during
+   * the current (or just-finished) stop; `off` = not ticked.
+   */
+  state: 'requested' | 'done' | 'off';
+}
+
+/**
+ * The pit service booked in the sim's own pit menu, read back, and its live
+ * progress during a stop. iRacing clears each `PitSvFlags` bit the moment that
+ * item is done (measured: FR, LF, tear-off, RF, LR, RR over a 40.3 s stop).
+ */
+export interface PitServiceState {
+  items: PitServiceItem[];
+  /** Litres asked for (`PitSvFuel`), or {@link UNKNOWN_VALUE} when fuel is not ticked. */
+  fuelAddL: number;
+  /** iRacing's autofuel is deciding the amount. */
+  autoFuel: boolean;
+  /** Cold pressures asked for, kPa `[LF, RF, LR, RR]`; unknown per corner. */
+  pressuresKpa: [number, number, number, number];
+  /** Compound to fit, when the sim names one. */
+  compound?: string;
+  /** `PlayerCarPitSvStatus`, named. */
+  status:
+    | 'none'
+    | 'inProgress'
+    | 'complete'
+    | 'tooFarLeft'
+    | 'tooFarRight'
+    | 'tooFarForward'
+    | 'tooFarBack'
+    | 'badAngle'
+    | 'cantFixThat'
+    | 'unknown';
+  /** The crew is working (`PitstopActive`). */
+  active: boolean;
+  /** Seconds since the crew started, sim clock, or unknown when not active. */
+  elapsedSec: number;
+  /** Length of the last completed stop this session, or unknown. */
+  lastStopSec: number;
+  /**
+   * Whether the overlay may send pit commands (the "iRacing pit commands
+   * (beta)" setting). Stamped by the server, not the provider.
+   */
+  commandsEnabled?: boolean;
+}
+
+/** The flags shown to one car, bit by bit. */
+export interface DriverFlagState {
+  checkered: boolean;
+  white: boolean;
+  green: boolean;
+  /** A LOCAL yellow (standing or waving) — not a full-course caution. */
+  localYellow: boolean;
+  /** Full-course caution (pace car), standing or waving. */
+  caution: boolean;
+  blue: boolean;
+  debris: boolean;
+  /** Black flag: a penalty to serve in the pit lane. */
+  black: boolean;
+  /** Furled black: a warning. */
+  furled: boolean;
+  /** Meatball: mandatory repair. */
+  meatball: boolean;
+  disqualified: boolean;
+}
+
 /**
  * State specific to the **player's** car (the spectated/driven entry).
  * Standings for the whole field live in {@link TelemetryFrame.standings}.
@@ -1024,6 +1136,26 @@ export interface PlayerState {
    * does not report pitting" (field absent). See {@link PitState}.
    */
   pit?: PitState;
+  /**
+   * Repair flags where the sim publishes "repair needed" rather than
+   * per-component damage (iRacing: `EngineWarnings` repair bits, the meatball,
+   * fast repairs, the tow clock). Omitted when spectating or on a provider
+   * without them. See {@link RepairState}.
+   */
+  repair?: RepairState;
+  /**
+   * The pit service booked and its live progress through a stop (iRacing:
+   * `PitSvFlags` clearing item by item). Omitted when spectating or on a
+   * provider without it. See {@link PitServiceState}.
+   */
+  pitService?: PitServiceState;
+  /**
+   * The individual flags the sim is showing this car, where the sim publishes
+   * them as separate bits (iRacing `SessionFlags` / `CarIdxSessionFlags`).
+   * Lets race control tell a LOCAL yellow from a full-course caution, which the
+   * single {@link SessionState.flag} cannot. See {@link DriverFlagState}.
+   */
+  flags?: DriverFlagState;
   /**
    * Hybrid/ERS battery state of charge and which way it is flowing. Omitted for
    * any car that has never published a charge — see {@link HybridState}, which
@@ -1859,6 +1991,14 @@ export interface FuelState {
   levelLitersExact?: number;
   /** Tank capacity, litres; {@link UNKNOWN_VALUE} if unknown. */
   capacityLiters: number;
+  /**
+   * The sim's own per-lap burn history for this car at this track, litres —
+   * a prior from before this session (iRacing fueldata.ini), NOT part of
+   * {@link perLapAvgLiters}. Omitted when the sim keeps none.
+   */
+  historyPerLapLiters?: number;
+  /** How many recorded laps {@link historyPerLapLiters} averages. */
+  historyLaps?: number;
   /** Rolling-average consumption per lap, litres; {@link UNKNOWN_VALUE} until enough laps. */
   perLapAvgLiters: number;
   /** Estimated laps remaining on current fuel; {@link UNKNOWN_VALUE} if unknown. */

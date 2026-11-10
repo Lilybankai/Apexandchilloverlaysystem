@@ -34,6 +34,9 @@ import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/track
 import { getPublishedGhost, ghostJson, type GhostLap } from '../telemetry/ghostLap';
 import { makeGhostReference, type GhostReference } from '../telemetry/ghostReference';
 import { handleMfdCommand } from './mfdRoutes';
+import { handleIrPitCommand, stampIrPit } from './irPitControl';
+// The iRacing pit-commands switch (default OFF), set by the desktop app.
+export { setIracingPitCommands } from './irPitControl';
 import { handleSetupCommand } from './setupRoutes';
 import { SetupController } from '../telemetry/setupControl';
 import { setAidRows, setRaceControlRows } from './pitCursor';
@@ -1086,6 +1089,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
   const httpServer = createServer((req, res) => {
     // MFD control requests are handled first; everything else is static assets.
     if (handleMfdCommand(req, res, mfdDeps)) return;
+    if (handleIrPitCommand(req, res)) return;
     if (handleSetupCommand(req, res, setupDeps)) return;
     // Brand badges are proxied from the game, not read from disk — routed here
     // because only this scope knows which port the game's API is on.
@@ -1274,6 +1278,7 @@ export async function start(config: ServerConfig = loadConfig()): Promise<() => 
       // it is how the row stays truthful when the stop is booked through the
       // game's own wheel bind, which never passes through this app at all.
       noteLivePitPhase(frame.player.pit ? frame.player.pit.phase : null);
+      stampIrPit(frame);
       // …and the cursor's aid rows come off the same frame, so it walks exactly
       // the rows the widget drew from it. Without this the two lists are built
       // from different questions — "what is bound?" against "what does this car

@@ -315,6 +315,9 @@
       // the pace-delta grid, where the driving-aid rows are reachable in
       // interact mode without covering the mirrors.
       mfd: { x: Math.round(vw / 2 - 180), y: 420, w: 360 },
+      // iRacing's pit panel takes the MFD's slot (the two are never on together:
+      // one is LMU-only, the other iRacing-only).
+      irpit: { x: Math.round(vw / 2 - 200), y: 420, w: 400 },
       // Far right, full height: chat is the widget triple-screen users park on a
       // side monitor's dead space, so it defaults to a tall narrow column hard
       // against the right edge rather than into the racing content. The height

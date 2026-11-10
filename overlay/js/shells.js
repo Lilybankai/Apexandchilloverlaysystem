@@ -153,6 +153,13 @@
       '<div class="panel__body" data-role="mount">' +
       '<div class="placeholder">Awaiting telemetry…</div></div></section>',
 
+    irpit:
+      '<section class="widget panel" id="widget-irpit" data-widget="irpit" aria-label="iRacing pit menu and stop progress">' +
+      '<header class="panel__header"><span class="panel__title">iRacing Pit</span>' +
+      '<span class="panel__meta" data-role="meta">—</span></header>' +
+      '<div class="panel__body" data-role="mount">' +
+      '<div class="placeholder">Awaiting telemetry…</div></div></section>',
+
     mfd:
       '<section class="widget panel" id="widget-mfd" data-widget="mfd" aria-label="MFD control — pit menu and driving aids">' +
       '<header class="panel__header"><span class="panel__title">MFD</span>' +

@@ -2806,6 +2806,58 @@
 .damage__sel-val[data-state="off"] { color: var(--warn); }
 .damage__sel-val[data-state="na"]  { color: var(--text-muted); }
 
+/* --- iRacing Pit (widgets/irpit.js): the MFD's look, iRacing's menu -------- */
+#widget-irpit .mfd__row[data-on="false"] .mfd__value { color: var(--text-muted); }
+#widget-irpit .mfd__row[data-svc="done"] .mfd__value { color: var(--pos-gain); }
+#widget-irpit .irpit__wide { width: auto; padding: 0 6px; font-size: var(--fs-micro); letter-spacing: 0.06em; }
+#widget-irpit .irpit__toggle { width: 22px; }
+#widget-irpit .mfd__row[data-on="true"] .irpit__toggle { background: color-mix(in srgb, var(--mfd-cat) 45%, var(--bg-control)); }
+#widget-irpit .mfd__step:disabled { opacity: 0.3; cursor: default; }
+#widget-irpit .mfd__row[data-error="true"] { box-shadow: inset 0 0 0 1px var(--pos-loss); }
+.irpit__status {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+}
+#widget-irpit .mfd__wrap[data-stop="active"] .irpit__status { color: var(--warn); }
+#widget-irpit .mfd__wrap[data-stop="done"] .irpit__status { color: var(--pos-gain); }
+.irpit__note { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--text-muted); }
+.irpit__note[data-error="true"] { color: var(--pos-loss); }
+
+
+.damage__ir[hidden],
+.damage__svc[hidden],
+.damage__ir .damage__tyre[hidden],
+.damage__row[hidden],
+.damage__sep[hidden],
+.damage__subhead[hidden] { display: none; }
+.damage__clean[data-state="optional"] .damage__clean-dot { background: var(--warn); }
+.damage__clean[data-state="optional"] .damage__clean-text { color: var(--warn); }
+.damage__clean[data-state="mandatory"] .damage__clean-dot { background: var(--pos-loss); }
+.damage__clean[data-state="mandatory"] .damage__clean-text { color: var(--pos-loss); }
+.damage__ir .damage__tyre[data-state="alarm"] .damage__tyre-key,
+.damage__ir .damage__tyre[data-state="alarm"] .damage__tyre-val { color: var(--pos-loss); }
+/* The service list: what the crew still has to do this stop. Booked = cyan
+   outline, done = filled green, not booked = muted. */
+.damage__svc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.damage__svc-chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+}
+.damage__svc-chip[data-state="requested"] { border-color: var(--ac-cyan); color: var(--ac-cyan); }
+.damage__svc-chip[data-state="done"] { border-color: var(--pos-gain); background: var(--pos-gain); color: #0c0e18; }
+.damage__svc-chip[data-state="off"] { opacity: 0.45; }
+
 /* --- header state -------------------------------------------------------- */
 #widget-damage .panel__meta[data-state="alarm"] {
   color: var(--pos-loss);
@@ -3892,6 +3944,13 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
 
 #widget-racecontrol[data-race="green"] .racecontrol__msg { color: var(--pos-gain); }
 #widget-racecontrol[data-race="fcy"] .racecontrol__msg { color: var(--warn); }
+/* iRacing's per-driver flags (player.flags): local yellow shares the fcy amber,
+   blue is the blue flag, black/meatball are the steward's red. */
+#widget-racecontrol[data-race="yellow"] .racecontrol__msg { color: var(--warn); }
+#widget-racecontrol[data-race="blue"] .racecontrol__msg { color: var(--ac-blue); }
+#widget-racecontrol[data-race="black"] .racecontrol__msg,
+#widget-racecontrol[data-race="meatball"] .racecontrol__msg { color: var(--pos-loss); }
+#widget-racecontrol[data-race="meatball"] .racecontrol__sub { color: var(--warn); }
 #widget-racecontrol[data-race="pitentry"] .racecontrol__msg { color: var(--text-secondary); }
 /* A booked stop is good news the driver asked to see; its cancellation is a
    deliberate act worth a beat of amber before the panel goes quiet again. */
@@ -3913,6 +3972,8 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
 #widget-racecontrol[data-race="yellow"] .panel__body {
   animation: limits-pulse 0.9s ease-in-out infinite;
 }
+#widget-racecontrol[data-race="black"] .panel__body,
+#widget-racecontrol[data-race="meatball"] .panel__body,
 #widget-racecontrol[data-race="limiter"] .panel__body {
   animation: limits-pulse-bad 0.9s ease-in-out infinite;
 }
@@ -3920,7 +3981,9 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
   #widget-racecontrol[data-race="fcy"] .panel__body,
   #widget-racecontrol[data-race="yellow"] .panel__body,
   #widget-racecontrol[data-race="finallap"] .panel__body,
-  #widget-racecontrol[data-race="limiter"] .panel__body {
+  #widget-racecontrol[data-race="black"] .panel__body,
+#widget-racecontrol[data-race="meatball"] .panel__body,
+#widget-racecontrol[data-race="limiter"] .panel__body {
     animation: none;
   }
 }
