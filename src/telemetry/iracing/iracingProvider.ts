@@ -77,6 +77,7 @@ import type { ServerConfig } from '../../server/config';
 import { LiveIrsdkSource, type IrsdkFrame, type IrsdkSource } from './irsdk';
 import { SessionInfoCache, warmSessionInfoParser, type IrDriver, type IrResult, type IrSessionInfo } from './sessionInfo';
 import { iRatingDeltasByClass, type IRatingEntry } from './irating';
+import { toIracingDemo } from './irDemo';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { irSessionId, irTeamStint } from './teamIdentity';
@@ -408,6 +409,12 @@ export class IRacingProvider implements TelemetryProvider {
   private integratorEpoch = -1;
   private prevSessionTime = NaN;
   private lastRadar: RadarBlip[] | null = null;
+  /** When the demo fallback started showing (see irDemo.ts), or -1. */
+  private demoStartedAt = -1;
+  private demoClock(nowMs: number): number {
+    if (this.demoStartedAt < 0) this.demoStartedAt = nowMs;
+    return (nowMs - this.demoStartedAt) / 1000;
+  }
   /** Incident points this session, as the Track Limits block reports them. */
   private incCount = -1;
   private incCharges: number[] = [];
@@ -508,14 +515,14 @@ export class IRacingProvider implements TelemetryProvider {
         }
         this.wasConnected = false;
         this.live = false;
-        return this.fallback.poll(nowMs, dtMs);
+        return toIracingDemo(this.fallback.poll(nowMs, dtMs), this.demoClock(nowMs));
       }
       if (!this.wasConnected) this.epoch++;
       this.wasConnected = true;
       const info = this.sessionInfo.update(this.source, nowMs);
       if (!info) {
         this.live = false;
-        return this.fallback.poll(nowMs, dtMs);
+        return toIracingDemo(this.fallback.poll(nowMs, dtMs), this.demoClock(nowMs));
       }
       const frame = this.buildFrame(f, info, nowMs);
       this.live = true;
@@ -528,7 +535,7 @@ export class IRacingProvider implements TelemetryProvider {
     } catch (err) {
       if (this.verbose) console.log(`[iracing] frame build failed: ${(err as Error).message}`);
       this.live = false;
-      return this.fallback.poll(nowMs, dtMs);
+      return toIracingDemo(this.fallback.poll(nowMs, dtMs), this.demoClock(nowMs));
     }
   }
 
@@ -1651,4 +1658,28 @@ function readMotion(f: IrsdkFrame): MotionState | undefined {
     slipAngle: speedMs > 2 ? round2(-Math.atan2(vy, vx) * DEG) : 0,
     speedMs: round2(speedMs),
   };
+}
+
+/**
+ * Demo mode in iRacing mode: the simulator's field, dressed as an iRacing
+ * session (see irDemo.ts) so the demo shows the iRacing overlays — iRating,
+ * licences, incidents — rather than LMU's.
+ */
+export class IracingDemoProvider implements TelemetryProvider {
+  public readonly name = 'iracing-demo';
+  private readonly sim = new SimulatorProvider();
+  private startedAt = -1;
+  public start(): void {
+    this.sim.start();
+  }
+  public isConnected(): boolean {
+    return false;
+  }
+  public poll(nowMs: number, dtMs: number): TelemetryFrame {
+    if (this.startedAt < 0) this.startedAt = nowMs;
+    return toIracingDemo(this.sim.poll(nowMs, dtMs), (nowMs - this.startedAt) / 1000);
+  }
+  public stop(): void {
+    this.sim.stop();
+  }
 }

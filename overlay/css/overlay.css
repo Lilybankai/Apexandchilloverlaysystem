@@ -3598,6 +3598,10 @@ body.ig-editing #widget-mfd[data-mfd-faded] {
    which is the row it belongs to, and leaves the count and the bar readable
    underneath. The panel's own yellow pulse is what makes it a flash; the pill
    only has to carry the amount. */
+/* `display: flex` above outranks the UA `[hidden]` rule, so on the OBS page
+   (widget.html — no ingame.css catch-all) the banner sat on top of the panel
+   permanently, red, with nothing in it. Same trap as .relative__lic[hidden]. */
+.limits__banner[hidden] { display: none; }
 .limits__banner[data-kind="scored"] {
   inset: auto 0 0 auto;
   padding: 3px 10px;

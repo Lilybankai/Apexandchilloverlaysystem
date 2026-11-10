@@ -27,7 +27,7 @@ import { StreamBot, insertYouTubeChatMessage, type StreamBotConfig } from './str
 import type { TelemetryProvider } from '../telemetry/provider';
 import { SimulatorProvider } from '../telemetry/simulatorProvider';
 import { RF2Provider } from '../telemetry/rf2Provider';
-import { IRacingProvider } from '../telemetry/iracing/iracingProvider';
+import { IRacingProvider, IracingDemoProvider } from '../telemetry/iracing/iracingProvider';
 import { LmuRestProvider, type LapAtLine } from '../telemetry/lmuRestProvider';
 import { MfdController } from '../telemetry/mfdControl';
 import { clearRejectedTrackMaps, getPublishedTrackMap } from '../telemetry/trackMap';
@@ -92,7 +92,9 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
  * @returns The provider the telemetry loop will poll.
  */
 export function selectProvider(config: ServerConfig): TelemetryProvider {
-  if (config.forceSimulator || config.provider === 'simulator') return new SimulatorProvider();
+  if (config.forceSimulator || config.provider === 'simulator') {
+    return config.demoSim === 'iracing' ? new IracingDemoProvider() : new SimulatorProvider();
+  }
   if (config.provider === 'rf2') return new RF2Provider(config);
   if (config.provider === 'iracing') return new IRacingProvider(config);
   return new LmuRestProvider(config);

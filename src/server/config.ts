@@ -47,6 +47,12 @@ export interface ServerConfig {
    * {@link forceSimulator} overrides this to `simulator`.
    */
   provider: 'lmu' | 'rf2' | 'iracing' | 'simulator';
+  /**
+   * Which sim the DEMO feed should look like when the simulator is running
+   * (Demo mode, or no sim connected): `'iracing'` dresses it as an iRacing
+   * session (telemetry/iracing/irDemo.ts). Absent = LMU, as it always was.
+   */
+  demoSim?: 'lmu' | 'iracing';
   /** Localhost port of the LMU REST API (used when `provider` is `lmu`). */
   lmuApiPort: number;
   /**

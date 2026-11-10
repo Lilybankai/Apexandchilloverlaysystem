@@ -1288,6 +1288,9 @@ function buildServerConfig(settings) {
     updateRateHz: settings.updateRateHz,
     overlayDir: overlayDir(), // absolute — resolve(cwd, abs) === abs
     forceSimulator: settings.forceSimulator,
+    // The demo feed dresses itself as the chosen sim: iRacing mode demos the
+    // iRacing overlays (iRating, licences, incidents), not LMU's (irDemo.ts).
+    demoSim: simOf(settings) === 'iracing' ? 'iracing' : 'lmu',
     // Le Mans Ultimate REST API is the default live source (robust, whole-field).
     // In iRacing mode the sim decides the provider, except that a stored
     // 'simulator' (and forceSimulator, the Demo switch, above) still wins.
