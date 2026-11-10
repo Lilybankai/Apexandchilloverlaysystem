@@ -409,6 +409,12 @@ export interface LapInput {
   simTrackName?: string;
   /** Lap length, metres; `0` when unknown. */
   trackLengthM: number;
+  /**
+   * Track identity to record verbatim, for a sim that publishes a stable id of
+   * its own (iRacing: `ir-<TrackID>`). Omitted, the key is derived from the
+   * name and length as before.
+   */
+  trackKey?: string;
   /** Car model, `""` when unreadable. */
   car: string;
   /** Canonical class label, `""` when unknown. */
@@ -743,7 +749,7 @@ export class LapRecorder {
       at: new Date(nowMs).toISOString(),
       sim: input.sim,
       track: input.track,
-      trackKey: trackKeyOf(input.track, input.trackLengthM),
+      trackKey: input.trackKey || trackKeyOf(input.track, input.trackLengthM),
       ...(input.trackConfig ? { trackConfig: input.trackConfig } : {}),
       ...(input.simTrackName ? { simTrackName: input.simTrackName } : {}),
       trackLengthM: Math.round(input.trackLengthM) || 0,

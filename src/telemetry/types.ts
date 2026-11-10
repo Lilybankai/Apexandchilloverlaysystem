@@ -1489,6 +1489,12 @@ export interface StandingEntry {
    * (`"A 3.45"`), and its colour as `#rrggbb` (`LicColor`). Omitted elsewhere.
    */
   license?: { text: string; color?: string };
+  /**
+   * **iRacing only.** The class colour as `#rrggbb`, from
+   * `DriverInfo.Drivers[].CarClassColor`. Omitted when it is `0xffffff`, which
+   * iRacing uses in single-class sessions, and for LMU/rF2.
+   */
+  classColor?: string;
 }
 
 /**
@@ -1596,6 +1602,12 @@ export interface RelativeEntry {
    * (`"A 3.45"`), and its colour as `#rrggbb` (`LicColor`). Omitted elsewhere.
    */
   license?: { text: string; color?: string };
+  /**
+   * **iRacing only.** The class colour as `#rrggbb`, from
+   * `DriverInfo.Drivers[].CarClassColor`. Omitted when it is `0xffffff`, which
+   * iRacing uses in single-class sessions, and for LMU/rF2.
+   */
+  classColor?: string;
 }
 
 /* -------------------------------------------------------------------------- */

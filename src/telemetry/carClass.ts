@@ -106,6 +106,32 @@ export function normalizeClass(raw: string | undefined | null): string | undefin
 const normalizeCache = new Map<string, string>();
 
 /**
+ * Class label for a car, by sim.
+ *
+ * {@link normalizeClass} is LMU's normaliser: its aliases collapse LMU and mod
+ * spellings onto LMU's own categories, and one of them maps `GTP` to
+ * `HYPERCAR`. That is right for LMU and wrong for iRacing, where `GTP`, `LMP2`,
+ * `GT3 Class`, `GT4`, `TCR`, `BMW M2 G87`… are the series' own class names
+ * (`CarClassShortName`) and must reach the overlays as iRacing spells them. So
+ * the iRacing path only trims — no aliasing, no case change — and every other
+ * sim keeps the LMU path unchanged.
+ *
+ * Note that {@link isFasterClass}/{@link classRank} know only the LMU order, so
+ * an iRacing class is "unknown" to them and never raises a faster-class flag;
+ * the iRacing provider ranks classes by the sim's own `CarClassRelSpeed`.
+ */
+export function normalizeClassFor(
+  sim: string,
+  raw: string | undefined | null,
+): string | undefined {
+  if (sim === 'iracing') {
+    const t = (raw ?? '').trim();
+    return t ? t : undefined;
+  }
+  return normalizeClass(raw);
+}
+
+/**
  * Speed rank of a class: `0` is the fastest known category, higher is slower.
  *
  * Unknown classes rank **after** every known one rather than being treated as
