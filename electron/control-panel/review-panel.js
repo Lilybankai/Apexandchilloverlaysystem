@@ -677,10 +677,11 @@
    * Coach only when following beta (review-coach.js `filterTabs`).
    */
   const tabsFor = (s) => {
-    // Race log (LMU's results files) and Coach (LMU's practice sessions) are
-    // Le Mans Ultimate only; the panel reloads on a sim switch, so reading
-    // `<html data-sim>` here is enough.
-    if (!IS_LMU) return TABS.filter((t) => !t.race && !t.coach);
+    // Coach (LMU's practice sessions) is Le Mans Ultimate only; the panel
+    // reloads on a sim switch, so reading `<html data-sim>` here is enough.
+    // Race log is on both: iRacing's comes from its own results copy
+    // (telemetry/iracing/irRaceLog.ts), shown only when a race paired.
+    if (!IS_LMU) return TABS.filter((t) => !t.coach && (!t.race || (s && raceOf.has(s.id))));
     const list = TABS.filter((t) => !t.race || (s && raceOf.has(s.id)));
     return COACH ? COACH.filterTabs(list, coachCtx(s)) : list.filter((t) => !t.coach);
   };
@@ -3368,10 +3369,10 @@
     const keep = currentId;
     // The races alongside, from main's cache of the results files (after the
     // first visit, a directory listing). No game call rides on it.
-    // The race log is LMU's own results files, so it has nothing to say in
-    // iRacing mode — and the sessions are the active sim's only.
+    // Main answers with the active sim's races: LMU's results files, or
+    // iRacing's own results copies. The sessions are the active sim's only.
     const sim = activeSim();
-    const racesRead = RL && sim === 'lmu' ? RL.load().catch(() => []) : Promise.resolve([]);
+    const racesRead = RL ? RL.load().catch(() => []) : Promise.resolve([]);
     try {
       const res = await window.apex.reviewSessions(sim);
       summaries = (res && Array.isArray(res.sessions)) ? res.sessions : [];

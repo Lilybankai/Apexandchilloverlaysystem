@@ -30,7 +30,14 @@
 window.apexDiscord = (function () {
   const $ = (sel) => document.querySelector(sel);
 
-  let state = { signedIn: false, communities: [], personal: [], loaded: false, kinds: [] };
+  let state = { signedIn: false, communities: [], personal: [], loaded: false, kinds: [], sims: [], simsAvailable: false };
+
+  /** The sims a channel can announce, in words. */
+  const SIM_LABEL = { lmu: 'Le Mans Ultimate', iracing: 'iRacing' };
+  /** The sim the panel is in: a new channel starts announcing that one. */
+  const activeSim = () => (document.documentElement.dataset.sim === 'iracing' ? 'iracing' : 'lmu');
+  /** A channel's sims; a cloud without 0048 reports none, which is LMU's alone. */
+  const simsOf = (ch) => (ch && Array.isArray(ch.sims) && ch.sims.length ? ch.sims : ['lmu']);
   /** Which channel editor is open, as `${scope}:${id}` — 'new' for an unsaved one. */
   let editing = null;
   let openRoster = null;
@@ -171,7 +178,7 @@ window.apexDiscord = (function () {
         <span class="field__hint">
           ${esc((ch.kinds || []).map(kindLabel).join(', ') || 'Nothing selected')}${
             ch.watch_boards ? ' · plus records set by anyone on boards you race' : ''
-          }
+          } · ${esc(simsOf(ch).map((s) => SIM_LABEL[s] || s).join(' + '))}
         </span>
         ${ch.last_error ? `<span class="field__hint" data-bad="true">${esc(ch.last_error)}</span>` : ''}
         <div class="lmu-bind__actions">
@@ -238,6 +245,8 @@ window.apexDiscord = (function () {
 
         ${checks}
 
+        ${simsHtml(ch)}
+
         ${
           communityId
             ? `<label class="field field--toggle">
@@ -289,6 +298,35 @@ window.apexDiscord = (function () {
       </div>`;
   }
 
+  /**
+   * Which sims this channel announces (discord_targets.sims). LMU and iRacing
+   * have separate boards, so "New record at Spa" means a different board in
+   * each; a channel hears iRacing only once its owner ticks it here.
+   */
+  function simsHtml(ch) {
+    const on = ch ? simsOf(ch) : [activeSim()];
+    const can = !!state.simsAvailable;
+    const boxes = (state.sims && state.sims.length ? state.sims : ['lmu', 'iracing'])
+      .map(
+        (s) => `
+        <label class="field field--toggle">
+          <input type="checkbox" data-sim="${esc(s)}"${on.includes(s) ? ' checked' : ''}${can ? '' : ' disabled'} />
+          <span class="field__label">${esc(SIM_LABEL[s] || s)} records and personal bests</span>
+        </label>`,
+      )
+      .join('');
+    return `
+        <div class="field">
+          <span class="field__label">Sims this channel announces</span>
+          <span class="field__hint">${
+            can
+              ? 'LMU and iRacing keep separate leaderboards. Tick iRacing and its records and personal bests post here too.'
+              : 'Choosing sims needs a cloud update that has not reached your account yet — this channel announces Le Mans Ultimate only for now.'
+          }</span>
+        </div>
+        ${boxes}`;
+  }
+
   /* ---------------------------------------------------------------- actions */
 
   function readEditor(box) {
@@ -310,6 +348,12 @@ window.apexDiscord = (function () {
       minEntries: num('min_entries'),
       dailyCap: num('daily_cap'),
       paused: val('paused') ? val('paused').checked : undefined,
+      // Only when the cloud can store it (the boxes are disabled otherwise).
+      sims: state.simsAvailable
+        ? Array.from(box.querySelectorAll('[data-sim]'))
+          .filter((el) => el.checked)
+          .map((el) => el.dataset.sim)
+        : undefined,
     };
   }
 

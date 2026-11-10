@@ -216,6 +216,14 @@
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+  /**
+   * An iRacing log (telemetry/iracing/irRaceLog.ts): results from the
+   * session-info YAML, no game replay to jump into, no car picker (our car is
+   * the sim's own DriverCarIdx). The list in iRacing mode is all iRacing.
+   */
+  const isIr = (l) => !!l && l.sim === 'iracing';
+  const IR_MODE = typeof document !== 'undefined' && document.documentElement.dataset.sim === 'iracing';
+
   /** A circuit's outline as inline SVG, or '' — the Schedule tab's drawing. */
   function mapSvg(outline, cls) {
     if (!outline || typeof outline.d !== 'string' || !outline.d) return '';
@@ -381,11 +389,16 @@
       ? `Started P${row.gridPosition}${multi && known(row.gridClassPosition) ? ` / P${row.gridClassPosition}` : ''}` : '';
     // Laps on a line of their own, then what the race cost, wrapping as it must.
     const cost = mine
-      ? [
-        row.contacts ? plural(row.contacts, 'contact', 'contacts') : '',
-        row.limits ? plural(row.limits, 'limit', 'limits') : '',
-        row.penalties ? plural(row.penalties, 'penalty', 'penalties') : '',
-      ].filter(Boolean).join(' · ')
+      ? (IR_MODE
+        ? [
+          row.contacts + row.limits ? plural(row.contacts + row.limits, 'incident', 'incidents') : '',
+          row.penalties ? plural(row.penalties, 'black flag', 'black flags') : '',
+        ]
+        : [
+          row.contacts ? plural(row.contacts, 'contact', 'contacts') : '',
+          row.limits ? plural(row.limits, 'limit', 'limits') : '',
+          row.penalties ? plural(row.penalties, 'penalty', 'penalties') : '',
+        ]).filter(Boolean).join(' · ')
       : '';
     const place = placePair(row.finishPosition, row.finishClassPosition, multi);
     return `
@@ -445,10 +458,28 @@
                     title="Show these in the timeline"><b>${n}</b><span>${esc(word)}</span></button>`;
   }
 
+  /** iRacing's incidents tile: our points against the DQ limit, and how they came. */
+  function irIncidentTile(l) {
+    const inc = l.incidents || {};
+    const pts = known(inc.points) ? inc.points : null;
+    const lim = known(inc.limit) && inc.limit > 0 ? inc.limit : 0;
+    const c = facts.count;
+    return `
+        <div class="rl-tile rl-tile--counts">
+          <span class="rl-tile__label">Incident points${pts === null ? '' : ` · ${pts}${lim ? ` / ${lim}` : ''}`}</span>
+          <span class="rl-counts">
+            ${countHtml(c.contact, c.contact === 1 ? 'contact' : 'contacts', 'bad', 'contacts')}
+            ${countHtml(c.limits, c.limits === 1 ? 'off / spin' : 'offs / spins', 'warn', 'penalties')}
+            ${countHtml(c.penalty, c.penalty === 1 ? 'black flag' : 'black flags', 'text', 'penalties')}
+          </span>
+        </div>`;
+  }
+
   function tilesHtml(l) {
     const cls = className(l.carClass);
     const c = facts.count;
-    const best = facts.bestMs;
+    // iRacing: the results' own best, which counts laps the live log missed.
+    const best = isIr(l) && known(l.bestLapMs) && l.bestLapMs > 0 ? l.bestLapMs : facts.bestMs;
     return `
       <div class="rl-tiles">
         ${placeTile(l.multiclass ? 'Overall' : 'Position', l.gridPosition, l.finishPosition)}
@@ -458,6 +489,7 @@
           <span class="rl-tile__big">${known(l.laps) ? l.laps : dash}</span>
           <span class="rl-tile__sub">${best ? `Best <b class="rl-tile__best">${fmtLap(best)}</b>` : '&nbsp;'}</span>
         </div>
+        ${isIr(l) ? irIncidentTile(l) : `
         <div class="rl-tile rl-tile--counts">
           <span class="rl-tile__label">Incidents</span>
           <span class="rl-counts">
@@ -465,8 +497,49 @@
             ${countHtml(c.limits, 'track limits', 'warn', 'penalties')}
             ${countHtml(c.penalty, c.penalty === 1 ? 'penalty' : 'penalties', 'text', 'penalties')}
           </span>
-        </div>
+        </div>`}
       </div>`;
+  }
+
+  /**
+   * iRacing's classification, from the session-info YAML (iRacing writes no
+   * results file). Other drivers' incidents are iRacing's to publish, and it
+   * publishes them only once the results are official.
+   */
+  function resultsHtml(l) {
+    const rows = Array.isArray(l.classification) ? l.classification : [];
+    if (!rows.length) return '';
+    const inc = l.incidents || {};
+    const multi = !!l.multiclass;
+    const team = rows.some((r) => r.team);
+    const who = (r) => (team && r.team ? r.team : (r.drivers || []).join(', '));
+    const body = rows.map((r) => `
+      <tr${r.ours ? ' data-current="true"' : ''}>
+        <td class="num">${pos(r.position)}</td>
+        ${multi ? `<td class="num">${pos(r.classPosition)}</td>` : ''}
+        <td class="who">${esc(r.carNumber ? `#${r.carNumber}` : '')}</td>
+        ${multi ? `<td class="car">${esc(className(r.carClass))}</td>` : ''}
+        <td class="drv">${esc(who(r))}</td>
+        <td class="num">${known(r.gridPosition) ? `P${r.gridPosition}` : dash}</td>
+        <td class="num">${known(r.laps) ? r.laps : dash}</td>
+        <td class="num">${r.bestLapMs ? fmtLap(r.bestLapMs) : dash}</td>
+        <td class="num">${r.lapsLed ? r.lapsLed : ''}</td>
+        <td class="num">${known(r.incidents) ? `${r.incidents}x` : (r.ours && known(inc.points) ? `${inc.points}x` : dash)}</td>
+        <td class="st">${esc(r.status === 'Finished' ? '' : r.status)}</td>
+      </tr>`).join('');
+    return `
+      <section class="rv-card rl-results">
+        <div class="rl-card__head"><h3>Results</h3></div>
+        <div class="rv-sheet__scroll rv-log__scroll">
+          <table class="rv-sheet rv-log__pick rl-res">
+            <thead><tr><th>Pos</th>${multi ? '<th>Class</th>' : ''}<th>Car</th>${multi ? '<th></th>' : ''}<th>${team ? 'Team' : 'Driver'}</th><th>Grid</th><th>Laps</th><th>Best</th><th>Led</th><th>Inc</th><th></th></tr></thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+        <p class="rv-card__note">${inc.fieldPublished
+          ? 'Official result, from iRacing’s session info.'
+          : 'From iRacing’s session info. iRacing publishes other drivers’ incidents only once the result is official, so only yours are shown.'}</p>
+      </section>`;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -641,7 +714,7 @@
     const all = log.events;
     const idx = visibleIndexes();
     const long = longClock();
-    const replay = log.slot !== null && !log.provisional ? { ok: replayOk(), title: replayTitle() } : null;
+    const replay = log.slot !== null && !log.provisional && !isIr(log) ? { ok: replayOk(), title: replayTitle() } : null;
     const tabs = FILTERS.map((f) => {
       let n = 0;
       all.forEach((e, i) => { if (f.test(e, i)) n += 1; });
@@ -684,7 +757,7 @@
 
   /** Whether this log's Replay buttons can be pressed at all. */
   function replayOk() {
-    return !!log && avail.state === 'yes' && log.slot !== null && !log.provisional;
+    return !!log && !isIr(log) && avail.state === 'yes' && log.slot !== null && !log.provisional;
   }
 
   /**
@@ -780,6 +853,7 @@
 
   /** The replay, for the event picked: the button, or how far the game has got. */
   function replayBlockHtml(e, i) {
+    if (isIr(log)) return ''; // no iRacing replay jump (yet)
     if (!log || log.slot === null || log.provisional) {
       return log && log.provisional
         ? '<p class="rl-replay__why">No replay: the game did not save this race.</p>' : '';
@@ -882,6 +956,7 @@
     laplog: 'Matched to your lap log.',
     name: 'Matched by your driver name.',
     picked: 'You picked this car.',
+    iracing: 'From iRacing’s session info and what Apex recorded live.',
   };
 
   function sessionHtml(l) {
@@ -956,6 +1031,11 @@
         esc(readError || 'The results file is missing or unreadable. The game may have removed it.'));
       return;
     }
+    if (isIr(log) && log.slot === null) {
+      el.innerHTML = emptyState('alert', 'Your car is not in this race’s results',
+        'iRacing’s session info did not list a car for you (a spectated session?).');
+      return;
+    }
     if (log.slot === null || repick) {
       el.innerHTML = pickerHtml(log);
       return;
@@ -963,6 +1043,7 @@
     el.innerHTML = `
       ${host.hero ? `<section class="rv-card rl-hero">${tilesHtml(log)}</section>` : ''}
       ${progressHtml(log)}
+      ${isIr(log) ? resultsHtml(log) : ''}
       <div class="rl-split">
         ${timelineHtml()}
         <aside class="rl-side">
@@ -1332,6 +1413,7 @@
    * at every launch.
    */
   async function askGame(id) {
+    if (isIr(log)) return; // the replay controller is LMU's
     try {
       const res = await window.apex.reviewReplayStatus();
       if (id === openId && res && res.status) status = res.status;

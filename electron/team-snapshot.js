@@ -78,6 +78,8 @@ function buildTeamSnapshot(frame, at) {
       currentLap: s.currentLap,
       numCars: s.numCars,
       serverName: s.serverName,
+      // iRacing's subsession id: the relay's same-session check (teammateRelay.ts).
+      sessionId: s.sessionId,
       onTrack: s.onTrack,
     },
     car: {

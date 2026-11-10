@@ -128,10 +128,40 @@ const REASON_TEXT = {
   no_such_channel: 'That channel has gone — reload and try again.',
   owner_cannot_leave: 'You own this community. Hand it over or delete it instead of leaving.',
   cannot_remove_owner: 'The owner cannot be removed.',
+  no_sims: 'Pick at least one sim for this channel to announce.',
+  unknown_sim: 'That sim is not one Apex posts for.',
 };
 
 function reasonText(reason) {
   return REASON_TEXT[reason] || `Refused: ${reason}`;
+}
+
+/**
+ * The sims a channel can announce (discord_targets.sims, 0047). Every channel
+ * is LMU-only until its owner adds iRacing: an iRacing record never lands in
+ * an LMU league's Discord unasked. Set through set_discord_target_sims (0048).
+ */
+const SIMS = Object.freeze(['lmu', 'iracing']);
+
+/** Known sims only, de-duplicated, in SIMS order; [] when none survive. Mirrors 0048. */
+function normalizeSims(list) {
+  const want = new Set((Array.isArray(list) ? list : []).map((s) => String(s || '').trim().toLowerCase()));
+  return SIMS.filter((s) => want.has(s));
+}
+
+/**
+ * Put each channel's `sims` on it, from my_discord_target_sims' `[{id, sims}]`.
+ * Channels the read did not cover (0048 not applied yet) get none, which the
+ * panel draws as "LMU only, cannot change yet".
+ */
+function withSims(channels, rows) {
+  const by = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r && r.id) by.set(String(r.id), normalizeSims(r.sims));
+  }
+  return (Array.isArray(channels) ? channels : []).map((ch) =>
+    ch && by.has(String(ch.id)) ? { ...ch, sims: by.get(String(ch.id)) } : ch,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -147,6 +177,8 @@ const state = {
   /** My own channels — the ones with no community behind them. */
   personal: [],
   loaded: false,
+  /** Whether the cloud has the sims doors (0048); false hides the switch's effect. */
+  simsAvailable: false,
 };
 
 function signedIn() {
@@ -164,6 +196,8 @@ function stateForUi() {
     personal: state.personal,
     loaded: state.loaded,
     kinds: KINDS,
+    sims: SIMS,
+    simsAvailable: state.simsAvailable,
   };
 }
 
@@ -182,16 +216,23 @@ async function refresh() {
     state.communities = [];
     state.personal = [];
     state.loaded = false;
+    state.simsAvailable = false;
     push();
     return { ok: false, signedOut: true };
   }
-  const [mine, personal] = await Promise.all([
+  const [mine, personal, sims] = await Promise.all([
     auth.rpc('my_communities', {}),
     auth.rpc('my_discord_targets', {}),
+    // 0048. A cloud without it answers an error; channels then show LMU only.
+    auth.rpc('my_discord_target_sims', {}).catch(() => ({ ok: false })),
   ]);
   if (!mine.ok) return { ok: false, error: mine.error };
-  state.communities = Array.isArray(mine.body) ? mine.body : [];
-  state.personal = personal.ok && Array.isArray(personal.body) ? personal.body : [];
+  const simRows = sims && sims.ok && Array.isArray(sims.body) ? sims.body : null;
+  state.simsAvailable = !!simRows;
+  state.communities = (Array.isArray(mine.body) ? mine.body : []).map((c) =>
+    c && Array.isArray(c.channels) ? { ...c, channels: withSims(c.channels, simRows) } : c,
+  );
+  state.personal = withSims(personal.ok && Array.isArray(personal.body) ? personal.body : [], simRows);
   state.loaded = true;
   push();
   return { ok: true };
@@ -265,7 +306,10 @@ async function saveChannel(input) {
     ? opts.kinds.filter((k) => KINDS.some((known) => known.id === k))
     : null;
 
-  return op('save_discord_target', {
+  const sims = Array.isArray(opts.sims) ? normalizeSims(opts.sims) : null;
+  if (sims && !sims.length) return { ok: false, error: REASON_TEXT.no_sims };
+
+  const saved = await op('save_discord_target', {
     p_id: opts.id ? String(opts.id) : null,
     p_community: opts.communityId ? String(opts.communityId) : null,
     p_label: String(opts.label || ''),
@@ -276,6 +320,13 @@ async function saveChannel(input) {
     p_daily_cap: Number.isFinite(opts.dailyCap) ? Math.round(opts.dailyCap) : null,
     p_paused: typeof opts.paused === 'boolean' ? opts.paused : null,
   });
+  // Which sims it announces is its own door (0048), after the channel exists.
+  // Skipped while the cloud lacks it: the channel saves, and stays LMU-only.
+  if (!saved.ok || !sims || !state.simsAvailable) return saved;
+  const id = saved.id || opts.id;
+  if (!id) return saved;
+  const set = await op('set_discord_target_sims', { p_id: String(id), p_sims: sims });
+  return set.ok ? { ...saved, sims: set.sims || sims } : set;
 }
 
 const deleteChannel = (id) => op('delete_discord_target', { p_id: String(id || '') });
@@ -411,6 +462,9 @@ module.exports = {
   isDiscordWebhook,
   maskWebhook,
   reasonText,
+  normalizeSims,
+  withSims,
+  SIMS,
   KINDS,
   DEFAULT_KINDS,
   DEFAULT_KINDS_PERSONAL,

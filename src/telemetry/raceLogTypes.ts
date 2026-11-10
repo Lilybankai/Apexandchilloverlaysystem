@@ -138,12 +138,49 @@ export interface RaceLog {
    * How our car was picked out of the file. `'live'`: there is no file; the
    * live recorder followed our car itself (a `provisional` log).
    */
-  matchedBy: 'laplog' | 'name' | 'picked' | 'live' | null;
+  matchedBy: 'laplog' | 'name' | 'picked' | 'live' | 'iracing' | null;
   /** Built from the live log alone: the game never wrote results. */
   provisional: boolean;
   events: RaceLogEvent[];
   /** Every car in the file, for the car picker. */
   cars?: RaceLogCar[];
+  /** The sim the race was in; absent = LMU. An iRacing log has no replay jump and no car picker. */
+  sim?: 'lmu' | 'iracing';
+  /**
+   * **iRacing only.** The whole field's classification, from the session-info
+   * YAML's `ResultsPositions` (iRacing writes no results file). See
+   * telemetry/iracing/irRaceLog.ts.
+   */
+  classification?: RaceLogResultRow[];
+  /**
+   * **iRacing only.** Our incident points (`x`): `points` from telemetry (the
+   * team's count in a team event), `limit` the DQ limit (0 = none). `fieldPublished`
+   * is whether the other cars' counts are known: iRacing publishes them only
+   * once the results are official.
+   */
+  incidents?: { points: number | null; limit: number; fieldPublished: boolean };
+  /** **iRacing only.** Our best lap from the results, ms (the live log may have missed laps). */
+  bestLapMs?: number | null;
+}
+
+/** One car's line in an iRacing classification. */
+export interface RaceLogResultRow {
+  position: number | null;
+  classPosition: number | null;
+  carNumber: string;
+  carClass: string;
+  car: string;
+  /** Every name seen driving it. */
+  drivers: string[];
+  team: string;
+  gridPosition: number | null;
+  laps: number;
+  lapsLed: number;
+  bestLapMs: number | null;
+  /** `null` when unpublished (the race is not official yet). */
+  incidents: number | null;
+  status: string;
+  ours: boolean;
 }
 
 /** One car in a results file, as the car picker lists it. */

@@ -295,7 +295,9 @@
     } else if (vr.state === 'error') {
       text = `SteamVR problem: ${vr.detail || 'unknown'}. Trying again shortly.`;
     } else {
-      text = 'Waiting for SteamVR — start LMU with the SteamVR launch option and the panel appears.';
+      text = IS_LMU
+        ? 'Waiting for SteamVR — start LMU with the SteamVR launch option and the panel appears.'
+        : 'Waiting for SteamVR — start iRacing in VR with SteamVR as the runtime (OpenVR, or OpenXR on SteamVR) and the panel appears.';
     }
     vrStatus.textContent = text;
   }
@@ -305,13 +307,28 @@
 
   const vrLabel = (id) => VR_LABELS[id] || id;
 
+  /**
+   * Whether a headset widget is offered in this sim: the Overlays list is
+   * main's catalog already filtered by `sims` (overlaysForUi), so an id it
+   * does not carry — the MFD, damage, reference pace in iRacing — is not
+   * listed here either. Before that list has arrived nothing is filtered;
+   * renderOverlays redraws this card when it lands.
+   */
+  function vrOffered(id) {
+    if (!lastOverlays.length) return IS_LMU;
+    return lastOverlays.some((o) => o && o.id === id);
+  }
+
+  let lastVrSettings = null;
+
   function renderVrSettings(settings) {
+    lastVrSettings = settings;
     const vr = settings.vr || {};
     lastVr = vr;
     vrToggle.checked = !!vr.enabled;
     vrFields.hidden = !vr.enabled;
     const widgets = vr.widgets || {};
-    const ids = Object.keys(widgets);
+    const ids = Object.keys(widgets).filter(vrOffered);
     const on = ids.filter((id) => widgets[id].on);
 
     // One switch per widget. Rebuilt whole: fifteen checkboxes, and every
@@ -346,7 +363,7 @@
     vrGrid.hidden = !vrAdjustId;
     renderVrSliders();
 
-    vrMfdCard.hidden = !vr.enabled;
+    vrMfdCard.hidden = !vr.enabled || !vrOffered('mfd');
     vrMfdOff.hidden = !!(widgets.mfd && widgets.mfd.on);
     vrMfdHide.value = String(vr.mfdHideSec || 3);
   }
@@ -1101,6 +1118,8 @@
    */
   function renderOverlays(overlays, combined) {
     lastOverlays = Array.isArray(overlays) ? overlays : [];
+    // The headset list follows the same catalog (vrOffered).
+    if (lastVrSettings) renderVrSettings(lastVrSettings);
     overlayList.innerHTML = '';
     if (streamersWidgetList) streamersWidgetList.innerHTML = '';
     if (trainingWidgetList) trainingWidgetList.innerHTML = '';

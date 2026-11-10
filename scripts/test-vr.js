@@ -32,6 +32,7 @@ const {
   normalizeVr,
   mergeVr,
   enabledWidgets,
+  vrForSim,
   panelMatrix,
 } = require('../electron/vr/placement');
 const {
@@ -256,6 +257,36 @@ console.log('\nOpenVR function tables match their pinned versions');
     check(`IVRSystem.${name} is slot ${idx}`, SYSTEM_FNS.indexOf(name) === idx, SYSTEM_FNS.indexOf(name));
   }
   check('VREvent_t is 64 bytes on Windows x64', VREVENT_SIZE === 64);
+}
+
+// --- 4. Only the sim's widgets reach the headset -------------------------
+{
+  const fs = require('node:fs');
+  const path = require('node:path');
+  // The rule main hands in: the overlay catalog's `sims` (LMU-only ids).
+  const lmuOnly = new Set(['mfd', 'damage', 'refpace', 'racecontrol']);
+  const offeredIn = (sim) => (id) => sim === 'lmu' || !lmuOnly.has(id);
+  const vr = normalizeVr({ enabled: true, widgets: { mfd: { on: true }, damage: { on: true }, speedo: { on: true } } });
+  const ir = vrForSim(vr, offeredIn('iracing'));
+  check('iRacing: the MFD is switched off for the headset', ir.widgets.mfd.on === false);
+  check('iRacing: damage is switched off for the headset', ir.widgets.damage.on === false);
+  check('iRacing: the speedo stays on', ir.widgets.speedo.on === true);
+  check('iRacing: the page URL never asks for an LMU-only widget', !enabledWidgets(ir).some((id) => lmuOnly.has(id)));
+  check('the stored settings are not changed', vr.widgets.mfd.on === true);
+  check('placement survives the filter', ir.widgets.mfd.distance === vr.widgets.mfd.distance);
+  const lmu = vrForSim(vr, offeredIn('lmu'));
+  check('LMU: everything switched on stays on', enabledWidgets(lmu).join() === enabledWidgets(vr).join());
+  check('no rule: unchanged', vrForSim(vr, null) === vr);
+  // Every headset id must be in the overlay catalog, or its `sims` never apply.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  check('syncVr filters the headset widgets through the catalog', /vr: vrForSim\(s\.vr,/.test(main));
+  for (const id of VR_WIDGET_IDS) {
+    check(`VR widget ${id} is in the overlay catalog (so its sims apply)`, main.includes(`id: '${id}'`));
+  }
+  // The panel lists only what the (sim-filtered) Overlays list carries.
+  const panel = fs.readFileSync(path.join(__dirname, '..', 'electron', 'control-panel', 'control-panel.js'), 'utf8');
+  check('the VR tab filters its widget list by the offered overlays', /Object\.keys\(widgets\)\.filter\(vrOffered\)/.test(panel));
+  check('the VR tab names iRacing in its waiting line', /start iRacing in VR/.test(panel));
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

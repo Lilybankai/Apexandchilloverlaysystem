@@ -72,7 +72,8 @@ const { migrateTrainingSettings } = require('./trainingSettings');
 // The headset panel. Requiring it is free — no koffi, no worker, no window —
 // until the driver switches VR on (see electron/vr/index.js).
 const { VrOverlay } = require('./vr');
-const { normalizeVr, mergeVr } = require('./vr/placement');
+const { normalizeVr, mergeVr, vrForSim } = require('./vr/placement');
+const { watchingAnotherCar, scoresReferencePace } = require('./sim-gates');
 /**
  * Never let Windows' occlusion tracking decide the in-game layer is hidden.
  *
@@ -1932,14 +1933,7 @@ function dialStatusFeed() {
  * where no teammate had our car at all (THE-34). The relayed rows themselves
  * are gated again, per frame, in telemetry/teammateRelay.ts.
  */
-function watchingAnotherCar(frame) {
-  if (!frame || frame.connected === false || frame.source !== 'lmu') return false;
-  // A replay's car is a recording — no teammate's live relay belongs on it.
-  if (frame.session && frame.session.replay === true) return false;
-  if (!Array.isArray(frame.standings)) return false;
-  const focus = frame.standings.find((row) => row && row.isPlayer);
-  return !!focus && focus.isOwn !== true && focus.teammateDriving === true;
-}
+// watchingAnotherCar lives in sim-gates.js (LMU + iRacing, the publish end's list).
 
 /**
  * On at once, off only after it has stayed off for OVERLAY_WANT_OFF_MS. Turning
@@ -2947,7 +2941,12 @@ function syncVr(settings) {
   vrOverlay.sync({
     enabled: status.running && s.vr.enabled && vrOnThisChannel(s),
     baseUrl: baseUrl(),
-    vr: s.vr,
+    // Only the widgets this sim offers (the catalog's `sims`): an MFD switched
+    // on in LMU must not float in an iRacing headset.
+    vr: vrForSim(s.vr, (id) => {
+      const o = OVERLAY_CATALOG.find((c) => c.id === id);
+      return !o || overlayOnThisChannel(s, o);
+    }),
   });
   // Same rule as the desktop layer, including auto show/hide on the sim's
   // menus: a panel floating in the garage is as unwanted in VR as on screen.
@@ -4120,6 +4119,9 @@ function paceRowFor(ref, input) {
  */
 function sessionPaceFor(ref, session) {
   if (!session || !session.stats) return null;
+  // Ohne Speed's sheet is LMU lap times: an iRacing session at a circuit whose
+  // name and length match an LMU layout must not be scored against it.
+  if (!scoresReferencePace(session)) return null;
   const wet = session.stints.some((st) => st.laps.some((l) => l.wet));
   if (wet) return { wet: true, average: null, best: null, stints: [] };
   const known = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
@@ -4155,8 +4157,11 @@ function sessionPaceFor(ref, session) {
  * `{ ok:false, reason:'not-lmu' }` instead of scanning the disk for a game the
  * driver is not running.
  */
+// review:racelogs / review:racelog answer in iRacing mode too, from the
+// iRacing race log (telemetry/iracing/irRaceLog.ts); the car picker and the
+// replay jump stay LMU's.
 const LMU_ONLY_IPC =
-  /^(?:lmu:|lmuBind:|plugin:|setup:|setuplib:togame$|review:racelog|review:replay|schedule:dailies$)/;
+  /^(?:lmu:|lmuBind:|plugin:|setup:|setuplib:togame$|review:racelogPick$|review:replay|schedule:dailies$)/;
 
 /**
  * `ipcMain`, with LMU_ONLY_IPC's handlers gated on the active sim. Everything
@@ -5419,6 +5424,16 @@ function registerIpc() {
    * parsed. Same lazy, never-throw shape as `review:sessions`.
    */
   ipcMain.handle('review:racelogs', async () => {
+    // iRacing: its own results copies + the live recorder, local only.
+    if (getActiveSim() === 'iracing') {
+      try {
+        const ir = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'irRaceLog.js'));
+        return { ok: true, races: ir.listIrRaceLogs(), outlines: {} };
+      } catch (err) {
+        console.error('[app] iRacing race log list unavailable:', err.message);
+        return { ok: false, races: [], error: err.message };
+      }
+    }
     try {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // The async form: a first listing parses every file (~120 MB on Carl's
@@ -5435,6 +5450,15 @@ function registerIpc() {
   /** One race's log: `{ ok, log }`. `log.slot` is null when our car was not found. */
   ipcMain.handle('review:racelog', async (_evt, id) => {
     if (typeof id !== 'string' || !id) return { ok: false, log: null, error: 'no race' };
+    if (getActiveSim() === 'iracing') {
+      try {
+        const ir = require(path.join(__dirname, '..', 'dist', 'telemetry', 'iracing', 'irRaceLog.js'));
+        return { ok: true, log: ir.loadIrRaceLog(id) };
+      } catch (err) {
+        console.error('[app] iRacing race log unavailable:', err.message);
+        return { ok: false, log: null, error: err.message };
+      }
+    }
     try {
       const raceLog = require(path.join(__dirname, '..', 'dist', 'telemetry', 'raceLog.js'));
       // Async and sliced: the sync load held main ~92 ms on a 5 MB race.

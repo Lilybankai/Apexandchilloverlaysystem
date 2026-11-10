@@ -192,6 +192,22 @@ function enabledWidgets(vr) {
   return VR_WIDGET_IDS.filter((id) => vr && vr.widgets && vr.widgets[id] && vr.widgets[id].on);
 }
 
+/**
+ * The settings block with every widget this sim does not offer switched off,
+ * for the headset page. `offered(id)` is main's catalog rule (the overlay
+ * catalog's `sims`): in iRacing mode the MFD, damage and reference pace are
+ * LMU-only, so a headset set up in LMU must not keep drawing them there. The
+ * stored settings are untouched, so switching back to LMU brings them back.
+ */
+function vrForSim(vr, offered) {
+  if (!vr || !vr.widgets || typeof offered !== 'function') return vr;
+  const widgets = {};
+  for (const [id, w] of Object.entries(vr.widgets)) {
+    widgets[id] = w && w.on && !offered(id) ? { ...w, on: false } : w;
+  }
+  return { ...vr, widgets };
+}
+
 const DEG = Math.PI / 180;
 
 /** 3×3 product, row-major arrays of 9. */
@@ -246,5 +262,6 @@ module.exports = {
   normalizeVr,
   mergeVr,
   enabledWidgets,
+  vrForSim,
   panelMatrix,
 };

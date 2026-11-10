@@ -1860,7 +1860,9 @@ function* listSteps(resultsDir: string | null, opts: RaceLogOptions): Steps<Race
 
   // Races the recorder saw that have no results file: the game crashed (or
   // the file is still ~80 s from being written). Listed as provisional.
-  const live = yield* liveRacesStep(stateDir, opts.now ?? Date.now());
+  // LMU's list only: the recorder also writes iRacing races (source
+  // 'iracing'), which are iRacing's race log (iracing/irRaceLog.ts).
+  const live = (yield* liveRacesStep(stateDir, opts.now ?? Date.now())).filter((r) => r.header.source !== 'iracing');
   for (const race of liveOnlyRaces(live, digests)) out.push(liveSummary(race));
 
   // Forget files the game has deleted, then save what changed. Not when the
@@ -1877,6 +1879,18 @@ function* listSteps(resultsDir: string | null, opts: RaceLogOptions): Steps<Race
   if (dirty) yield* writeStep(path.join(stateDir, 'index.json'), idx);
 
   return out.sort((x, y) => y.startedAt - x.startedAt || (x.id < y.id ? 1 : -1));
+}
+
+/**
+ * The live recorder's races of the last {@link LIVE_DAYS}, every source. Sync
+ * (the iRacing race log reads them beside its own small files). Never throws.
+ */
+export function readLiveRaces(dir: string = racelogDir(), now: number = Date.now()): LiveRace[] {
+  try {
+    return runSync(liveRacesStep(dir, now));
+  } catch {
+    return [];
+  }
 }
 
 /**

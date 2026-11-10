@@ -79,6 +79,8 @@ import { SessionInfoCache, warmSessionInfoParser, type IrDriver, type IrResult, 
 import { iRatingDeltasByClass, type IRatingEntry } from './irating';
 import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
+import { irSessionId, irTeamStint } from './teamIdentity';
+import { IrRaceResultsRecorder, irRaceResultsDir, raceTeleOf } from './raceResults';
 import { TrackMapBuilder } from '../trackMap';
 import { writeTrace, type TraceFile } from '../lapTrace';
 import { refKeyOf } from '../paceDelta';
@@ -343,6 +345,12 @@ export interface IRacingProviderOptions {
    * Defaults to on only when `lapSink` is defaulted, for the same reason.
    */
   persistReferences?: boolean;
+  /**
+   * Where the race-results copy goes (raceResults.ts, the iRacing race log).
+   * Defaults to `~/.apex-overlay/racelog/iracing` for the live shared memory
+   * and to `null` (nothing written) when a `source` is supplied (tests, replays).
+   */
+  raceResultsDir?: string | null;
 }
 
 /** One standings row plus the raw readings the later blocks need. */
@@ -380,6 +388,8 @@ export class IRacingProvider implements TelemetryProvider {
   private readonly persistRefs: boolean;
   /** Lap traces, the pace-delta lap clock and sector splits; see irLapTrace.ts. */
   private readonly capture = new IracingLapCapture();
+  /** The race log's results copy (raceResults.ts). */
+  public readonly raceResults: IrRaceResultsRecorder;
   private readonly verbose: boolean;
   private live = false;
   private wasConnected = false;
@@ -436,6 +446,9 @@ export class IRacingProvider implements TelemetryProvider {
     const live = opts.lapSink === undefined;
     this.traceSink = opts.traceSink === undefined ? (live ? writeTrace : null) : opts.traceSink;
     this.persistRefs = opts.persistReferences ?? live;
+    this.raceResults = new IrRaceResultsRecorder(
+      opts.raceResultsDir !== undefined ? opts.raceResultsDir : opts.source ? null : irRaceResultsDir(),
+    );
   }
 
   public start(): void {
@@ -450,6 +463,7 @@ export class IRacingProvider implements TelemetryProvider {
   }
 
   public stop(): void {
+    void this.raceResults.flush();
     this.fallback.stop();
     this.source.close();
     this.live = false;
@@ -502,6 +516,11 @@ export class IRacingProvider implements TelemetryProvider {
       }
       const frame = this.buildFrame(f, info, nowMs);
       this.live = true;
+      try {
+        this.raceResults.update(info, raceTeleOf(f, info, frame), nowMs);
+      } catch {
+        /* the race log is a record, never the frame's problem */
+      }
       return frame;
     } catch (err) {
       if (this.verbose) console.log(`[iracing] frame build failed: ${(err as Error).message}`);
@@ -761,6 +780,8 @@ export class IRacingProvider implements TelemetryProvider {
     const focusIdx = fin(camIdx) && byIdx.has(camIdx) ? camIdx : ownIdx;
     const ownIsFocus = focusIdx === ownIdx;
     const isOnTrack = f.bool('IsOnTrack');
+    // Ours and who drives it (team events: teamIdentity.ts, untested live).
+    const stint = irTeamStint(info, ownIdx, isOnTrack);
     const trackLengthM = info.trackLengthM;
 
     /* --- raw per-car readings ------------------------------------------- */
@@ -861,7 +882,8 @@ export class IRacingProvider implements TelemetryProvider {
         ...(isRace && r.result && r.result.reasonOutId !== 0 ? { retired: true } : {}),
         pitStops: stops.get(r.idx) ?? 0,
         isPlayer: r.idx === focusIdx,
-        ...(r.idx === ownIdx ? { isOwn: true } : {}),
+        ...(r.idx === ownIdx && stint.drivingHere ? { isOwn: true } : {}),
+        ...(r.idx === ownIdx && stint.teammateDriving ? { teammateDriving: true } : {}),
         ...(d.iRating > 0 ? { iRating: d.iRating } : {}),
         ...(d.licString
           ? { license: { text: d.licString, ...(d.licColor ? { color: d.licColor } : {}) } }
@@ -1171,6 +1193,7 @@ export class IRacingProvider implements TelemetryProvider {
         currentLap: (standings[0]?.lapsCompleted ?? 0) + 1,
         classLeaderLap: classLeader ? classLeader.lapsCompleted + 1 : UNKNOWN_VALUE,
         numCars: standings.length,
+        ...(irSessionId(info, sessionNum) ? { sessionId: irSessionId(info, sessionNum) } : {}),
         notStarted: isPreGreen(phase),
         scheduledLengthSec: session && session.timeSec > 0 ? Math.round(session.timeSec) : UNKNOWN_VALUE,
         ...(startLights ? { startLights } : {}),

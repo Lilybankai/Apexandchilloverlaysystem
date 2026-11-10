@@ -2964,3 +2964,6 @@
   cursor: pointer;
 }
 .rvx-older:hover { border-color: var(--cyan); color: var(--text); }
+
+/* iRacing's classification card (review-racelog.js resultsHtml). */
+.rl-results .rv-card__note { margin-top: 10px; }
