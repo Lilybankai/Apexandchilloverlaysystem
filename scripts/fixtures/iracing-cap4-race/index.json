@@ -1,0 +1,302 @@
+{
+ "source": "ir-cap4",
+ "frames": 2704,
+ "sessions": [
+  {
+   "file": "session-32.yaml.gz",
+   "t": 1794308203817.1636
+  },
+  {
+   "file": "session-33.yaml.gz",
+   "t": 1794308212790.044
+  },
+  {
+   "file": "session-34.yaml.gz",
+   "t": 1794308214739.7341
+  },
+  {
+   "file": "session-35.yaml.gz",
+   "t": 1794308216809.8188
+  },
+  {
+   "file": "session-36.yaml.gz",
+   "t": 1794308220828.76
+  },
+  {
+   "file": "session-37.yaml.gz",
+   "t": 1794308221808.6008
+  },
+  {
+   "file": "session-40.yaml.gz",
+   "t": 1794308224846.6235
+  },
+  {
+   "file": "session-41.yaml.gz",
+   "t": 1794308345826.6853
+  },
+  {
+   "file": "session-42.yaml.gz",
+   "t": 1794308351761.1992
+  },
+  {
+   "file": "session-43.yaml.gz",
+   "t": 1794308373761.086
+  },
+  {
+   "file": "session-44.yaml.gz",
+   "t": 1794308451824.8823
+  },
+  {
+   "file": "session-45.yaml.gz",
+   "t": 1794308455819.425
+  },
+  {
+   "file": "session-46.yaml.gz",
+   "t": 1794308457760.3018
+  },
+  {
+   "file": "session-47.yaml.gz",
+   "t": 1794308461757.1672
+  },
+  {
+   "file": "session-48.yaml.gz",
+   "t": 1794308462835.4417
+  },
+  {
+   "file": "session-49.yaml.gz",
+   "t": 1794308463810.025
+  },
+  {
+   "file": "session-50.yaml.gz",
+   "t": 1794308474813.1023
+  },
+  {
+   "file": "session-51.yaml.gz",
+   "t": 1794308483772.1914
+  },
+  {
+   "file": "session-52.yaml.gz",
+   "t": 1794308484839.548
+  },
+  {
+   "file": "session-53.yaml.gz",
+   "t": 1794308485806.1394
+  },
+  {
+   "file": "session-54.yaml.gz",
+   "t": 1794308486775.434
+  },
+  {
+   "file": "session-55.yaml.gz",
+   "t": 1794308489788.9885
+  },
+  {
+   "file": "session-56.yaml.gz",
+   "t": 1794308523856.0625
+  },
+  {
+   "file": "session-57.yaml.gz",
+   "t": 1794308549774.5518
+  },
+  {
+   "file": "session-58.yaml.gz",
+   "t": 1794308551811.2334
+  },
+  {
+   "file": "session-59.yaml.gz",
+   "t": 1794308555850.1377
+  },
+  {
+   "file": "session-60.yaml.gz",
+   "t": 1794308557822.868
+  },
+  {
+   "file": "session-61.yaml.gz",
+   "t": 1794308586811.53
+  },
+  {
+   "file": "session-62.yaml.gz",
+   "t": 1794308632832.382
+  },
+  {
+   "file": "session-63.yaml.gz",
+   "t": 1794308650774.696
+  },
+  {
+   "file": "session-64.yaml.gz",
+   "t": 1794308654775.2517
+  },
+  {
+   "file": "session-65.yaml.gz",
+   "t": 1794308660809.8586
+  },
+  {
+   "file": "session-66.yaml.gz",
+   "t": 1794308668769.386
+  },
+  {
+   "file": "session-67.yaml.gz",
+   "t": 1794308693852.375
+  },
+  {
+   "file": "session-68.yaml.gz",
+   "t": 1794308733788.0598
+  },
+  {
+   "file": "session-69.yaml.gz",
+   "t": 1794308749855.418
+  },
+  {
+   "file": "session-70.yaml.gz",
+   "t": 1794308751770.6936
+  },
+  {
+   "file": "session-71.yaml.gz",
+   "t": 1794308755761.2158
+  },
+  {
+   "file": "session-72.yaml.gz",
+   "t": 1794308769772.427
+  },
+  {
+   "file": "session-73.yaml.gz",
+   "t": 1794308771799.4993
+  },
+  {
+   "file": "session-74.yaml.gz",
+   "t": 1794308793850.964
+  },
+  {
+   "file": "session-75.yaml.gz",
+   "t": 1794308830780.4038
+  },
+  {
+   "file": "session-76.yaml.gz",
+   "t": 1794308848839.8142
+  },
+  {
+   "file": "session-77.yaml.gz",
+   "t": 1794308850812.0928
+  },
+  {
+   "file": "session-78.yaml.gz",
+   "t": 1794308852929.8838
+  },
+  {
+   "file": "session-79.yaml.gz",
+   "t": 1794308868843.6985
+  },
+  {
+   "file": "session-80.yaml.gz",
+   "t": 1794308892772.3066
+  },
+  {
+   "file": "session-81.yaml.gz",
+   "t": 1794308928784.1384
+  },
+  {
+   "file": "session-82.yaml.gz",
+   "t": 1794308945747.9204
+  },
+  {
+   "file": "session-83.yaml.gz",
+   "t": 1794308949800.0996
+  },
+  {
+   "file": "session-84.yaml.gz",
+   "t": 1794308957821.5432
+  },
+  {
+   "file": "session-85.yaml.gz",
+   "t": 1794308961784.0203
+  },
+  {
+   "file": "session-86.yaml.gz",
+   "t": 1794308963816.1917
+  },
+  {
+   "file": "session-87.yaml.gz",
+   "t": 1794308969790.1265
+  },
+  {
+   "file": "session-88.yaml.gz",
+   "t": 1794308989788.3289
+  },
+  {
+   "file": "session-89.yaml.gz",
+   "t": 1794309027769.368
+  },
+  {
+   "file": "session-90.yaml.gz",
+   "t": 1794309041764.7417
+  },
+  {
+   "file": "session-91.yaml.gz",
+   "t": 1794309045831.3032
+  },
+  {
+   "file": "session-92.yaml.gz",
+   "t": 1794309049798.6755
+  },
+  {
+   "file": "session-93.yaml.gz",
+   "t": 1794309056748.5454
+  },
+  {
+   "file": "session-94.yaml.gz",
+   "t": 1794309058781.0762
+  },
+  {
+   "file": "session-95.yaml.gz",
+   "t": 1794309060812.3584
+  },
+  {
+   "file": "session-96.yaml.gz",
+   "t": 1794309068831.6238
+  },
+  {
+   "file": "session-97.yaml.gz",
+   "t": 1794309080800.8633
+  },
+  {
+   "file": "session-98.yaml.gz",
+   "t": 1794309086750.6272
+  },
+  {
+   "file": "session-99.yaml.gz",
+   "t": 1794309126775.1484
+  },
+  {
+   "file": "session-100.yaml.gz",
+   "t": 1794309140790.6523
+  },
+  {
+   "file": "session-101.yaml.gz",
+   "t": 1794309142839.049
+  },
+  {
+   "file": "session-102.yaml.gz",
+   "t": 1794309148783.7158
+  },
+  {
+   "file": "session-103.yaml.gz",
+   "t": 1794309154804.9656
+  },
+  {
+   "file": "session-104.yaml.gz",
+   "t": 1794309158805.1956
+  },
+  {
+   "file": "session-105.yaml.gz",
+   "t": 1794309159784.3364
+  },
+  {
+   "file": "session-106.yaml.gz",
+   "t": 1794309166805.754
+  },
+  {
+   "file": "session-107.yaml.gz",
+   "t": 1794309183835.149
+  }
+ ]
+}

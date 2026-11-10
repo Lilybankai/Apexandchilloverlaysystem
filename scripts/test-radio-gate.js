@@ -711,6 +711,26 @@ const LINE_FACTS = {
     { reason: 'periodic', lapSec: 103.4, band: 'Midpack', deltaAlienSec: 2.2, deltaCompetitiveSec: 1.4 },
     { reason: 'periodic', lapSec: 103.4, band: 'Alien', deltaAlienSec: 0 },
   ],
+  // iRacing (irEngineerCalls.ts, 2026-11-10): its own kinds, and the iRacing
+  // wording of shared kinds (keyed `kind@label` — cueOf takes the part before @).
+  irIncident: [
+    { added: 4, type: 'contact', points: 12, pointsLimit: 17, left: 5 },
+    { added: 2, type: 'lossOfControl', points: 13, pointsLimit: 17, left: 4, warn: 'near' },
+    { added: 4, type: 'contact', points: 16, pointsLimit: 17, left: 1, warn: 'last' },
+    { added: 3, points: 7, pointsLimit: 17, left: 10 },
+    { added: 1, type: 'offTrack', points: 3 },
+  ],
+  irRepair: [{ what: 'meatball' }, { what: 'tow', towSec: 127 }, { what: 'tow', towSec: 35 }],
+  irCaution: [{ what: 'oneToGreen' }, { what: 'pitsOpen' }, { what: 'pitsClosed' }],
+  'fullCourseYellow@iracing': [{ sim: 'iracing', pitsOpen: false }, { sim: 'iracing', pitsOpen: true }],
+  'finalLap@iracing': [{ sim: 'iracing' }],
+  'checkered@iracing': [{ sim: 'iracing', position: 5, startPosition: 8 }, { sim: 'iracing', classPosition: 12, startClassPosition: 12 }],
+  'penalty@iracing': [{ flag: 'black', penaltyType: 'black flag' }, { flag: 'furled' }, { flag: 'dq', points: 17, pointsLimit: 17 }],
+  'penaltyServed@iracing': [{ flag: 'black' }],
+  'sectorYellow@iracing': [{ sectors: '1,2,3', all: true, sim: 'iracing' }],
+  'qualiTimeLeft@iracing': [{ verdict: 'lastLapLimit', timeLeftSec: 250, lapLimit: 2 }, { verdict: 'outLap', lapLimit: 2 }],
+  'qualiGrid@iracing': [{ classPosition: 4, position: 4, provisional: false, lapLimited: true }, { classPosition: 4, position: 4, provisional: true, lapLimited: true }],
+  'qualiLap@iracing': [{ verdict: 'deleted', sim: 'iracing' }],
 };
 
 function lineDiscipline() {
@@ -724,7 +744,7 @@ function lineDiscipline() {
     for (const facts of list) {
       for (const tone of phrases.RADIO_TONES) {
         for (let v = 0; v < 6; v++) {
-          const cue = cueOf(kind, facts);
+          const cue = cueOf(kind.split('@')[0], facts);
           cue.context.classPosition = 12;
           cue.context.numCars = 24;
           const t = phrases.phraseForCue(cue, ctxFrame, v, tone);
@@ -841,7 +861,7 @@ async function matureRadio() {
 
   // Safety and everything else: the same words whatever the tone.
   const isMistake = ([k, f]) =>
-    ['incident', 'penalty', 'trackLimits', 'yieldTo'].includes(k) ||
+    ['incident', 'penalty', 'trackLimits', 'yieldTo', 'irIncident'].includes(k) ||
     (k === 'positionChange' && f.gained === false) ||
     ((k === 'qualiLap' || k === 'practiceLap') && f.verdict === 'deleted');
   const notMistakes = sweep.filter((e) => !isMistake(e));

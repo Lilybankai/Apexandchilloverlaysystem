@@ -81,6 +81,7 @@ import { IracingPositionIntegrator } from './positionIntegrator';
 import { buildIracingRadar } from './radar';
 import { irSessionId, irTeamStint } from './teamIdentity';
 import { IrRaceResultsRecorder, irRaceResultsDir, raceTeleOf } from './raceResults';
+import { IrRaceControlReader } from './irRaceControl';
 import { TrackMapBuilder } from '../trackMap';
 import { writeTrace, type TraceFile } from '../lapTrace';
 import { refKeyOf } from '../paceDelta';
@@ -418,6 +419,8 @@ export class IRacingProvider implements TelemetryProvider {
   private blackSince = 0;
   private blackServedAt = 0;
   private wasBlack = false;
+  /** The race engineer's block (irRaceControl.ts). */
+  private readonly raceControl = new IrRaceControlReader();
   /** Last tyre temp/wear signature and when it changed (see readingAgeSec). */
   private tyreSig = '';
   private tyreSigAt = 0;
@@ -737,6 +740,7 @@ export class IRacingProvider implements TelemetryProvider {
     this.blackSince = 0;
     this.blackServedAt = 0;
     this.wasBlack = false;
+    this.raceControl.reset();
     this.gates.clear();
     this.playerGate = new LapGate();
     this.seenInWorld.clear();
@@ -811,7 +815,12 @@ export class IRacingProvider implements TelemetryProvider {
     }
     const lapsOf = (r: CarRow): number =>
       r.lapsRaw >= 0 ? r.lapsRaw : Math.max(0, r.result?.lapsComplete ?? 0);
-    const progress = (r: CarRow): number => lapsOf(r) + (r.pct >= 0 && r.pct <= 1 ? r.pct : 0);
+    // A car on track still short of the line it starts from reads LapCompleted
+    // -1: count it as such, or the first car across the line (pct back to ~0)
+    // sorts BEHIND the grid still waiting to cross (the race-start order
+    // jumbled for ~6 s in the 2026-11-10 captures, before CarIdxPosition fills).
+    const progress = (r: CarRow): number =>
+      (r.lapsRaw === -1 && r.pct >= 0 && r.pct <= 1 ? -1 : lapsOf(r)) + (r.pct >= 0 && r.pct <= 1 ? r.pct : 0);
 
     // Live order from telemetry; cars it has not scored (0) fall back to the
     // session's YAML results, then to track progress.
@@ -1166,6 +1175,10 @@ export class IRacingProvider implements TelemetryProvider {
 
     /* --- incidents → the Track Limits block --------------------------------- */
     const trackLimits = ownIsFocus && !replay ? this.buildIncidents(f, info, flags, nowMs) : undefined;
+    const iracing =
+      ownIsFocus && !replay
+        ? this.raceControl.read(f, flags, session?.laps ?? 0, info.incidentLimit, isRace, nowMs)
+        : undefined;
 
     /* --- track map + radar ----------------------------------------------- */
     const { trackMap, radar } = this.buildMapAndRadar(
@@ -1198,7 +1211,9 @@ export class IRacingProvider implements TelemetryProvider {
         scheduledLengthSec: session && session.timeSec > 0 ? Math.round(session.timeSec) : UNKNOWN_VALUE,
         ...(startLights ? { startLights } : {}),
         ...(trackLengthM > 0 ? { trackLengthM } : {}),
-        finalLap: (flags & FLAG.checkered) !== 0,
+        // The last lap is under way for us once the WHITE flag shows (iRacing's
+        // flags are per car), and stays so under the chequer until we cross.
+        finalLap: (flags & (FLAG.white | FLAG.checkered)) !== 0,
         onTrack: isOnTrack,
         elapsedSec: round2(or(f.num('SessionTime'), 0)),
         ...(replay ? { replay: true as const } : {}),
@@ -1250,6 +1265,7 @@ export class IRacingProvider implements TelemetryProvider {
       relative,
       ...(radar ? { radar } : {}),
       ...(trackMap ? { trackMap } : {}),
+      ...(iracing ? { iracing } : {}),
       weather: {
         trackTempC: round1(trackTemp),
         ambientTempC: round1(airTemp),
@@ -1296,7 +1312,7 @@ export class IRacingProvider implements TelemetryProvider {
             ? info.driverCarEstLapTime
             : 90;
     const estF = focus.est;
-    const focusProgress = Math.max(0, focus.lapsRaw) + focus.pct;
+    const focusProgress = Math.max(-1, focus.lapsRaw) + focus.pct;
 
     const cand: Array<{ r: CarRow; gap: number; laps: number }> = [];
     for (const r of rows) {
@@ -1318,7 +1334,7 @@ export class IRacingProvider implements TelemetryProvider {
         if (!disagrees) gap = dt;
       }
       const laps = isRace
-        ? Math.round(Math.max(0, r.lapsRaw) + r.pct - focusProgress - dPct)
+        ? Math.round(Math.max(-1, r.lapsRaw) + r.pct - focusProgress - dPct)
         : 0;
       cand.push({ r, gap, laps });
     }

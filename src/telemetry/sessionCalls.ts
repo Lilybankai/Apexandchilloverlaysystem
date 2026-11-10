@@ -197,6 +197,34 @@ function watchingOther(me: StandingEntry): boolean {
   return me.isPlayer !== true;
 }
 
+/**
+ * OUR lap counter — it must step at every line crossing, which is all the lap
+ * tracking compares. Elsewhere that is laps completed. On iRacing the
+ * standings count clamps the out lap to 0 (so the line that starts the first
+ * timed lap never moved it) and steps before the lap's time is published, so
+ * our own car counts off the race-control block's SETTLED laps instead: 0 on
+ * the out lap, laps completed + 1 after it, {@link UNKNOWN_VALUE} out of the car.
+ */
+function lapsOf(frame: TelemetryFrame, me: StandingEntry): number {
+  const ir = frame.iracing;
+  if (ir && me.isPlayer === true) {
+    if (ir.outLap) return 0;
+    return ir.lapsCompleted === UNKNOWN_VALUE ? UNKNOWN_VALUE : ir.lapsCompleted + 1;
+  }
+  return known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
+}
+
+/** Our session is over: the flag latched, or (iRacing) a lap-limited run used up. */
+function doneOf(frame: TelemetryFrame): boolean {
+  return frame.player?.finished === true || frame.iracing?.sessionDone === true;
+}
+
+/** A lap-limited (iRacing) qualifying run: the session's lap limit, or 0. */
+function lapLimitOf(frame: TelemetryFrame): number {
+  const n = frame.iracing?.lapLimit ?? 0;
+  return frame.session.type === 'qualifying' && n > 0 ? n : 0;
+}
+
 /** The player's class mates (including the player), or the whole field when classless. */
 function classRows(frame: TelemetryFrame, me: StandingEntry): StandingEntry[] {
   return me.carClass ? frame.standings.filter((e) => e.carClass === me.carClass) : frame.standings;
@@ -273,7 +301,7 @@ export function qualifyingGridAnswer(frame: TelemetryFrame): { ok: boolean; text
   if (!known(cls)) return { ok: false, text: 'No standings yet.' };
   const multi = isMulticlass(frame, me);
   const where = multi && known(me.position) ? `P${cls} in class, P${me.position} overall` : `P${cls}`;
-  const done = me.isPlayer === true ? frame.player?.finished === true : frame.session.finalLap === true && me.inPit;
+  const done = me.isPlayer === true ? doneOf(frame) : frame.session.finalLap === true && me.inPit;
   const running = classRows(frame, me).some((e) => !e.isPlayer && !e.inPit && !e.retired);
   if (done && !running) return { ok: true, text: `You'll start ${where}.` };
   return { ok: true, text: `Provisionally ${where}.` };
@@ -382,10 +410,10 @@ export class SessionCalls {
   public observe(frame: TelemetryFrame, now: number): void {
     if (!familyOf(frame)) return;
     const me = playerRow(frame);
-    this.prevFinished = frame.player?.finished === true;
+    this.prevFinished = doneOf(frame);
     this.observeSplits(frame, false);
     if (!me) return;
-    this.lapNo = known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
+    this.lapNo = lapsOf(frame, me);
     this.lapStartKnown = false;
     this.prevBest = posTime(me.bestLapSec) ?? UNKNOWN_VALUE;
     this.prevSector = me.sector ?? 0;
@@ -402,18 +430,18 @@ export class SessionCalls {
       // Nothing to coach. The lap in progress can no longer be trusted.
       this.lapStartKnown = false;
       if (me) {
-        this.lapNo = known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
+        this.lapNo = lapsOf(frame, me);
         this.prevBest = posTime(me.bestLapSec) ?? UNKNOWN_VALUE;
         this.prevSector = me.sector ?? 0;
       }
-      this.prevFinished = frame.player?.finished === true;
+      this.prevFinished = doneOf(frame);
       return;
     }
 
     if (watchingOther(me)) {
       // Validity, the lap clock and the delta describe the watched car; our
       // own lap in progress cannot be judged from them. Re-anchor and wait.
-      this.lapNo = known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
+      this.lapNo = lapsOf(frame, me);
       this.lapStartKnown = false;
       this.prevSector = 0;
     } else {
@@ -427,13 +455,13 @@ export class SessionCalls {
     this.flushDeferred(frame, now, host);
 
     this.prevBest = posTime(me.bestLapSec) ?? this.prevBest;
-    this.prevFinished = frame.player?.finished === true;
+    this.prevFinished = doneOf(frame);
   }
 
   /* ---- laps ---------------------------------------------------------------- */
 
   private detectLap(frame: TelemetryFrame, me: StandingEntry, family: 'qualifying' | 'practice', now: number): void {
-    const laps = known(me.lapsCompleted) ? me.lapsCompleted : UNKNOWN_VALUE;
+    const laps = lapsOf(frame, me);
     const phase = frame.session.phase;
     const neutral = phase === 'fullCourseYellow' || phase === 'redFlag' || frame.session.flag === 'red';
     const valid = frame.player?.trackLimits?.lapValid;
@@ -473,7 +501,8 @@ export class SessionCalls {
     if (flying) {
       const kind: SessionCallKind = family === 'qualifying' ? 'qualiLap' : 'practiceLap';
       // The time-left read is taken AT the line (the clock now), spoken with the summary.
-      const timeLeft = family === 'qualifying' ? this.timeLeftRead(frame, me) : null;
+      // A lap-limited run (iRacing) says the laps instead — the limit binds first.
+      const timeLeft = family === 'qualifying' ? this.lapLimitRead(frame) ?? this.timeLeftRead(frame, me) : null;
       this.deferred.push({
         kind,
         readyAt: now + LAP_SETTLE_MS,
@@ -484,7 +513,7 @@ export class SessionCalls {
     } else if (family === 'qualifying' && !me.inPit) {
       // An out-lap ending at the line starts the flying lap: the clock question
       // is just as live, there is simply no lap to summarise.
-      const timeLeft = this.timeLeftRead(frame, me);
+      const timeLeft = this.lapLimitRead(frame) ?? this.timeLeftRead(frame, me);
       if (timeLeft) this.queueTimeLeft(timeLeft, now);
     }
 
@@ -498,7 +527,7 @@ export class SessionCalls {
     this.lapStartKnown = atLine;
     this.lapPitted = me.inPit === true;
     this.lapNeutralised = phase === 'fullCourseYellow' || phase === 'redFlag' || frame.session.flag === 'red';
-    this.lapStartFinished = frame.player?.finished === true;
+    this.lapStartFinished = doneOf(frame);
     this.lastValid = undefined;
     this.sawInvalid = false;
     this.classPosAtLapStart = classPosOf(me);
@@ -528,6 +557,7 @@ export class SessionCalls {
     // late and the sim withheld the time, which is how LMU publishes a deletion.
     const deleted = lastValid === false || (sawInvalid && last === null);
     const facts: Record<string, string | number | boolean> = { session: family, lap: lapNo };
+    if (frame.source === 'iracing') facts.sim = 'iracing';
     if (deleted) {
       facts.verdict = 'deleted';
       return { detail: 'lap deleted — track limits', facts };
@@ -599,18 +629,43 @@ export class SessionCalls {
     return { verdict, timeLeftSec: Math.round(t) };
   }
 
-  private queueTimeLeft(read: { verdict: string; timeLeftSec: number }, now: number): void {
+  /**
+   * At the line in a LAP-limited qualifying run (iRacing's lone qualifying is
+   * often two timed laps after the out lap): the last lap is starting. Null
+   * when the run is not lap-limited or this is not that line — the clock
+   * read then speaks as before. Reads our settled laps completed (iRacing only).
+   */
+  private lapLimitRead(frame: TelemetryFrame): { verdict: string; timeLeftSec: number; lapLimit?: number } | null {
+    const limit = lapLimitOf(frame);
+    const laps = frame.iracing?.lapsCompleted ?? UNKNOWN_VALUE;
+    if (!limit || !known(laps) || laps < 0 || frame.iracing?.outLap) return null;
+    if (limit - laps !== 1) return null;
+    const t = frame.session.timeRemainingSec;
+    return { verdict: 'lastLapLimit', timeLeftSec: known(t) ? Math.round(t) : UNKNOWN_VALUE, lapLimit: limit };
+  }
+
+  private queueTimeLeft(read: { verdict: string; timeLeftSec: number; lapLimit?: number }, now: number): void {
     if (this.timeLeftSaid.has(read.verdict)) return;
     // 'tight' and 'last' are the same news twice; one of them is enough.
-    if (read.verdict !== 'oneMore' && (this.timeLeftSaid.has('last') || this.timeLeftSaid.has('tight'))) return;
+    if (
+      read.verdict !== 'oneMore' &&
+      read.verdict !== 'lastLapLimit' &&
+      (this.timeLeftSaid.has('last') || this.timeLeftSaid.has('tight') || this.timeLeftSaid.has('lastLapLimit'))
+    ) {
+      return;
+    }
     this.timeLeftSaid.add(read.verdict);
     this.deferred.push({
       kind: 'qualiTimeLeft',
       readyAt: now + LAP_SETTLE_MS,
       expiresAt: now + LAP_SUMMARY_MAX_WAIT_MS,
       build: () => ({
-        detail: `time left ${read.timeLeftSec}s — ${read.verdict}`,
-        facts: { verdict: read.verdict, timeLeftSec: read.timeLeftSec },
+        detail: read.lapLimit ? `last lap of ${read.lapLimit}` : `time left ${read.timeLeftSec}s — ${read.verdict}`,
+        facts: {
+          verdict: read.verdict,
+          timeLeftSec: read.timeLeftSec,
+          ...(read.lapLimit ? { lapLimit: read.lapLimit } : {}),
+        },
       }),
     });
   }
@@ -677,7 +732,7 @@ export class SessionCalls {
       me.inPit ||
       this.lapNeutralised ||
       this.lapStartFinished ||
-      frame.player?.finished === true ||
+      doneOf(frame) ||
       frame.player?.trackLimits?.lapValid === false ||
       this.sawInvalid ||
       this.sectorCalledThisLap
@@ -839,7 +894,9 @@ export class SessionCalls {
   private detectGrid(frame: TelemetryFrame, me: StandingEntry, now: number): void {
     if (this.gridSaid || this.gridQueued) return;
     const ours = !watchingOther(me); // `finished` is the FOCUSED car's verdict
-    const finished = ours && frame.player?.finished === true;
+    // iRacing never latches a finish in qualifying: a lap-limited run is over
+    // for us when our laps reach the limit (irRaceControl.ts).
+    const finished = ours && (frame.player?.finished === true || frame.iracing?.sessionDone === true);
     const canSeeFinish = !ours || frame.player?.finished !== undefined;
     const flagOut = frame.session.finalLap === true || frame.session.phase === 'checkered';
     const crossed = finished && !this.prevFinished;
@@ -866,6 +923,7 @@ export class SessionCalls {
             position: known(row.position) ? row.position : UNKNOWN_VALUE,
             multiclass: isMulticlass(f, row),
             provisional: running,
+            ...(lapLimitOf(f) > 0 ? { lapLimited: true } : {}),
           },
         };
       },

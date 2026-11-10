@@ -30,6 +30,11 @@
   const reclaimText = $('#eng-voice-reclaim-text');
   const reclaimBtn = $('#eng-voice-reclaim-btn');
   const grammarEl = $('#eng-grammar');
+  /** Phrase-list intents with no iRacing data (keep in step with irEngineerAnswers.ts). */
+  const LMU_ONLY_INTENTS = new Set([
+    'energy', 'fuelRatio', 'hybrid', 'pace', 'paceAlien', 'paceCompetitive', 'paceMidpack',
+    'sectors', 'mySector', 'sectorsVs', 'brakes', 'brakeBias', 'tractionControl', 'pitStop',
+  ]);
   const pttChip = $('#eng-ptt-chip');
   const pttBind = $('#eng-ptt-bind');
   const pttClear = $('#eng-ptt-clear');
@@ -673,7 +678,12 @@
    */
   function renderGrammar(grammar) {
     const groups = new Map(); // name → entries, insertion-ordered like GRAMMAR
+    // In iRacing mode the questions only LMU can answer (virtual energy,
+    // hybrid, aids, reference pace, sector splits, brake wear) are left off
+    // the list — the engineer says so if asked anyway (irEngineerAnswers.ts).
+    const iracing = document.documentElement.dataset.sim === 'iracing';
     for (const g of grammar) {
+      if (iracing && LMU_ONLY_INTENTS.has(g.intent)) continue;
       const name = g.group || 'More';
       if (!groups.has(name)) groups.set(name, []);
       groups.get(name).push(g);

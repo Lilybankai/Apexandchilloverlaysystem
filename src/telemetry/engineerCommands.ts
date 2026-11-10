@@ -54,6 +54,7 @@ import {
 } from './paceTargets';
 import type { ReferencePaceTargetId } from './paceTargets';
 import { FuelTargetTracker, parseFuelTargetAsk } from './fuelTarget';
+import { iracingAnswer } from './irEngineerAnswers';
 
 /* -------------------------------------------------------------------------- */
 /*  What the driver can ask                                                   */
@@ -699,6 +700,9 @@ export class EngineerCommands {
     const yes = (text: string): CommandAnswer => ({ intent, text, ok: true });
     const frame = this.frame;
     if (!frame) return no('No telemetry yet.');
+    // iRacing says incidents, flags, damage and qualifying laps its own way.
+    const ir = iracingAnswer(intent, frame);
+    if (ir) return ir;
 
     switch (intent) {
       case 'gapAhead': {

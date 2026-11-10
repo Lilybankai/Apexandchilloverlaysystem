@@ -44,6 +44,8 @@ const KEEP = new Set([
   'Throttle', 'Brake', 'Clutch', 'SteeringWheelAngle', 'SteeringWheelAngleMax', 'BrakeABSactive',
   'PitstopActive', 'EngineWarnings', 'PlayerCarMyIncidentCount', 'PlayerTireCompound', 'LatAccel',
   'LongAccel', 'VertAccel', 'YawRate', 'PitchRate', 'RollRate', 'Pitch', 'Roll',
+  // The race engineer's race-control block (irRaceControl.ts).
+  'PitsOpen', 'PlayerCarTowTime',
 ]);
 for (const c of ['LF', 'RF', 'LR', 'RR']) {
   for (const s of ['tempCL', 'tempCM', 'tempCR', 'wearL', 'wearM', 'wearR', 'coldPressure']) KEEP.add(c + s);
