@@ -50,6 +50,19 @@ window.apexDiscord = (function () {
 
   /** Every mutation goes through here so one refusal cannot be mistaken for
    *  another, and so the button that caused it is the one that unlocks. */
+  /*
+   * The app's own confirm dialog (window.apexConfirm, control-panel.js).
+   * window.confirm's native box leaves Electron's page deaf to the keyboard
+   * on Windows once it closes, so after "Leave" the join-code box took clicks
+   * but no typing until a refresh.
+   */
+  function confirmDiscord(message) {
+    if (typeof window.apexConfirm === 'function') {
+      return window.apexConfirm({ title: 'Discord', message });
+    }
+    return Promise.resolve(window.confirm(message));
+  }
+
   async function run(btn, fn, okText) {
     if (btn) btn.disabled = true;
     say('');
@@ -331,13 +344,13 @@ window.apexDiscord = (function () {
     if (t.dataset.rotate) {
       // Destructive in a way that is easy to click by accident: every member
       // who has not joined yet is holding the old code.
-      if (!window.confirm('Make a new join code? The old one stops working immediately.')) return;
+      if (!(await confirmDiscord('Make a new join code? The old one stops working immediately.'))) return;
       await run(t, () => window.apex.discordRotateCode(t.dataset.rotate), 'New code issued.');
       return;
     }
 
     if (t.dataset.leave) {
-      if (!window.confirm('Leave this community? Your records stop being posted there.')) return;
+      if (!(await confirmDiscord('Leave this community? Your records stop being posted there.'))) return;
       await run(t, () => window.apex.discordLeaveCommunity(t.dataset.leave), 'Left.');
       return;
     }
@@ -355,7 +368,7 @@ window.apexDiscord = (function () {
     }
 
     if (t.dataset.delete) {
-      if (!window.confirm('Remove this channel? Nothing more will be posted to it.')) return;
+      if (!(await confirmDiscord('Remove this channel? Nothing more will be posted to it.'))) return;
       await run(t, () => window.apex.discordDeleteChannel(t.dataset.delete), 'Channel removed.');
       return;
     }
@@ -391,7 +404,7 @@ window.apexDiscord = (function () {
     }
 
     if (t.dataset.kick) {
-      if (!window.confirm('Remove this driver from the community?')) return;
+      if (!(await confirmDiscord('Remove this driver from the community?'))) return;
       await run(t, () => window.apex.discordRemoveMember(t.dataset.kick, t.dataset.user), 'Removed.');
       openRoster = null;
       return;

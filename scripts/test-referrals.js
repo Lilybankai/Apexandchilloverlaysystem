@@ -388,6 +388,22 @@ async function main() {
       !/window\.prompt\s*\(/.test(panel),
     );
     check('Approve and Decline ask through askText()', (panel.match(/await askText\(/g) || []).length >= 3);
+
+    /*
+     * window.confirm "works", but on Windows its native box leaves the page
+     * unable to take keyboard input once it closes. Leaving a team asked
+     * through it, so the "Join with a code" box that appeared next took clicks
+     * but no typing until a refresh (1.3.16). Everything asks through the
+     * app's own dialog now; window.confirm survives only as the fallback for
+     * a page that has no apexConfirm (the web pit wall).
+     */
+    for (const file of ['control-panel.js', 'team-panel.js', 'discord-panel.js']) {
+      const src = read('electron', 'control-panel', file);
+      const calls = (src.match(/window\.confirm\s*\(/g) || []).length;
+      check(`${file}: window.confirm only as the no-apexConfirm fallback`, calls <= 1);
+    }
+    check('control-panel.js exposes window.apexConfirm', /window\.apexConfirm\s*=/.test(panel));
+    check('leaving a team asks through the app dialog', /confirmCrew\(`Leave/.test(read('electron', 'control-panel', 'team-panel.js')));
   }
 }
 

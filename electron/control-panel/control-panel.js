@@ -179,7 +179,7 @@
   const ask = $('#ask');
   const askInput = $('#ask-input');
   let askResolve = null;
-  function askText({ title, message = '', value = '', placeholder = '', okLabel = 'OK' } = {}) {
+  function askText({ title, message = '', value = '', placeholder = '', okLabel = 'OK', input = true } = {}) {
     if (!ask || !askInput) return Promise.resolve(null);
     if (askResolve) askResolve(null); // a second question replaces the first
     return new Promise((resolve) => {
@@ -189,11 +189,33 @@
       $('#ask-ok').textContent = okLabel;
       askInput.value = value;
       askInput.placeholder = placeholder;
+      // style, not the hidden attribute: .field__input sets its own display.
+      askInput.style.display = input ? '' : 'none';
       ask.hidden = false;
-      askInput.focus();
-      askInput.select();
+      if (input) {
+        askInput.focus();
+        askInput.select();
+      } else {
+        $('#ask-ok').focus();
+      }
     });
   }
+
+  /**
+   * The app's own confirm(): resolves true on OK, false on anything else.
+   *
+   * window.confirm "works" in Electron, but on Windows the native dialog
+   * leaves the page unable to take keyboard input once it closes: inputs
+   * still focus on click and show a caret, but typing does nothing until the
+   * window is reloaded. Leaving a team was confirmed that way, so the
+   * "Join with a code" box that appears next was dead until a refresh.
+   * Anything that asks before acting goes through here instead.
+   */
+  async function askConfirm({ title = 'Confirm', message = '', okLabel = 'OK' } = {}) {
+    if (!ask || !askInput) return window.confirm(message || title);
+    return (await askText({ title, message, okLabel, input: false })) !== null;
+  }
+  window.apexConfirm = askConfirm;
   function askDone(answer) {
     if (!ask || ask.hidden) return;
     ask.hidden = true;
@@ -5713,11 +5735,14 @@
         ).trim();
         if (!email) return;
       } else if (
-        !window.confirm(
-          `Unlink ${row.code} from ${row.ownerEmail}?\n\n` +
+        !(await askConfirm({
+          title: `Unlink ${row.code}?`,
+          message:
+            `Unlink ${row.code} from ${row.ownerEmail}?\n\n` +
             'The code keeps working and keeps its numbers — they just stop ' +
             'seeing it in their own Settings.',
-        )
+          okLabel: 'Unlink',
+        }))
       ) {
         return;
       }
