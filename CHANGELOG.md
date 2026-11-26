@@ -5,6 +5,17 @@
      app until it is renamed.
 -->
 
+## 1.3.16 — 2026-11-26
+
+Joining a new team works straight after leaving one.
+
+### Fixed
+
+- **You can type a team code after leaving a team.** After you left a team,
+  the "Join with a code" box ignored your typing until you refreshed the
+  app. It now works straight away. The same fix covers leaving a Discord
+  community and then joining another one.
+
 ## 1.3.15 — 2026-11-03
 
 Beta testers can find the beta channel again.
