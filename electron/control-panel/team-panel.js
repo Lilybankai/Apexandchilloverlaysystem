@@ -1145,7 +1145,22 @@
     ].join('\n');
   }
 
-  function onCrewClick(e) {
+  /*
+   * Ask before a crew change with the app's own dialog (window.apexConfirm,
+   * control-panel.js). window.confirm's native box leaves Electron's page
+   * deaf to the keyboard on Windows once it closes, so after "Leave" the
+   * "Join with a code" box took clicks but no typing until a refresh. The web
+   * pit wall has no apexConfirm and keeps the browser's confirm, which is fine
+   * there.
+   */
+  function confirmCrew(message, okLabel) {
+    if (typeof window.apexConfirm === 'function') {
+      return window.apexConfirm({ title: 'Team', message, okLabel });
+    }
+    return Promise.resolve(window.confirm(message));
+  }
+
+  async function onCrewClick(e) {
     const btn = e.target.closest('[data-crew]');
     if (!btn) return;
     const team = activeTeam() || (cloud && cloud.teams && cloud.teams[0]) || null;
@@ -1183,17 +1198,17 @@
         }
         break;
       case 'rotate':
-        if (team && window.confirm('Issue a new invite code? The old one stops working.')) {
+        if (team && await confirmCrew('Issue a new invite code? The old one stops working.', 'New code')) {
           void crewOp(() => window.apex.teamRotateCode(team.id), 'New code issued.');
         }
         break;
       case 'leave':
-        if (team && window.confirm(`Leave "${team.name}"?${team.role === 'owner' ? ' Ownership passes to the longest-serving member (or the team is deleted if you are the last one).' : ''}`)) {
+        if (team && await confirmCrew(`Leave "${team.name}"?${team.role === 'owner' ? ' Ownership passes to the longest-serving member (or the team is deleted if you are the last one).' : ''}`, 'Leave')) {
           void crewOp(() => window.apex.teamLeave(team.id), 'Left the team.');
         }
         break;
       case 'kick':
-        if (team && window.confirm(`Remove ${btn.dataset.name || 'this member'} from the team?`)) {
+        if (team && await confirmCrew(`Remove ${btn.dataset.name || 'this member'} from the team?`, 'Remove')) {
           void crewOp(() => window.apex.teamRemoveMember(team.id, btn.dataset.user), 'Removed.');
         }
         break;
