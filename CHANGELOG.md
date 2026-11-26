@@ -5,6 +5,29 @@
      app until it is renamed.
 -->
 
+## 1.3.17-beta.1 — 2026-11-26
+
+The beta picks up the 1.3.16 team-code fix. Everything else on beta,
+iRacing included, carries on unchanged.
+
+### Fixed
+
+- **You can type a team code after leaving a team.** After you left a team,
+  the "Join with a code" box ignored your typing until you refreshed the
+  app. It now works straight away, and so does joining another Discord
+  community after leaving one.
+
+## 1.3.16 — 2026-11-26
+
+Joining a new team works straight after leaving one.
+
+### Fixed
+
+- **You can type a team code after leaving a team.** After you left a team,
+  the "Join with a code" box ignored your typing until you refreshed the
+  app. It now works straight away. The same fix covers leaving a Discord
+  community and then joining another one.
+
 ## 1.3.16-beta.8 — 2026-11-10
 
 Live standings in iRacing races.
